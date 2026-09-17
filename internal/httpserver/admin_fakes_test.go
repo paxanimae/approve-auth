@@ -11,78 +11,139 @@ import (
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 )
 
-// fakeAdminSessions is a minimal stand-in for internal/adminsession.Service,
-// for tests that only care about routing/listener separation, not the real
-// OIDC/session business logic (that's internal/adminsession's own tests).
-type fakeAdminSessions struct{}
-
-func (fakeAdminSessions) BeginLogin(context.Context, string) (adminsession.BeginLoginResult, error) {
-	return adminsession.BeginLoginResult{RedirectURL: "https://idp.example.test/authorize"}, nil
-}
-func (fakeAdminSessions) HandleCallback(context.Context, string, string) (string, string, error) {
-	return "", "", adminsession.ErrInvalidState
-}
-func (fakeAdminSessions) ValidateSession(context.Context, string) (adminsession.SessionInfo, error) {
-	return adminsession.SessionInfo{}, adminsession.ErrNoSession
-}
-func (fakeAdminSessions) Logout(context.Context, string, string) error { return nil }
-
-// fakeAdminActions is a minimal stand-in for internal/admin.Service.
-type fakeAdminActions struct{}
-
-func (fakeAdminActions) Approve(context.Context, admin.ApproveInput) (admin.ApproveResult, error) {
-	return admin.ApproveResult{}, admin.ErrConflict
-}
-func (fakeAdminActions) Deny(context.Context, admin.DenyInput) error {
-	return admin.ErrConflict
-}
-func (fakeAdminActions) Revoke(context.Context, admin.RevokeInput) error {
-	return admin.ErrConflict
-}
-func (fakeAdminActions) Renew(context.Context, admin.RenewInput) error {
-	return admin.ErrConflict
-}
-func (fakeAdminActions) CreateApplication(context.Context, admin.CreateApplicationInput) (store.Application, error) {
-	return store.Application{}, admin.ErrDuplicateHostname
-}
-func (fakeAdminActions) UpdateApplication(context.Context, admin.UpdateApplicationInput) (store.Application, error) {
-	return store.Application{}, admin.ErrConflict
-}
-func (fakeAdminActions) DisableApplication(context.Context, admin.DisableApplicationInput) (admin.DisableApplicationResult, error) {
-	return admin.DisableApplicationResult{}, admin.ErrConflict
-}
-func (fakeAdminActions) EnableApplication(context.Context, admin.EnableApplicationInput) (store.Application, error) {
-	return store.Application{}, admin.ErrConflict
+// fakeAdminSessions is a minimal, configurable stand-in for
+// internal/adminsession.Service, for tests that only care about the HTTP
+// translation layer (cookies, status codes, middleware gating) -- the
+// real OIDC/session business logic has its own tests in
+// internal/adminsession.
+type fakeAdminSessions struct {
+	beginLoginResult adminsession.BeginLoginResult
+	beginLoginErr    error
+	callbackToken    string
+	callbackReturn   string
+	callbackErr      error
+	session          adminsession.SessionInfo
+	validateErr      error
+	logoutErr        error
 }
 
-// fakeAdminReadStore is a minimal stand-in for internal/store's read-only
-// listing/detail surface used by the admin API's GET endpoints.
-type fakeAdminReadStore struct{}
+func (f fakeAdminSessions) BeginLogin(context.Context, string) (adminsession.BeginLoginResult, error) {
+	if f.beginLoginErr != nil {
+		return adminsession.BeginLoginResult{}, f.beginLoginErr
+	}
+	result := f.beginLoginResult
+	if result.RedirectURL == "" {
+		result.RedirectURL = "https://idp.example.test/authorize"
+	}
+	return result, nil
+}
+func (f fakeAdminSessions) HandleCallback(context.Context, string, string) (string, string, error) {
+	if f.callbackErr != nil {
+		return "", "", f.callbackErr
+	}
+	return f.callbackToken, f.callbackReturn, nil
+}
+func (f fakeAdminSessions) ValidateSession(context.Context, string) (adminsession.SessionInfo, error) {
+	if f.validateErr != nil {
+		return adminsession.SessionInfo{}, f.validateErr
+	}
+	return f.session, nil
+}
+func (f fakeAdminSessions) Logout(context.Context, string, string) error { return f.logoutErr }
 
-func (fakeAdminReadStore) GetApplicationByID(context.Context, uuid.UUID) (store.Application, bool, error) {
-	return store.Application{}, false, nil
+// fakeAdminActions is a minimal, configurable stand-in for
+// internal/admin.Service.
+type fakeAdminActions struct {
+	approveResult admin.ApproveResult
+	approveErr    error
+	denyErr       error
+	revokeErr     error
+	renewErr      error
+
+	createApplicationResult  store.Application
+	createApplicationErr     error
+	updateApplicationResult  store.Application
+	updateApplicationErr     error
+	disableApplicationResult admin.DisableApplicationResult
+	disableApplicationErr    error
+	enableApplicationResult  store.Application
+	enableApplicationErr     error
 }
-func (fakeAdminReadStore) ListApplications(context.Context) ([]store.Application, error) {
-	return nil, nil
+
+func (f fakeAdminActions) Approve(context.Context, admin.ApproveInput) (admin.ApproveResult, error) {
+	return f.approveResult, f.approveErr
 }
-func (fakeAdminReadStore) GetApprovalRequestByID(context.Context, uuid.UUID) (store.ApprovalRequest, bool, error) {
-	return store.ApprovalRequest{}, false, nil
+func (f fakeAdminActions) Deny(context.Context, admin.DenyInput) error { return f.denyErr }
+func (f fakeAdminActions) Revoke(context.Context, admin.RevokeInput) error {
+	return f.revokeErr
 }
-func (fakeAdminReadStore) ListApprovalRequests(context.Context, *uuid.UUID, string, int) ([]store.ApprovalRequest, error) {
-	return nil, nil
+func (f fakeAdminActions) Renew(context.Context, admin.RenewInput) error {
+	return f.renewErr
 }
-func (fakeAdminReadStore) GetAuthorizationByID(context.Context, uuid.UUID) (store.Authorization, bool, error) {
-	return store.Authorization{}, false, nil
+func (f fakeAdminActions) CreateApplication(context.Context, admin.CreateApplicationInput) (store.Application, error) {
+	return f.createApplicationResult, f.createApplicationErr
 }
-func (fakeAdminReadStore) ListAuthorizations(context.Context, *uuid.UUID, bool, int) ([]store.Authorization, error) {
-	return nil, nil
+func (f fakeAdminActions) UpdateApplication(context.Context, admin.UpdateApplicationInput) (store.Application, error) {
+	return f.updateApplicationResult, f.updateApplicationErr
 }
-func (fakeAdminReadStore) ListAuditEvents(context.Context, store.ListAuditEventsParams) ([]store.AuditEvent, error) {
-	return nil, nil
+func (f fakeAdminActions) DisableApplication(context.Context, admin.DisableApplicationInput) (admin.DisableApplicationResult, error) {
+	return f.disableApplicationResult, f.disableApplicationErr
 }
-func (fakeAdminReadStore) RecordAuditEvent(context.Context, string, string, string, string) error {
-	return nil
+func (f fakeAdminActions) EnableApplication(context.Context, admin.EnableApplicationInput) (store.Application, error) {
+	return f.enableApplicationResult, f.enableApplicationErr
 }
-func (fakeAdminReadStore) GetOverviewCounts(context.Context, time.Duration, time.Duration) (store.OverviewCounts, error) {
-	return store.OverviewCounts{}, nil
+
+// fakeAdminReadStore is a minimal, configurable stand-in for
+// internal/store's read-only listing/detail surface used by the admin
+// API's GET endpoints.
+type fakeAdminReadStore struct {
+	applications     []store.Application
+	application      store.Application
+	applicationFound bool
+	applicationErr   error
+
+	requests     []store.ApprovalRequest
+	request      store.ApprovalRequest
+	requestFound bool
+	requestErr   error
+
+	authorizations     []store.Authorization
+	authorization      store.Authorization
+	authorizationFound bool
+	authorizationErr   error
+
+	auditEvents []store.AuditEvent
+	auditErr    error
+	recordErr   error
+
+	overviewCounts store.OverviewCounts
+	overviewErr    error
+}
+
+func (f fakeAdminReadStore) GetApplicationByID(context.Context, uuid.UUID) (store.Application, bool, error) {
+	return f.application, f.applicationFound, f.applicationErr
+}
+func (f fakeAdminReadStore) ListApplications(context.Context) ([]store.Application, error) {
+	return f.applications, f.applicationErr
+}
+func (f fakeAdminReadStore) GetApprovalRequestByID(context.Context, uuid.UUID) (store.ApprovalRequest, bool, error) {
+	return f.request, f.requestFound, f.requestErr
+}
+func (f fakeAdminReadStore) ListApprovalRequests(context.Context, *uuid.UUID, string, int) ([]store.ApprovalRequest, error) {
+	return f.requests, f.requestErr
+}
+func (f fakeAdminReadStore) GetAuthorizationByID(context.Context, uuid.UUID) (store.Authorization, bool, error) {
+	return f.authorization, f.authorizationFound, f.authorizationErr
+}
+func (f fakeAdminReadStore) ListAuthorizations(context.Context, *uuid.UUID, bool, int) ([]store.Authorization, error) {
+	return f.authorizations, f.authorizationErr
+}
+func (f fakeAdminReadStore) ListAuditEvents(context.Context, store.ListAuditEventsParams) ([]store.AuditEvent, error) {
+	return f.auditEvents, f.auditErr
+}
+func (f fakeAdminReadStore) RecordAuditEvent(context.Context, string, string, string, string) error {
+	return f.recordErr
+}
+func (f fakeAdminReadStore) GetOverviewCounts(context.Context, time.Duration, time.Duration) (store.OverviewCounts, error) {
+	return f.overviewCounts, f.overviewErr
 }

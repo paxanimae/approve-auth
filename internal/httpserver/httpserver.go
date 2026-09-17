@@ -91,14 +91,21 @@ func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminRe
 	// Any live session, either role (spec section 9: "viewer reads
 	// operational state and audit; administrator also mutates").
 	authed := func(h http.HandlerFunc) http.HandlerFunc { return withHost(requireAdminSession(sessions, h)) }
-	// Administrator role plus a valid CSRF token -- every mutation.
+	// A valid CSRF token, but no role restriction -- logout is a
+	// mutation any authenticated admin (viewer or administrator) may
+	// perform on their own session (spec section 9: "CSRF protection for
+	// every mutation, including logout").
+	csrfProtected := func(h http.HandlerFunc) http.HandlerFunc {
+		return withHost(requireAdminSession(sessions, requireAdminCSRF(h)))
+	}
+	// Administrator role plus a valid CSRF token -- every other mutation.
 	mutating := func(h http.HandlerFunc) http.HandlerFunc {
 		return withHost(requireAdminSession(sessions, requireAdministrator(requireAdminCSRF(h))))
 	}
 
 	mux.HandleFunc("GET /auth/login", withHost(adminLoginHandler(sessions)))
 	mux.HandleFunc("GET /auth/callback", withHost(adminCallbackHandler(sessions, sessionCookieMaxAge)))
-	mux.HandleFunc("POST /auth/logout", authed(adminLogoutHandler(sessions)))
+	mux.HandleFunc("POST /auth/logout", csrfProtected(adminLogoutHandler(sessions)))
 	mux.HandleFunc("GET /api/v1/me", authed(adminMeHandler()))
 
 	mux.HandleFunc("GET /api/v1/overview", authed(overviewHandler(readStore, expiringSoonWindow, recentWindow)))

@@ -179,4 +179,3 @@ func TestDisableAndEnableApplication(t *testing.T) {
 		t.Error("application should be enabled again")
 	}
 }
-
