@@ -217,7 +217,12 @@ func TestLogout_RevokesSession(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = db.Pool.Exec(ctx, `DELETE FROM admin_sessions WHERE oidc_subject = 'user-5'`) })
 
-	if err := svc.Logout(ctx, rawToken); err != nil {
+	info, err := svc.ValidateSession(ctx, rawToken)
+	if err != nil {
+		t.Fatalf("ValidateSession: %v", err)
+	}
+
+	if err := svc.Logout(ctx, rawToken, info.CSRFToken); err != nil {
 		t.Fatalf("Logout: %v", err)
 	}
 	if _, err := svc.ValidateSession(ctx, rawToken); !errors.Is(err, adminsession.ErrNoSession) {
@@ -225,8 +230,33 @@ func TestLogout_RevokesSession(t *testing.T) {
 	}
 
 	// Logging out again (or a token that was never valid) must not error.
-	if err := svc.Logout(ctx, rawToken); err != nil {
+	if err := svc.Logout(ctx, rawToken, info.CSRFToken); err != nil {
 		t.Errorf("Logout (repeat): %v", err)
+	}
+}
+
+func TestLogout_RejectsInvalidCSRF(t *testing.T) {
+	db, fake, svc := setup(t)
+	ctx := context.Background()
+	fake.exchangeIdentity = oidc.Identity{Issuer: "https://idp.example.test/", Subject: "user-7", Groups: []string{"grp-viewers"}}
+
+	if _, err := svc.BeginLogin(ctx, ""); err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	rawToken, _, err := svc.HandleCallback(ctx, fake.lastState, "code")
+	if err != nil {
+		t.Fatalf("HandleCallback: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Pool.Exec(ctx, `DELETE FROM admin_sessions WHERE oidc_subject = 'user-7'`) })
+
+	if err := svc.Logout(ctx, rawToken, "wrong-token"); !errors.Is(err, adminsession.ErrInvalidCSRF) {
+		t.Errorf("Logout with wrong CSRF token: got %v, want ErrInvalidCSRF", err)
+	}
+
+	// The session must still be alive: an invalid CSRF token must not
+	// have logged it out anyway.
+	if _, err := svc.ValidateSession(ctx, rawToken); err != nil {
+		t.Errorf("ValidateSession after rejected logout: got %v, want a live session", err)
 	}
 }
 

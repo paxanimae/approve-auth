@@ -15,6 +15,7 @@ var (
 	ErrNoAccess    = errors.New("adminsession: identity is not a member of any allowlisted group")
 	ErrNoSession   = errors.New("adminsession: no active admin session")
 	ErrIdleTimeout = errors.New("adminsession: session idle timeout exceeded")
+	ErrInvalidCSRF = errors.New("adminsession: invalid or missing CSRF token")
 )
 
 type Service struct {
@@ -143,7 +144,11 @@ func (s *Service) ValidateSession(ctx context.Context, rawToken string) (Session
 	return SessionInfo{ID: sess.ID, Subject: sess.OIDCSubject, DisplayName: displayName, Role: sess.Role, CSRFToken: csrfToken(sess.CSRFSecret)}, nil
 }
 
-func (s *Service) Logout(ctx context.Context, rawToken string) error {
+// Logout requires the session's own CSRF token (spec section 9: "CSRF
+// protection for every mutation, including logout") -- validated here,
+// against the secret this same lookup just loaded, rather than trusting a
+// token the HTTP layer computed separately.
+func (s *Service) Logout(ctx context.Context, rawToken, csrfToken string) error {
 	if rawToken == "" {
 		return nil
 	}
@@ -153,6 +158,9 @@ func (s *Service) Logout(ctx context.Context, rawToken string) error {
 	}
 	if !found {
 		return nil
+	}
+	if !validCSRFToken(sess.CSRFSecret, csrfToken) {
+		return ErrInvalidCSRF
 	}
 	if err := s.store.RevokeAdminSession(ctx, sess.ID); err != nil {
 		return fmt.Errorf("adminsession: logout: %w", err)
