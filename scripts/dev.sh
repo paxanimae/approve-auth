@@ -47,14 +47,20 @@ case "$cmd" in
   build)      go_run go build ./... ;;
   vet)        go_run go vet ./... ;;
   test)
+    # A package path arg replaces the default ./..., it doesn't add to it.
+    pkg="./..."
+    if [[ $# -gt 0 && "$1" != -* ]]; then
+      pkg="$1"
+      shift
+    fi
     # -p 1: packages share one real Postgres instance via TEST_DATABASE_URL
     # and some (internal/store) drop/recreate the whole schema mid-test, so
     # running package test binaries concurrently races. Cheap enough at
     # this repo's size; revisit if it ever becomes the bottleneck.
     if [[ -n "${TEST_DATABASE_URL:-}" ]]; then
-      go_run go test ./... -race -p 1 "$@"
+      go_run go test "$pkg" -race -p 1 "$@"
     else
-      go_run go test ./... -race "$@"
+      go_run go test "$pkg" -race "$@"
     fi
     ;;
   tidy)       go_run go mod tidy ;;

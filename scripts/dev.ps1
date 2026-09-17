@@ -42,13 +42,20 @@ switch ($Command) {
     "build"        { Invoke-Go @("go", "build", "./...") }
     "vet"          { Invoke-Go @("go", "vet", "./...") }
     "test" {
+        # A package path as the first remaining arg replaces the default
+        # ./..., it doesn't add to it.
+        $pkg = "./..."
+        if ($Rest.Count -gt 0 -and $Rest[0] -notlike "-*") {
+            $pkg = $Rest[0]
+            $Rest = $Rest[1..($Rest.Count - 1)]
+        }
         # -p 1: packages share one real Postgres instance via TEST_DATABASE_URL
         # and some (internal/store) drop/recreate the whole schema mid-test, so
         # running package test binaries concurrently races.
         if ($env:TEST_DATABASE_URL) {
-            Invoke-Go (@("go", "test", "./...", "-race", "-p", "1") + $Rest)
+            Invoke-Go (@("go", "test", $pkg, "-race", "-p", "1") + $Rest)
         } else {
-            Invoke-Go (@("go", "test", "./...", "-race") + $Rest)
+            Invoke-Go (@("go", "test", $pkg, "-race") + $Rest)
         }
     }
     "tidy"         { Invoke-Go @("go", "mod", "tidy") }
