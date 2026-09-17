@@ -7,11 +7,22 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 )
+
+func mustParseUUID(t *testing.T, s string) uuid.UUID {
+	t.Helper()
+	id, err := uuid.Parse(s)
+	if err != nil {
+		t.Fatalf("parsing UUID %q: %v", s, err)
+	}
+	return id
+}
 
 // testDatabaseURL is a superuser-capable connection string (e.g. the
 // docker-compose dev "postgres" role), used to run migrations. Individual
@@ -62,6 +73,19 @@ func connectAs(t *testing.T, ctx context.Context, baseURL, user, password string
 	return conn
 }
 
+// openStoreAs opens a *store.DB (the pool-backed handle the real
+// repository methods use) as a specific role, for tests exercising those
+// methods directly rather than through raw SQL.
+func openStoreAs(t *testing.T, ctx context.Context, baseURL, user, password string) *store.DB {
+	t.Helper()
+	db, err := store.Open(ctx, connString(t, baseURL, user, password))
+	if err != nil {
+		t.Fatalf("opening store as %s: %v", user, err)
+	}
+	t.Cleanup(db.Close)
+	return db
+}
+
 // insertApplication creates a minimal application row and registers its
 // cleanup, returning the new row's id.
 func insertApplication(t *testing.T, ctx context.Context, conn *pgx.Conn, hostname string) string {
@@ -93,5 +117,52 @@ func insertApprovalRequest(t *testing.T, ctx context.Context, conn *pgx.Conn, ap
 		t.Fatalf("inserting approval_request: %v", err)
 	}
 	t.Cleanup(func() { _, _ = conn.Exec(ctx, `DELETE FROM approval_requests WHERE id = $1`, id) })
+	return id
+}
+
+// authorizationOpts controls the state of a seeded authorization row --
+// tests set only the fields relevant to the scenario under test.
+type authorizationOpts struct {
+	ExpiresAt   time.Time
+	ActivatedAt *time.Time // nil = not yet activated (unclaimed)
+	RevokedAt   *time.Time // nil = not revoked
+}
+
+// insertAuthorization seeds an authorization row directly via SQL --
+// there is no store.CreateAuthorization yet (that's the real approve/
+// claim flow, Milestone 3), so tests construct the state authz.Decide
+// needs to see by hand.
+func insertAuthorization(t *testing.T, ctx context.Context, conn *pgx.Conn, applicationID, requestID string, opts authorizationOpts) string {
+	t.Helper()
+	var id string
+	err := conn.QueryRow(ctx, `
+		INSERT INTO authorizations (application_id, request_id, approved_by, activated_at, expires_at, revoked_at)
+		VALUES ($1, $2, 'tester', $3, $4, $5)
+		RETURNING id`, applicationID, requestID, opts.ActivatedAt, opts.ExpiresAt, opts.RevokedAt).Scan(&id)
+	if err != nil {
+		t.Fatalf("inserting authorization: %v", err)
+	}
+	t.Cleanup(func() { _, _ = conn.Exec(ctx, `DELETE FROM authorizations WHERE id = $1`, id) })
+	return id
+}
+
+type credentialOpts struct {
+	AbsoluteExpiresAt time.Time
+	RevokedAt         *time.Time // nil = not revoked
+}
+
+// insertCredential seeds a credential row for a known raw tokenHash, so
+// the test can present the corresponding raw token as a cookie value.
+func insertCredential(t *testing.T, ctx context.Context, conn *pgx.Conn, authorizationID, applicationID string, tokenHash []byte, opts credentialOpts) string {
+	t.Helper()
+	var id string
+	err := conn.QueryRow(ctx, `
+		INSERT INTO credentials (authorization_id, application_id, token_hash, absolute_expires_at, revoked_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`, authorizationID, applicationID, tokenHash, opts.AbsoluteExpiresAt, opts.RevokedAt).Scan(&id)
+	if err != nil {
+		t.Fatalf("inserting credential: %v", err)
+	}
+	t.Cleanup(func() { _, _ = conn.Exec(ctx, `DELETE FROM credentials WHERE id = $1`, id) })
 	return id
 }

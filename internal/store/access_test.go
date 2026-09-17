@@ -1,0 +1,178 @@
+package store_test
+
+import (
+	"context"
+	"crypto/sha256"
+	"testing"
+	"time"
+)
+
+func testTokenHash(seed string) []byte {
+	h := sha256.Sum256([]byte(seed))
+	return h[:]
+}
+
+func TestGetAccessSnapshot_UnknownHost(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+
+	snap, err := db.GetAccessSnapshot(ctx, "unknown-host.example.test", testTokenHash(t.Name()))
+	if err != nil {
+		t.Fatalf("GetAccessSnapshot: %v", err)
+	}
+	if snap != nil {
+		t.Errorf("expected nil snapshot for an unregistered hostname, got %+v", snap)
+	}
+}
+
+func TestGetAccessSnapshot_KnownHostNoCredential(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+
+	appID := insertApplication(t, ctx, conn, "snapshot-no-cred.example.test")
+
+	snap, err := db.GetAccessSnapshot(ctx, "snapshot-no-cred.example.test", testTokenHash(t.Name()))
+	if err != nil {
+		t.Fatalf("GetAccessSnapshot: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("expected a non-nil snapshot for a known host")
+	}
+	if snap.ApplicationID.String() != appID {
+		t.Errorf("ApplicationID = %s, want %s", snap.ApplicationID, appID)
+	}
+	if snap.CredentialFound {
+		t.Error("CredentialFound should be false when no credential matches the hash")
+	}
+}
+
+func TestGetAccessSnapshot_ValidCredential(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+
+	appID := insertApplication(t, ctx, conn, "snapshot-valid.example.test")
+	reqID := insertApprovalRequest(t, ctx, conn, appID, t.Name())
+	activatedAt := time.Now().Add(-time.Hour)
+	authID := insertAuthorization(t, ctx, conn, appID, reqID, authorizationOpts{
+		ExpiresAt:   time.Now().Add(30 * 24 * time.Hour),
+		ActivatedAt: &activatedAt,
+	})
+	tokenHash := testTokenHash(t.Name())
+	insertCredential(t, ctx, conn, authID, appID, tokenHash, credentialOpts{
+		AbsoluteExpiresAt: time.Now().Add(365 * 24 * time.Hour),
+	})
+
+	snap, err := db.GetAccessSnapshot(ctx, "snapshot-valid.example.test", tokenHash)
+	if err != nil {
+		t.Fatalf("GetAccessSnapshot: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("expected a non-nil snapshot")
+	}
+	if !snap.CredentialFound {
+		t.Fatal("CredentialFound should be true")
+	}
+	if snap.CredentialApplicationID.String() != appID {
+		t.Errorf("CredentialApplicationID = %s, want %s", snap.CredentialApplicationID, appID)
+	}
+	if snap.CredentialRevoked {
+		t.Error("CredentialRevoked should be false")
+	}
+	if snap.AuthorizationRevoked {
+		t.Error("AuthorizationRevoked should be false")
+	}
+	if !snap.AuthorizationActivated {
+		t.Error("AuthorizationActivated should be true")
+	}
+	if !snap.DatabaseNow.Before(snap.AuthorizationExpiresAt) {
+		t.Errorf("DatabaseNow (%s) should be before AuthorizationExpiresAt (%s)", snap.DatabaseNow, snap.AuthorizationExpiresAt)
+	}
+	if !snap.DatabaseNow.Before(snap.CredentialAbsoluteExpiresAt) {
+		t.Errorf("DatabaseNow (%s) should be before CredentialAbsoluteExpiresAt (%s)", snap.DatabaseNow, snap.CredentialAbsoluteExpiresAt)
+	}
+}
+
+func TestGetAccessSnapshot_CredentialForDifferentApplication(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+
+	appA := insertApplication(t, ctx, conn, "snapshot-app-a.example.test")
+	appB := insertApplication(t, ctx, conn, "snapshot-app-b.example.test")
+	reqID := insertApprovalRequest(t, ctx, conn, appA, t.Name())
+	activatedAt := time.Now().Add(-time.Hour)
+	authID := insertAuthorization(t, ctx, conn, appA, reqID, authorizationOpts{
+		ExpiresAt:   time.Now().Add(30 * 24 * time.Hour),
+		ActivatedAt: &activatedAt,
+	})
+	tokenHash := testTokenHash(t.Name())
+	insertCredential(t, ctx, conn, authID, appA, tokenHash, credentialOpts{
+		AbsoluteExpiresAt: time.Now().Add(365 * 24 * time.Hour),
+	})
+
+	// The credential is valid for app A, but we ask about app B's hostname.
+	snap, err := db.GetAccessSnapshot(ctx, "snapshot-app-b.example.test", tokenHash)
+	if err != nil {
+		t.Fatalf("GetAccessSnapshot: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("expected a non-nil snapshot (app B is registered)")
+	}
+	if snap.CredentialFound {
+		// The credential exists in the DB, but not scoped to app B's hostname --
+		// the join only matches token_hash, so CredentialFound reflects a raw hash
+		// match. The caller (authz) must additionally compare CredentialApplicationID
+		// against ApplicationID and deny on mismatch; assert that mismatch is visible here.
+		if snap.CredentialApplicationID.String() == appB {
+			t.Fatal("credential's application_id should be app A, not app B")
+		}
+		if snap.CredentialApplicationID.String() != appA {
+			t.Errorf("CredentialApplicationID = %s, want %s (app A)", snap.CredentialApplicationID, appA)
+		}
+	} else {
+		t.Fatal("CredentialFound should be true (the hash exists) -- the mismatch is in CredentialApplicationID vs ApplicationID")
+	}
+}
+
+func TestTouchLastSeen_CoalescesWithinOneMinute(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+
+	appID := insertApplication(t, ctx, conn, "last-seen.example.test")
+	reqID := insertApprovalRequest(t, ctx, conn, appID, t.Name())
+	authIDStr := insertAuthorization(t, ctx, conn, appID, reqID, authorizationOpts{
+		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+	})
+
+	if err := db.TouchLastSeen(ctx, mustParseUUID(t, authIDStr), "203.0.113.5", "test-agent/1.0"); err != nil {
+		t.Fatalf("TouchLastSeen (first call): %v", err)
+	}
+
+	var firstSeenAt time.Time
+	if err := conn.QueryRow(ctx, `SELECT last_seen_at FROM authorizations WHERE id = $1`, authIDStr).Scan(&firstSeenAt); err != nil {
+		t.Fatalf("querying last_seen_at: %v", err)
+	}
+	if firstSeenAt.IsZero() {
+		t.Fatal("expected last_seen_at to be set after the first TouchLastSeen call")
+	}
+
+	// A second call within the same minute must be a no-op (coalesced).
+	if err := db.TouchLastSeen(ctx, mustParseUUID(t, authIDStr), "203.0.113.5", "test-agent/1.0"); err != nil {
+		t.Fatalf("TouchLastSeen (second call): %v", err)
+	}
+	var secondSeenAt time.Time
+	if err := conn.QueryRow(ctx, `SELECT last_seen_at FROM authorizations WHERE id = $1`, authIDStr).Scan(&secondSeenAt); err != nil {
+		t.Fatalf("querying last_seen_at: %v", err)
+	}
+	if !secondSeenAt.Equal(firstSeenAt) {
+		t.Errorf("last_seen_at changed on a coalesced call: %s -> %s", firstSeenAt, secondSeenAt)
+	}
+}
