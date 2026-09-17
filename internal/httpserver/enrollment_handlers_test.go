@@ -128,6 +128,50 @@ func TestSubmitRequest_RejectsBadOrigin(t *testing.T) {
 	}
 }
 
+// TestSubmitRequest_NullOriginFallsBackToReferer covers a real browser
+// behavior found in manual testing: some navigation paths (e.g. landing
+// on the request page via /auth's own 303 redirect) legitimately produce
+// a literal "Origin: null" header rather than omitting Origin entirely.
+// That must not be treated as a non-matching Origin outright -- it falls
+// back to the same same-origin Referer check an absent Origin would.
+func TestSubmitRequest_NullOriginFallsBackToReferer(t *testing.T) {
+	srv := newPublicServer(t, configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}, fakeDecider{})
+	u, _ := url.Parse(srv.URL)
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/requests", strings.NewReader(`{"csrf_token":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "null")
+	req.Header.Set("Referer", "https://"+u.Host+"/__manual-approval/request")
+	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("status = %d, want 201 (null Origin + matching Referer must be accepted)", resp.StatusCode)
+	}
+}
+
+func TestSubmitRequest_NullOriginWithNoRefererIsRejected(t *testing.T) {
+	srv := newPublicServer(t, configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}, fakeDecider{})
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/requests", strings.NewReader(`{"csrf_token":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "null")
+	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 (null Origin with no Referer at all must still be rejected)", resp.StatusCode)
+	}
+}
+
 func TestSubmitRequest_JSONResponseForJSONCaller(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}, fakeDecider{})
 

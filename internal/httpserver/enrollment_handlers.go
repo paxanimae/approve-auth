@@ -55,9 +55,18 @@ func wantsJSON(r *http.Request) bool {
 // checkOrigin implements spec section 9: exact Origin match; if Origin
 // is absent, a same-origin Referer is required instead; absent both is
 // rejected.
+//
+// A literal "null" Origin is treated the same as an absent one, not as
+// a non-matching value: browsers legitimately send this opaque value
+// for same-origin requests in some redirect/navigation contexts (e.g.
+// spec section 5 step 1's own /auth-issued 303 redirect into the
+// request page), not just from a sandboxed or attacker-controlled
+// context. Falling through to the Referer check here costs nothing
+// against a real cross-origin attacker: their own page's form
+// submission carries their own Origin, never the literal string "null".
 func checkOrigin(r *http.Request) bool {
 	expected := "https://" + r.Host
-	if origin := r.Header.Get("Origin"); origin != "" {
+	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
 		return origin == expected
 	}
 	referer := r.Header.Get("Referer")
