@@ -119,6 +119,53 @@ func (db *DB) TouchLastSeen(ctx context.Context, authorizationID uuid.UUID, clie
 	return nil
 }
 
+// RevokeByCredentialHash implements the browser-initiated logout (spec
+// section 9's POST /logout: "Revoke own authorization and clear access/
+// pending cookies"). A hostname that doesn't match the credential's own
+// application, or a hash that matches nothing, is a silent no-op --
+// logout always looks successful from the browser's side either way,
+// since the cookies get cleared regardless.
+func (db *DB) RevokeByCredentialHash(ctx context.Context, hostname string, tokenHash []byte, revokedBy string) error {
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: logout: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var authorizationID, applicationID, requestID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT z.id, z.application_id, z.request_id
+		FROM credentials c
+		JOIN authorizations z ON z.id = c.authorization_id
+		JOIN applications a ON a.id = c.application_id
+		WHERE c.token_hash = $1 AND a.hostname = $2 AND z.revoked_at IS NULL`,
+		tokenHash, hostname,
+	).Scan(&authorizationID, &applicationID, &requestID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("store: logout: looking up credential: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE authorizations SET revoked_at = now(), revoked_by = $2, revocation_reason = 'logout', version = version + 1
+		WHERE id = $1`, authorizationID, revokedBy); err != nil {
+		return fmt.Errorf("store: logout: revoking authorization: %w", err)
+	}
+	if err := insertAuditEvent(ctx, tx, auditParams{
+		ActorType: "browser", Action: "authorization.revoked",
+		ApplicationID: &applicationID, RequestID: &requestID, AuthorizationID: &authorizationID, Reason: "logout",
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: logout: commit: %w", err)
+	}
+	return nil
+}
+
 func nullableInet(s string) any {
 	if s == "" {
 		return nil

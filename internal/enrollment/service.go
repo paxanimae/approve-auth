@@ -306,6 +306,19 @@ func (s *Service) lookupContextAndRequest(ctx context.Context, pendingTokenRaw, 
 	return ec, req, nil
 }
 
+// Logout revokes the browser's own authorization for hostname (spec
+// section 9). Always a no-op rather than an error if the cookie doesn't
+// match anything live -- the browser clears its cookies either way.
+func (s *Service) Logout(ctx context.Context, hostname, accessCookieValue string) error {
+	if accessCookieValue == "" {
+		return nil
+	}
+	if err := s.store.RevokeByCredentialHash(ctx, hostname, hashToken(accessCookieValue), "self"); err != nil {
+		return fmt.Errorf("enrollment: logout: %w", err)
+	}
+	return nil
+}
+
 func pgConstraintName(err error) string {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 )
@@ -268,6 +270,54 @@ func TestClaim_AlreadyClaimedButEnvelopePurged(t *testing.T) {
 
 	if _, err := svc.Claim(ctx, boot.RawPendingToken, boot.CSRFToken); !errors.Is(err, enrollment.ErrAlreadyClaimedNoEnvelope) {
 		t.Errorf("Claim with a purged envelope: got %v, want ErrAlreadyClaimedNoEnvelope", err)
+	}
+}
+
+func TestLogout_RevokesOwnAuthorization(t *testing.T) {
+	db, svc, hostname := setup(t)
+	ctx := context.Background()
+
+	boot, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if _, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken}); err != nil {
+		t.Fatalf("SubmitRequest: %v", err)
+	}
+	req, found, err := db.GetApprovalRequestByTokenHash(ctx, hashForTest(boot.RawPendingToken))
+	if err != nil || !found {
+		t.Fatalf("GetApprovalRequestByTokenHash: found=%v err=%v", found, err)
+	}
+	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test"); err != nil {
+		t.Fatalf("ApproveRequest: %v", err)
+	}
+	claimed, err := svc.Claim(ctx, boot.RawPendingToken, boot.CSRFToken)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+
+	if err := svc.Logout(ctx, hostname, claimed.RawAccessToken); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+
+	var authorizationID uuid.UUID
+	if err := db.Pool.QueryRow(ctx, `SELECT id FROM authorizations WHERE request_id = $1`, req.ID).Scan(&authorizationID); err != nil {
+		t.Fatalf("querying authorization id: %v", err)
+	}
+	auth, ok, err := db.GetAuthorizationByID(ctx, authorizationID)
+	if err != nil || !ok {
+		t.Fatalf("GetAuthorizationByID: ok=%v err=%v", ok, err)
+	}
+	if auth.RevokedAt == nil {
+		t.Error("expected the authorization to be revoked after Logout")
+	}
+
+	// Logging out again (or with a garbage token) must not error.
+	if err := svc.Logout(ctx, hostname, claimed.RawAccessToken); err != nil {
+		t.Errorf("Logout (repeat): %v", err)
+	}
+	if err := svc.Logout(ctx, hostname, "not-a-real-token"); err != nil {
+		t.Errorf("Logout (garbage token): %v", err)
 	}
 }
 

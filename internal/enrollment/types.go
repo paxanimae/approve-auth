@@ -43,6 +43,8 @@ type Store interface {
 	DeleteClaimEnvelope(ctx context.Context, requestID uuid.UUID) error
 
 	IncrementRateLimit(ctx context.Context, bucketKey string, windowStart time.Time, windowTTL time.Duration) (int, error)
+
+	RevokeByCredentialHash(ctx context.Context, hostname string, tokenHash []byte, revokedBy string) error
 }
 
 // BootstrapInput/Result back GET /__manual-approval/request (spec
