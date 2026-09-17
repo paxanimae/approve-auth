@@ -29,6 +29,23 @@ const (
 	CategoryRevokedOrDisabled
 )
 
+// String is a fixed, low-cardinality label -- safe for metrics (spec
+// section 15: never label by anything unbounded) as well as logs.
+func (c Category) String() string {
+	switch c {
+	case CategoryAllow:
+		return "allow"
+	case CategoryUnknownHost:
+		return "unknown_host"
+	case CategoryMissingOrInvalidCredential:
+		return "missing_or_invalid_credential"
+	case CategoryRevokedOrDisabled:
+		return "revoked_or_disabled"
+	default:
+		return "unknown"
+	}
+}
+
 // Decision is the outcome of the authoritative check (spec section 3).
 type Decision struct {
 	Category Category

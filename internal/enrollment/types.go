@@ -21,6 +21,8 @@ type Config struct {
 	ClaimEncryptionKey             []byte
 	ClaimEncryptionKeyID           string
 	PendingRequestsPerHourPerAppIP int
+	BootstrapPerMinutePerIP        int
+	StatusPerMinutePerPendingProof int
 }
 
 // Store is the persistence surface this package needs. Defined here
@@ -52,6 +54,7 @@ type Store interface {
 type BootstrapInput struct {
 	Hostname             string
 	ExistingPendingToken string // "" if the browser has no pending cookie yet
+	ClientIP             string
 }
 
 type BootstrapResult struct {

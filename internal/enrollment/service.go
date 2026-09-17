@@ -2,12 +2,14 @@ package enrollment
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 )
 
@@ -34,6 +36,18 @@ func New(s Store, cfg Config) *Service {
 }
 
 func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (BootstrapResult, error) {
+	if s.cfg.BootstrapPerMinutePerIP > 0 && in.ClientIP != "" {
+		windowStart := time.Now().Truncate(time.Minute)
+		count, err := s.store.IncrementRateLimit(ctx, "bootstrap:"+in.ClientIP, windowStart, time.Minute)
+		if err != nil {
+			return BootstrapResult{}, fmt.Errorf("enrollment: bootstrap: rate limit: %w", err)
+		}
+		if count > s.cfg.BootstrapPerMinutePerIP {
+			metrics.RateLimitRejections.WithLabelValues("bootstrap_per_minute_per_ip").Inc()
+			return BootstrapResult{}, ErrRateLimited
+		}
+	}
+
 	app, ok, err := s.store.GetApplicationByHostname(ctx, in.Hostname)
 	if err != nil {
 		return BootstrapResult{}, fmt.Errorf("enrollment: bootstrap: %w", err)
@@ -112,6 +126,7 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 			return SubmitRequestResult{}, fmt.Errorf("enrollment: submit: rate limit: %w", err)
 		}
 		if count > s.cfg.PendingRequestsPerHourPerAppIP {
+			metrics.RateLimitRejections.WithLabelValues("pending_requests_per_hour_per_app_ip").Inc()
 			return SubmitRequestResult{}, ErrRateLimited
 		}
 	}
@@ -164,6 +179,20 @@ func (s *Service) Status(ctx context.Context, pendingTokenRaw string) (StatusRes
 	if pendingTokenRaw == "" {
 		return StatusResult{}, ErrInvalidPendingProof
 	}
+
+	if s.cfg.StatusPerMinutePerPendingProof > 0 {
+		windowStart := time.Now().Truncate(time.Minute)
+		bucketKey := "status:" + hex.EncodeToString(hashToken(pendingTokenRaw))
+		count, err := s.store.IncrementRateLimit(ctx, bucketKey, windowStart, time.Minute)
+		if err != nil {
+			return StatusResult{}, fmt.Errorf("enrollment: status: rate limit: %w", err)
+		}
+		if count > s.cfg.StatusPerMinutePerPendingProof {
+			metrics.RateLimitRejections.WithLabelValues("status_per_minute_per_pending_proof").Inc()
+			return StatusResult{}, ErrRateLimited
+		}
+	}
+
 	req, found, err := s.store.GetApprovalRequestByTokenHash(ctx, hashToken(pendingTokenRaw))
 	if err != nil {
 		return StatusResult{}, fmt.Errorf("enrollment: status: %w", err)

@@ -2,8 +2,10 @@ package httpserver_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +24,19 @@ type fakeDecider struct {
 
 func (f fakeDecider) Decide(_ context.Context, _ authz.AuthRequest) (authz.Decision, error) {
 	return f.decision, f.err
+}
+
+// fakeReadyChecker is a minimal stand-in for *store.DB's Ping/SchemaReady,
+// for tests that only care about routing, not real database readiness.
+type fakeReadyChecker struct {
+	pingErr        error
+	schemaReady    bool
+	schemaReadyErr error
+}
+
+func (f fakeReadyChecker) Ping(context.Context) error { return f.pingErr }
+func (f fakeReadyChecker) SchemaReady(context.Context) (bool, error) {
+	return f.schemaReady, f.schemaReadyErr
 }
 
 // fakeEnroller is a minimal stand-in for internal/enrollment.Service, for
@@ -118,9 +133,11 @@ func listeners() []listener {
 		},
 		{
 			name: "ops",
-			mux:  httpserver.NewOpsMux(),
+			mux:  httpserver.NewOpsMux(fakeReadyChecker{schemaReady: true}),
 			routes: []route{
 				{"GET", "/livez"},
+				{"GET", "/readyz"},
+				{"GET", "/metrics"},
 			},
 		},
 	}
@@ -200,7 +217,7 @@ func TestPublicAssetsServeEmbeddedContent(t *testing.T) {
 }
 
 func TestLivezReturnsOKWithNoStore(t *testing.T) {
-	mux := httpserver.NewOpsMux()
+	mux := httpserver.NewOpsMux(fakeReadyChecker{schemaReady: true})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -215,5 +232,52 @@ func TestLivezReturnsOKWithNoStore(t *testing.T) {
 	}
 	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("GET /livez: Cache-Control = %q, want %q", got, "no-store")
+	}
+}
+
+func TestReadyz_ReflectsDatabaseAndSchemaState(t *testing.T) {
+	cases := []struct {
+		name    string
+		checker fakeReadyChecker
+		want    int
+	}{
+		{"db up, schema ready", fakeReadyChecker{schemaReady: true}, http.StatusOK},
+		{"db down", fakeReadyChecker{pingErr: errors.New("connection refused"), schemaReady: true}, http.StatusServiceUnavailable},
+		{"schema not ready", fakeReadyChecker{schemaReady: false}, http.StatusServiceUnavailable},
+		{"schema check errored", fakeReadyChecker{schemaReadyErr: errors.New("boom")}, http.StatusServiceUnavailable},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mux := httpserver.NewOpsMux(c.checker)
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+
+			resp, err := http.Get(srv.URL + "/readyz")
+			if err != nil {
+				t.Fatalf("GET /readyz: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != c.want {
+				t.Errorf("GET /readyz: got status %d, want %d", resp.StatusCode, c.want)
+			}
+		})
+	}
+}
+
+func TestMetrics_ServesPrometheusFormat(t *testing.T) {
+	mux := httpserver.NewOpsMux(fakeReadyChecker{schemaReady: true})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /metrics: got status %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/plain") {
+		t.Errorf("GET /metrics: Content-Type = %q, want text/plain (Prometheus exposition format)", ct)
 	}
 }

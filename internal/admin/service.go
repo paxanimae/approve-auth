@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 )
 
@@ -41,9 +42,26 @@ func New(s Store, cfg Config) *Service {
 	return &Service{store: s, cfg: cfg}
 }
 
+// recordAdminAction is spec section 15's "approval/denial/renewal/
+// revocation totals" -- outcome is one of success/conflict/error, never
+// anything with unbounded cardinality.
+func recordAdminAction(action string, err error) {
+	outcome := "success"
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrConflict), errors.Is(err, ErrInvalidExpiry), errors.Is(err, ErrDuplicateHostname), errors.Is(err, ErrInvalidDuration):
+		outcome = "rejected"
+	default:
+		outcome = "error"
+	}
+	metrics.AdminActions.WithLabelValues(action, outcome).Inc()
+}
+
 // Approve implements spec section 5 step 6 / section 7: approval sets
 // accepted state but the browser must still claim its credential.
-func (s *Service) Approve(ctx context.Context, in ApproveInput) (ApproveResult, error) {
+func (s *Service) Approve(ctx context.Context, in ApproveInput) (result ApproveResult, err error) {
+	defer func() { recordAdminAction("approve", err) }()
+
 	requestID, err := uuid.Parse(in.RequestID)
 	if err != nil {
 		return ApproveResult{}, fmt.Errorf("admin: approve: invalid request id: %w", err)
@@ -68,7 +86,9 @@ func (s *Service) Approve(ctx context.Context, in ApproveInput) (ApproveResult, 
 	return ApproveResult{AuthorizationID: auth.ID.String(), ExpiresAt: auth.ExpiresAt}, nil
 }
 
-func (s *Service) Deny(ctx context.Context, in DenyInput) error {
+func (s *Service) Deny(ctx context.Context, in DenyInput) (err error) {
+	defer func() { recordAdminAction("deny", err) }()
+
 	requestID, err := uuid.Parse(in.RequestID)
 	if err != nil {
 		return fmt.Errorf("admin: deny: invalid request id: %w", err)
@@ -82,7 +102,9 @@ func (s *Service) Deny(ctx context.Context, in DenyInput) error {
 	return nil
 }
 
-func (s *Service) Revoke(ctx context.Context, in RevokeInput) error {
+func (s *Service) Revoke(ctx context.Context, in RevokeInput) (err error) {
+	defer func() { recordAdminAction("revoke", err) }()
+
 	authorizationID, err := uuid.Parse(in.AuthorizationID)
 	if err != nil {
 		return fmt.Errorf("admin: revoke: invalid authorization id: %w", err)
@@ -100,7 +122,9 @@ func (s *Service) Revoke(ctx context.Context, in RevokeInput) error {
 // new_expires_at > current / > now / <= credential-ceiling checks live
 // in store.RenewAuthorization since they need a locked, consistent read
 // of both the authorization and its credential.
-func (s *Service) Renew(ctx context.Context, in RenewInput) error {
+func (s *Service) Renew(ctx context.Context, in RenewInput) (err error) {
+	defer func() { recordAdminAction("renew", err) }()
+
 	authorizationID, err := uuid.Parse(in.AuthorizationID)
 	if err != nil {
 		return fmt.Errorf("admin: renew: invalid authorization id: %w", err)

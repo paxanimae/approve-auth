@@ -13,6 +13,7 @@ import (
 
 	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
 	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
+	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
 	webpublic "github.com/frid-iks/traefik-manual-proxy/web/public"
 )
 
@@ -110,6 +111,28 @@ func mapEnrollmentError(w http.ResponseWriter, err error) {
 	}
 }
 
+// enrollmentErrorReason is a fixed, low-cardinality label for spec
+// section 15's "poll and claim errors" metrics -- never the raw error
+// string, which could embed request-specific detail.
+func enrollmentErrorReason(err error) string {
+	switch {
+	case errors.Is(err, enrollment.ErrApplicationUnavailable):
+		return "application_unavailable"
+	case errors.Is(err, enrollment.ErrInvalidPendingProof):
+		return "invalid_pending_proof"
+	case errors.Is(err, enrollment.ErrInvalidCSRF):
+		return "invalid_csrf"
+	case errors.Is(err, enrollment.ErrRateLimited):
+		return "rate_limited"
+	case errors.Is(err, enrollment.ErrNotClaimable):
+		return "not_claimable"
+	case errors.Is(err, enrollment.ErrAlreadyClaimedNoEnvelope):
+		return "claim_expired"
+	default:
+		return "internal_error"
+	}
+}
+
 // --- GET /__manual-approval/request ---
 
 type requestPageData struct {
@@ -130,6 +153,7 @@ func requestPageHandler(enroller Enroller, requestTTL time.Duration) http.Handle
 		result, err := enroller.Bootstrap(r.Context(), enrollment.BootstrapInput{
 			Hostname:             requestHostname(r),
 			ExistingPendingToken: existingPending,
+			ClientIP:             clientIP(r),
 		})
 		if err != nil {
 			mapEnrollmentError(w, err)
@@ -293,6 +317,7 @@ func statusHandler(enroller Enroller) http.HandlerFunc {
 				writeJSON(w, http.StatusOK, map[string]any{"state": "not_requested", "server_time": time.Now()})
 				return
 			}
+			metrics.PollErrors.WithLabelValues(enrollmentErrorReason(err)).Inc()
 			mapEnrollmentError(w, err)
 			return
 		}
@@ -352,6 +377,7 @@ func claimHandler(enroller Enroller, credentialCookieMaxAge time.Duration) http.
 
 		outcome, err := enroller.Claim(r.Context(), pendingToken, csrfToken)
 		if err != nil {
+			metrics.ClaimErrors.WithLabelValues(enrollmentErrorReason(err)).Inc()
 			mapEnrollmentError(w, err)
 			return
 		}

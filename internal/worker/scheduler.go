@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"time"
+
+	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
 )
 
 // Job is one scheduled retention/cleanup unit of work.
@@ -58,8 +60,14 @@ func (s *Scheduler) runOnce(ctx context.Context, job Job) {
 	ran, err := s.db.WithAdvisoryLock(ctx, "worker:"+job.Name, job.Run)
 	if err != nil {
 		log.Printf("worker: job %s failed: %v", job.Name, err)
+		return
 	}
-	_ = ran // another replica holding the lock is normal, not worth logging every tick
+	if ran {
+		metrics.CleanupLastSuccessTimestamp.WithLabelValues(job.Name).Set(float64(time.Now().Unix()))
+	}
+	// ran == false (another replica holds the lock) is normal, not
+	// worth logging every tick, and doesn't move the timestamp -- that
+	// replica's own successful run already will.
 }
 
 // drainBatches repeatedly calls purge until a batch comes back smaller

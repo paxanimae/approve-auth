@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	webadmin "github.com/frid-iks/traefik-manual-proxy/web/admin"
 	webpublic "github.com/frid-iks/traefik-manual-proxy/web/public"
@@ -191,15 +193,39 @@ func adminConsoleHandler() http.HandlerFunc {
 	}
 }
 
-// NewOpsMux serves process-health endpoints on the Ops listener only.
-// Liveness only in this milestone: readiness needs real schema/dependency
-// checks that don't exist until the milestone that adds repository code.
-func NewOpsMux() *http.ServeMux {
+// ReadyChecker is the internal/store.DB surface GET /readyz needs.
+type ReadyChecker interface {
+	Ping(ctx context.Context) error
+	SchemaReady(ctx context.Context) (bool, error)
+}
+
+// NewOpsMux serves process-health and metrics endpoints on the Ops
+// listener only (spec section 2: "Internal monitoring network only";
+// spec section 15: "Restrict metrics to operations access").
+func NewOpsMux(ready ReadyChecker) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 	})
+	// Readiness checks database connectivity and schema compatibility
+	// (spec section 13) -- required secrets and listener initialization
+	// are checked at startup, before any listener including this one
+	// ever binds, so a replica answering at all already satisfies those.
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if err := ready.Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		schemaReady, err := ready.SchemaReady(r.Context())
+		if err != nil || !schemaReady {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.Handle("GET /metrics", promhttp.Handler())
 	return mux
 }
 

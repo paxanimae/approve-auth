@@ -23,6 +23,7 @@ import (
 	"github.com/frid-iks/traefik-manual-proxy/internal/config"
 	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
 	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
+	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
 	"github.com/frid-iks/traefik-manual-proxy/internal/oidc"
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 	"github.com/frid-iks/traefik-manual-proxy/internal/worker"
@@ -96,6 +97,8 @@ func run() error {
 		ClaimEncryptionKey:             cfg.ClaimEncryptionKey,
 		ClaimEncryptionKeyID:           cfg.ClaimEncryptionKeyID,
 		PendingRequestsPerHourPerAppIP: cfg.RateLimits.PendingRequestsPerHourPerAppIP,
+		BootstrapPerMinutePerIP:        cfg.RateLimits.BootstrapPerMinutePerIP,
+		StatusPerMinutePerPendingProof: cfg.RateLimits.StatusPerMinutePerPendingProof,
 	})
 
 	adminHost, err := adminOriginHost(cfg.AdminOrigin)
@@ -127,12 +130,13 @@ func run() error {
 		TickInterval:              workerTickInterval,
 	}))
 	retentionWorker.Start(ctx)
+	go reportOverviewGauges(ctx, db, cfg.ExpiringSoonWindow.Std())
 
 	servers := []*http.Server{
 		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux(enrollmentService, authzService, cfg.RequestTTL.Std(), cfg.CredentialMaxAge.Std(), cfg.AuthDecisionTimeout.Std())},
 		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux(adminSessions, adminActions, db, adminHost, cfg.AdminAbsoluteTTL.Std(), cfg.ExpiringSoonWindow.Std(), overviewRecentWindow)},
 		{Addr: cfg.AuthAddr, Handler: httpserver.NewAuthMux(authzService, cfg.AuthDecisionTimeout.Std()), TLSConfig: authTLSConfig},
-		{Addr: cfg.OpsAddr, Handler: httpserver.NewOpsMux()},
+		{Addr: cfg.OpsAddr, Handler: httpserver.NewOpsMux(db)},
 	}
 
 	errCh := make(chan error, len(servers))
@@ -151,6 +155,8 @@ func run() error {
 		}()
 	}
 	log.Printf("listening: public=%s admin=%s auth=%s ops=%s", cfg.PublicAddr, cfg.AdminAddr, cfg.AuthAddr, cfg.OpsAddr)
+	metrics.Ready.Set(1)
+	defer metrics.Ready.Set(0)
 
 	select {
 	case <-ctx.Done():
@@ -176,6 +182,29 @@ func run() error {
 	wg.Wait()
 
 	return nil
+}
+
+// reportOverviewGauges periodically reflects store.GetOverviewCounts
+// into the pending/active/expiring-soon gauges spec section 15 asks for
+// ("active/pending/expiring counts"), reusing the same query the admin
+// API's GET /overview already runs -- this is a metrics convenience,
+// not a new counting mechanism.
+func reportOverviewGauges(ctx context.Context, db *store.DB, expiringSoonWindow time.Duration) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		counts, err := db.GetOverviewCounts(ctx, expiringSoonWindow, overviewRecentWindow)
+		if err == nil {
+			metrics.PendingRequests.Set(float64(counts.Pending))
+			metrics.ActiveAuthorizations.Set(float64(counts.Active))
+			metrics.ExpiringSoonAuthorizations.Set(float64(counts.ExpiringSoon))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // adminOriginHost extracts just the hostname from the configured

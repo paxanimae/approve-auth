@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
+	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
 )
 
 // Decider is the authz.Service surface the /auth handler needs. Defined
@@ -128,8 +129,12 @@ func NewAuthMux(decider Decider, decisionTimeout time.Duration) *http.ServeMux {
 
 func authHandler(decider Decider, decisionTimeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		defer func() { metrics.AuthDecisionDuration.Observe(time.Since(start).Seconds()) }()
+
 		parsed := parseAuthRequest(r)
 		if parsed.malformed {
+			metrics.AuthDecisions.WithLabelValues("malformed", "malformed_request").Inc()
 			writeAPIError(w, http.StatusBadRequest, "malformed_request", "malformed forwarded request metadata or cookie")
 			return
 		}
@@ -138,10 +143,12 @@ func authHandler(decider Decider, decisionTimeout time.Duration) http.HandlerFun
 		defer cancel()
 		decision, err := decider.Decide(ctx, parsed.req)
 		if err != nil {
+			metrics.AuthDecisions.WithLabelValues("error", "decision_unavailable").Inc()
 			w.Header().Set("Retry-After", "5")
 			writeAPIError(w, http.StatusServiceUnavailable, "decision_unavailable", "authorization decision temporarily unavailable")
 			return
 		}
+		metrics.AuthDecisions.WithLabelValues(decision.Category.String(), decision.Reason).Inc()
 
 		switch decision.Category {
 		case authz.CategoryAllow:

@@ -36,6 +36,8 @@ func testConfig() enrollment.Config {
 		ClaimEncryptionKey:             key,
 		ClaimEncryptionKeyID:           "test",
 		PendingRequestsPerHourPerAppIP: 5,
+		BootstrapPerMinutePerIP:        5,
+		StatusPerMinutePerPendingProof: 5,
 	}
 }
 
@@ -172,6 +174,55 @@ func TestSubmitRequest_RateLimited(t *testing.T) {
 	}
 	if !errors.Is(lastErr, enrollment.ErrRateLimited) {
 		t.Errorf("6th submission from the same IP: got %v, want ErrRateLimited", lastErr)
+	}
+}
+
+func TestBootstrap_RateLimitedPerIP(t *testing.T) {
+	_, svc, hostname := setup(t)
+	ctx := context.Background()
+
+	var lastErr error
+	for i := 0; i < 6; i++ {
+		_, lastErr = svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname, ClientIP: "203.0.113.88"})
+	}
+	if !errors.Is(lastErr, enrollment.ErrRateLimited) {
+		t.Errorf("6th bootstrap from the same IP: got %v, want ErrRateLimited", lastErr)
+	}
+
+	// A different IP is a separate bucket.
+	if _, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname, ClientIP: "203.0.113.89"}); err != nil {
+		t.Errorf("bootstrap from a different IP: got %v, want no error", err)
+	}
+}
+
+func TestStatus_RateLimitedPerPendingProof(t *testing.T) {
+	_, svc, hostname := setup(t)
+	ctx := context.Background()
+
+	submitAndBootstrap := func() enrollment.BootstrapResult {
+		boot, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+		if err != nil {
+			t.Fatalf("Bootstrap: %v", err)
+		}
+		if _, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken}); err != nil {
+			t.Fatalf("SubmitRequest: %v", err)
+		}
+		return boot
+	}
+
+	boot := submitAndBootstrap()
+	var lastErr error
+	for i := 0; i < 6; i++ {
+		_, lastErr = svc.Status(ctx, boot.RawPendingToken)
+	}
+	if !errors.Is(lastErr, enrollment.ErrRateLimited) {
+		t.Errorf("6th status poll for the same pending proof: got %v, want ErrRateLimited", lastErr)
+	}
+
+	// A different pending proof is a separate bucket.
+	boot2 := submitAndBootstrap()
+	if _, err := svc.Status(ctx, boot2.RawPendingToken); err != nil {
+		t.Errorf("status for a different pending proof: got %v, want no error", err)
 	}
 }
 

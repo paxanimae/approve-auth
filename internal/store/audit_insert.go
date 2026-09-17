@@ -6,6 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
 )
 
 // auditParams is the subset of audit_events columns every mutation in
@@ -37,6 +39,7 @@ func insertAuditEvent(ctx context.Context, tx pgx.Tx, p auditParams) error {
 		p.ActorType, nullableText(p.ActorSubject), p.Action, p.ApplicationID, p.RequestID, p.AuthorizationID, nullableText(p.Reason), outcome,
 	)
 	if err != nil {
+		metrics.AuditInsertFailures.Inc()
 		return fmt.Errorf("store: recording audit event %q: %w", p.Action, err)
 	}
 	return nil
