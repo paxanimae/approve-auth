@@ -37,6 +37,8 @@ func run(args []string) error {
 		return runMigrate(args[1:], "migrate-down", store.MigrateDown)
 	case "revoke-admin-session":
 		return runRevokeAdminSession(args[1:])
+	case "purge-audit-log":
+		return runPurgeAuditLog(args[1:])
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", args[0])
@@ -54,6 +56,8 @@ Commands:
   migrate-up              Apply pending migrations (needs a privileged connection -- see spec section 13)
   migrate-down            Reverse applied migrations (tests/local dev only)
   revoke-admin-session    Force-revoke all of one admin's sessions by OIDC issuer/subject
+  purge-audit-log         Delete audit_events older than -max-age (needs an app_maintenance
+                          connection -- see spec section 11, control 10)
 `)
 }
 
@@ -171,5 +175,55 @@ func runRevokeAdminSession(args []string) error {
 	}
 
 	fmt.Printf("revoked %d session(s) for issuer=%s subject=%s\n", count, *issuer, *subject)
+	return nil
+}
+
+// runPurgeAuditLog deletes audit_events older than -max-age (spec
+// section 12: "audit 365 days"). This is a separate operator command,
+// not one of cmd/server's own background retention jobs, because only
+// the app_maintenance database role may delete audit_events (spec
+// section 11, control 10, enforced by migration 000012's grants) --
+// -config here must point at a maintenance-role connection, the same
+// way migrate-up needs a privileged one. Run it periodically (e.g. a
+// daily cron/Swarm job -- see docs/runbooks).
+func runPurgeAuditLog(args []string) error {
+	fs := flag.NewFlagSet("purge-audit-log", flag.ContinueOnError)
+	configFile := fs.String("config", os.Getenv("CONFIG_FILE"), "path to the nonsecret YAML config file")
+	maxAge := fs.Duration("max-age", 365*24*time.Hour, "delete audit events older than this")
+	batchSize := fs.Int("batch-size", 1000, "rows deleted per batch")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*configFile)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	if cfg.DatabaseURL == "" {
+		return fmt.Errorf("DATABASE_URL_FILE is not set (see -config or the env var)")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	db, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer db.Close()
+
+	total := 0
+	for {
+		n, err := db.PurgeOldAuditEvents(ctx, *maxAge, *batchSize)
+		if err != nil {
+			return fmt.Errorf("purging audit log: %w", err)
+		}
+		total += n
+		if n < *batchSize {
+			break
+		}
+	}
+
+	fmt.Printf("purge-audit-log: deleted %d audit event(s) older than %s\n", total, *maxAge)
 	return nil
 }

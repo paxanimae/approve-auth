@@ -25,6 +25,7 @@ import (
 	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
 	"github.com/frid-iks/traefik-manual-proxy/internal/oidc"
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/traefik-manual-proxy/internal/worker"
 )
 
 const shutdownGrace = 30 * time.Second
@@ -37,6 +38,12 @@ const oidcTransactionTTL = 10 * time.Minute
 // overviewRecentWindow bounds GET /overview's "revoked/expired recently"
 // count (spec section 9 names the count but not its exact window).
 const overviewRecentWindow = 24 * time.Hour
+
+// workerTickInterval governs how often each retention/cleanup job runs
+// (internal/worker). Not one of spec section 14's operator-tunable
+// settings, only "bounded batches" is specified -- five minutes keeps
+// an ordinary backlog small enough that "bounded" never matters.
+const workerTickInterval = 5 * time.Minute
 
 func main() {
 	if err := run(); err != nil {
@@ -112,6 +119,14 @@ func run() error {
 		MaxAuthorizationDuration:     cfg.MaxAuthorizationDuration.Std(),
 		ClaimTTL:                     cfg.ClaimTTL.Std(),
 	})
+
+	retentionWorker := worker.New(db, worker.Jobs(db, worker.Config{
+		ResolvedRequestsRetention: cfg.Retention.ResolvedRequests.Std(),
+		IPAndUserAgentRetention:   cfg.Retention.IPAndUserAgent.Std(),
+		ReturnPathsRetention:      cfg.Retention.ReturnPaths.Std(),
+		TickInterval:              workerTickInterval,
+	}))
+	retentionWorker.Start(ctx)
 
 	servers := []*http.Server{
 		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux(enrollmentService, authzService, cfg.RequestTTL.Std(), cfg.CredentialMaxAge.Std(), cfg.AuthDecisionTimeout.Std())},
