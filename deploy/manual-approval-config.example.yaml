@@ -1,0 +1,55 @@
+# Example nonsecret production config (spec section 14). Copy this to a
+# real file with real values, then point deploy/stack.yml's `configs:
+# manual-approval-config` at it (export CONFIG_PATH before `docker stack
+# deploy`, or edit the path directly).
+#
+# Everything security-sensitive is a *_FILE secret path instead (see
+# deploy/stack.yml's `secrets:` and docs/runbooks/rollout-rollback.md) --
+# nothing below this line is a secret.
+
+admin_origin: https://approval-admin.example.com
+oidc_issuer: https://login.example.com/
+oidc_client_id: replace-with-your-real-oidc-client-id
+oidc_admin_groups: ["replace-with-a-real-admin-group-id"]
+oidc_viewer_groups: ["replace-with-a-real-viewer-group-id"]
+
+claim_encryption_key_id: primary
+
+auth_tls_cert_file: /run/secrets/auth_tls_cert
+auth_tls_key_file: /run/secrets/auth_tls_key
+auth_client_ca_file: /run/secrets/auth_client_ca
+auth_allowed_client_identities: ["manual-approval"] # Traefik's client-certificate SAN/CN
+
+# Real deployment network ranges only -- never leave this wide-open in
+# production the way the dev compose stack's "0.0.0.0/0" is (that's
+# documented there as dev-only).
+trusted_traefik_cidrs: ["10.0.0.0/8"]
+
+# Everything below is a spec-mandated default (section 11/14); override
+# only if your organization has decided differently, not by default.
+default_authorization_duration: 720h # 30 days
+max_authorization_duration: 8760h # 365 days
+credential_max_age: 8760h # 365 days
+request_ttl: 24h
+claim_ttl: 30m
+claim_retry_ttl: 10m
+expiring_soon_window: 168h # 7 days
+admin_idle_ttl: 30m
+admin_absolute_ttl: 8h
+auth_decision_timeout: 2s
+log_level: info
+
+rate_limits:
+  pending_requests_per_hour_per_app_ip: 5
+  bootstrap_per_minute_per_ip: 30
+  status_per_minute_per_pending_proof: 20
+  admin_writes_per_minute_per_admin: 60
+  global_enrollment_per_hour: 1000
+
+retention:
+  audit_events: 8760h # 365 days
+  resolved_requests: 2160h # 90 days
+  ip_and_user_agent: 720h # 30 days
+  return_paths: 168h # 7 days
+  idempotency_records: 24h
+  claim_envelopes: 10m

@@ -1,6 +1,6 @@
 # Threat model
 
-Status: through Milestone 3. Documents the threat model from spec section
+Status: through Milestone 5. Documents the threat model from spec section
 11 and which control is enforced by which layer today versus a later
 milestone. This is a living document -- update it as each milestone lands
 its controls, not just once at the end.
@@ -43,10 +43,15 @@ compromised backend, database, or Swarm host -- see section 6.
 | Secrets leaking via env vars, logs, or image layers | Secrets read only from `<NAME>_FILE` paths; the bare env var being set at all (any value) is a hard startup error | `internal/config.loadSecrets` | **Implemented and tested** (`internal/config/config_test.go`) |
 | Malformed/missing security configuration reaching a running listener | `Validate()` aggregates every configuration problem and `cmd/server` refuses to bind any listener if it returns an error | `internal/config.Validate`, `cmd/server/main.go` | **Implemented** |
 | CSRF against enrollment mutations | Synchronizer CSRF tokens (HMAC of the enrollment context's stored secret) on requests/cancel/claim/ack; exact-Origin-or-same-origin-Referer required on every mutating public endpoint | `internal/enrollment` (`csrf.go`), `internal/httpserver.checkOrigin` | **Implemented and tested**, including end-to-end against real Traefik (`tests/integration/enrollment_flow_test.go`) -- which is what caught `Status` not actually carrying the CSRF token the waiting page's forms needed, before this line could honestly say "implemented" |
-| CSRF against admin mutations | Same synchronizer-token approach, on the admin API | Deferred to Milestone 4 -- `internal/admin`'s business logic exists and is tested, but no HTTP endpoint or admin session exists yet to attach CSRF protection to | **Deferred to Milestone 4** |
+| CSRF against admin mutations | Same synchronizer-token approach, on the admin API; every mutation (including logout) requires an `X-CSRF-Token` header matching the session's own derived token | `internal/httpserver.requireAdminCSRF`, `internal/adminsession` (`csrfToken`/`validCSRFToken`) | **Implemented and tested** (`internal/httpserver/admin_handlers_test.go`'s missing/wrong-token cases; `internal/adminsession/service_test.go`'s logout CSRF cases) |
+| Admin OIDC login itself: state/nonce/PKCE tampering, wrong audience, replayed authorization code | Backend Authorization Code + PKCE via `coreos/go-oidc` (a mature library, not custom JWT crypto); state/nonce/PKCE verifier stored server-side, single-use, 10-minute expiry; ID token nonce checked explicitly (go-oidc doesn't do this itself) | `internal/oidc.Client`, `internal/adminsession.Service.BeginLogin/HandleCallback`, `store.ConsumeOIDCTransaction` (atomic single-use) | **Implemented and tested** against a real (not mocked) RS256-signing OIDC provider (`internal/oidc/client_test.go`), and end to end against `cmd/mock-oidc` in the real dev stack (login redirect -> IdP -> callback -> session cookie -> authenticated API call) |
 | Guessed request IDs / verification-code enumeration | Verification codes are a comparison aid only, never sufficient to retrieve a record; live-request uniqueness is DB-enforced | `migrations/000003` (partial unique index on live `verification_code`); every public lookup (`Status`, `Cancel`, `Claim`, `Ack`) resolves by pending-proof hash, never by verification code | **Implemented** -- the public endpoints never accept a verification code as a lookup key at all |
-| Compromised low-privilege (`viewer`) admin account | Role check on every mutating call; `viewer` cannot mutate | `internal/admin` (Milestone 4 for the actual HTTP enforcement); `admin_sessions.role` CHECK constraint exists now | **Schema control implemented, HTTP-level enforcement deferred to Milestone 4** |
+| Compromised low-privilege (`viewer`) admin account | Role check on every mutating call; `viewer` cannot mutate | `internal/httpserver.requireAdministrator`, `admin_sessions.role` CHECK constraint | **Implemented and tested** (`internal/httpserver/admin_handlers_test.go`'s `TestAdminMutation_ViewerRoleForbidden`) |
 | Claim-retry envelope misuse (replaying/relinking an encrypted retry blob to the wrong request or credential) | AES-256-GCM with the request and application IDs as authenticated additional data -- ciphertext associated with the wrong row fails to decrypt | `internal/enrollment/envelope.go` | **Implemented and tested** (`internal/enrollment/service_test.go`'s retry and envelope-purged cases) |
+| Missing CSP / clickjacking / MIME-sniffing on service-owned HTML pages | `Content-Security-Policy: default-src 'none'; script/style/img/font/connect-src 'self'; frame-ancestors 'none'; object-src 'none'`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` on every response from the Public and Admin listeners | `internal/httpserver.securityHeaders` | **Implemented and tested** (`internal/httpserver/security_headers_test.go`) |
+| Unbounded enrollment bootstrap/status polling (resource exhaustion, faster verification-code guessing) | `bootstrap 30/minute per IP`, `status 20/minute per pending proof`, in addition to the existing `pending-request submissions 5/hour per application+client IP` | `internal/enrollment.Service.Bootstrap/Status` via `store.IncrementRateLimit` | **Implemented and tested** (`internal/enrollment/service_test.go`'s `TestBootstrap_RateLimitedPerIP`/`TestStatus_RateLimitedPerPendingProof`) -- this was a real gap: the config settings existed since Milestone 1 but nothing read them until Milestone 5 |
+| A worker delay silently extending access past its true expiry | ForwardAuth's authoritative check derives allow/deny purely from live database timestamps on every request; the retention worker only marks terminal workflow state and writes audit events, never gates access itself | `internal/authz.Decide` (unchanged since Milestone 2); `internal/worker`/`internal/store/retention.go` | **Implemented and tested**, including a dedicated safety test proving a live authorization is never purged regardless of how old its request row is (`internal/store/retention_test.go`'s `TestPurgeResolvedRecords_NeverPurgesALiveAuthorization`) |
+| Audit-log tampering via the retention/cleanup path itself | Audit-event purging (the one deletion the audit-immutability design permits at all) requires the separate `app_maintenance` role and runs only as a distinct one-shot operator command, never inside the always-running service process | `cmd/admin purge-audit-log`; migration 000012's grants | **Implemented and tested** (`internal/store/retention_test.go`'s `TestPurgeOldAuditEvents`, which explicitly connects as `manual_approval_maintenance`) |
 
 ## 5. Residual risks (by design, not gaps)
 
@@ -65,12 +70,30 @@ compromised backend, database, or Swarm host -- see section 6.
 
 ## 6. Explicit non-goals so far
 
-No admin authentication/authorization enforcement (no OIDC, no admin
-session, no HTTP endpoint on the admin listener beyond a 501 stub) and
-no retention/cleanup worker (timed-out/claim-expired requests reach
-those states in the schema but nothing sweeps for them yet). These are
-Milestones 4 and 5; this document will grow a row in the table above as
-each lands.
+- The admin API's `Idempotency-Key` replay semantics (spec section 9:
+  store results 24 hours, replay returns the original result, conflicting
+  bodies return 409) are not implemented -- mutations still use
+  optimistic-concurrency `version` checks, which prevent a stale
+  resubmission from silently succeeding twice, but a byte-for-byte
+  identical retry after a lost response is not deduplicated and is not
+  currently distinguishable from a fresh request.
+- The dedicated "Expiring soon" console view (window/filter/sort
+  controls, bulk renew/revoke from that specific view) is not built --
+  `GET /api/v1/authorizations` already sorts soonest-expiring-first and
+  the bulk-renew/bulk-revoke endpoints exist and are tested, but the
+  minimal Svelte console's Sessions view doesn't yet expose the window
+  presets, application/label/approver filters, or "renewable vs.
+  credential-limit-reached" distinction spec section 10 describes.
+- WCAG 2.2 AA has not been audited; the console's destructive-action
+  confirmations use native `confirm()`/`prompt()` rather than accessible,
+  focus-managed dialogs.
+- Load testing against spec section 15's baseline targets (500 auth
+  checks/second, 10,000 active authorizations, p95 <=50ms) has not been
+  run -- it needs a real multi-replica deployment, not this single-
+  container dev stack. See `docs/runbooks/load-testing.md`.
+- A restore-from-backup drill has not been performed -- see
+  `docs/runbooks/backup-restore.md` for the documented, not yet
+  exercised, procedure.
 
 ## 7. Revision log
 
@@ -88,3 +111,31 @@ each lands.
   implemented and tested, including a full real-Traefik end-to-end run
   (`tests/integration/enrollment_flow_test.go`) and a genuine-concurrency
   race test (`internal/store/race_test.go`).
+- 2026-09-17 -- Milestone 4: real OIDC login (Authorization Code + PKCE)
+  against a real signed-JWT provider, admin session CSRF/role
+  enforcement, the full admin API (applications/requests/authorizations/
+  audit-events, bulk actions), CSP/Referrer-Policy/X-Content-Type-Options
+  on both browser-facing listeners, and a minimal functional Svelte
+  console -- verified end to end against the real dev stack via
+  `cmd/mock-oidc` (a real, not stubbed, OIDC provider for local dev).
+  Fixed two real bugs found along the way: `GET /status`/`POST /requests`
+  were marshaling Go structs with no `json` tags (PascalCase on the wire
+  instead of spec's required snake_case), and the waiting page's
+  JS-enhanced status polling (spec section 5 step 5) had never actually
+  been implemented, only its no-JS `<meta refresh>` fallback.
+- 2026-09-17 -- Milestone 5: the retention/cleanup worker (request
+  timeout/claim-expiry transitions, idempotent authorization-expiry audit
+  events, claim-envelope purge + pending-proof consumption, IP/user-agent/
+  return-path redaction, resolved-record purging with a dedicated
+  never-purge-a-live-authorization safety test, audit-log purging as a
+  separate `app_maintenance`-role operator command), Postgres advisory-
+  lock coordination across replicas, Prometheus metrics and `GET /readyz`
+  on the Ops listener, and a Swarm deployment manifest. Fixed a real gap
+  found while wiring rate-limit metrics: the bootstrap/status rate limits
+  spec section 11 control 6 requires had config settings since Milestone
+  1 but were never actually enforced.
+- 2026-09-17 -- Dependency and image vulnerability scans (`govulncheck`
+  against the module graph, `docker scout cves` against the built
+  runtime image): zero known vulnerabilities in either as of this date.
+  Re-run before release and periodically thereafter -- this is a
+  point-in-time result, not a standing guarantee.

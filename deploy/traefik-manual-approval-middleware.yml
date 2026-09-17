@@ -1,0 +1,45 @@
+# Mount this into the already-deployed Traefik's file-provider directory
+# (spec section 6's own example, filled in) -- this repo doesn't own
+# Traefik's stack, so this file is copied/mounted there by whoever
+# manages it, not deployed by deploy/stack.yml.
+#
+# Every protected application then references this middleware by name
+# (`manual-approval@file`) in its own stack's `deploy.labels`, and adds a
+# second, higher-priority router for its reserved `/__manual-approval`
+# path pointing at this service's public listener -- see
+# docs/runbooks/rollout-rollback.md for the full per-application
+# onboarding checklist (spec section 6's router-topology requirement:
+# two routers per protected hostname, and the reserved-path router MUST
+# NOT apply this middleware).
+#
+# Traefik itself needs the three files below mounted into its own
+# container at the paths referenced here, and its entry points configured
+# with `forwardedHeaders.insecure=false` and explicit `trustedIPs` for
+# the actual upstream load balancer -- neither is expressible in this
+# middleware definition; both are Traefik-side static/entry-point
+# configuration this file cannot set.
+
+http:
+  middlewares:
+    manual-approval:
+      forwardAuth:
+        # "manual-approval" here is this service's Swarm service name --
+        # resolved via the overlay network deploy/stack.yml's
+        # `control-plane` network shares with Traefik, backed by a
+        # certificate whose SAN includes that name (spec section 13).
+        address: https://manual-approval:8443/auth
+        trustForwardHeader: true
+        preserveLocationHeader: true
+        forwardBody: false
+        authRequestHeaders:
+          - Cookie
+          - Accept
+          - User-Agent
+          - Sec-Fetch-Mode
+          - Sec-Fetch-Dest
+        addAuthCookiesToResponse:
+          - __Host-manual-proxy
+        tls:
+          ca: /run/secrets/manual_approval_auth_ca
+          cert: /run/secrets/traefik_client_cert
+          key: /run/secrets/traefik_client_key
