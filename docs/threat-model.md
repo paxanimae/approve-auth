@@ -1,6 +1,6 @@
 # Threat model
 
-Status: Milestone 1 draft. Documents the threat model from spec section
+Status: through Milestone 3. Documents the threat model from spec section
 11 and which control is enforced by which layer today versus a later
 milestone. This is a living document -- update it as each milestone lands
 its controls, not just once at the end.
@@ -38,13 +38,15 @@ compromised backend, database, or Swarm host -- see section 6.
 | Total service/DB outage silently bypassing approval | A `Decide` error (DB down, decision timeout) is a 503 from `/auth`, which Traefik's ForwardAuth middleware turns into a hard failure -- never a proxied backend request | `internal/httpserver.authHandler`; Traefik's own ForwardAuth behavior on an unreachable auth server | **Implemented**; verified manually against the real stack (stopping the service mid-test returned 500 from Traefik, never the backend's content) -- not automated as a repeatable test since it requires taking down a shared dev stack, see the comment in `tests/integration/traefik_test.go` |
 | Routing bypass / control-plane endpoints reachable from the wrong listener | Four independently-routed `http.ServeMux` instances, not path guards on one mux | `internal/httpserver` | **Implemented and tested** (`httpserver_test.go`, `integration_test.go`) |
 | Copied/stolen bearer cookie used on the wrong application | Composite FK chain (`credential -> authorization -> request`) so the database itself rejects a credential whose `application_id` doesn't match its authorization's | `migrations/000004`, `000005` | **Implemented and tested** (`internal/store/constraints_test.go`) |
-| Approval races (approve vs. deny, renew vs. revoke, claim vs. disable) | Row locks + optimistic `version` columns; transactional mutation+audit commits | Schema has `version` columns on every mutable table now; the actual locking logic is Milestone 3 | **Schema ready, logic deferred to Milestone 3** |
-| Tampering with the audit trail after the fact | Two-role grant design: the runtime role can `INSERT` but never `UPDATE`/`DELETE` `audit_events`; only a separate maintenance role (used solely by retention jobs) can delete | `migrations/000012_roles_and_grants.up.sql` | **Implemented and tested** (`internal/store/roles_test.go`, `internal/audit/postgres_test.go`) |
+| Approval races (approve vs. deny, renew vs. revoke, claim vs. disable, concurrent claim) | Row locks (`FOR UPDATE`) + optimistic `version` columns; transactional mutation+audit commits | `internal/store`'s Approve/Deny/Revoke/Renew/ClaimApproved | **Implemented and tested**, both sequentially (stale-version conflicts in `lifecycle_test.go`, `internal/admin`'s own tests) and under genuine concurrency (`internal/store/race_test.go`: 8 goroutines racing `ClaimApproved` produce exactly one credential) |
+| Tampering with the audit trail after the fact | Two-role grant design: the runtime role can `INSERT` but never `UPDATE`/`DELETE` `audit_events`; only a separate maintenance role (used solely by retention jobs) can delete | `migrations/000012_roles_and_grants.up.sql`; every mutation writes its audit row in the same transaction (`internal/store/audit_insert.go`) | **Implemented and tested** (`internal/store/roles_test.go`, `internal/audit/postgres_test.go`, `internal/store/audit_insert_test.go`) |
 | Secrets leaking via env vars, logs, or image layers | Secrets read only from `<NAME>_FILE` paths; the bare env var being set at all (any value) is a hard startup error | `internal/config.loadSecrets` | **Implemented and tested** (`internal/config/config_test.go`) |
 | Malformed/missing security configuration reaching a running listener | `Validate()` aggregates every configuration problem and `cmd/server` refuses to bind any listener if it returns an error | `internal/config.Validate`, `cmd/server/main.go` | **Implemented** |
-| CSRF against enrollment/admin mutations | Synchronizer CSRF tokens, exact-Origin checks | `internal/enrollment`, `internal/admin` (Milestone 2/3) | **Deferred to Milestone 2/3** -- no mutation logic exists yet to protect |
-| Guessed request IDs / verification-code enumeration | Verification codes are a comparison aid only, never sufficient to retrieve a record; live-request uniqueness is DB-enforced | `migrations/000003` (partial unique index on live `verification_code`); lookup-by-code-alone is never implemented | **Schema control implemented**; the "no lookup by code alone" property holds vacuously today (no lookup endpoints exist yet) and must be preserved when Milestone 2 adds them |
-| Compromised low-privilege (`viewer`) admin account | Role check on every mutating call; `viewer` cannot mutate | `internal/admin` (Milestone 3/4); `admin_sessions.role` CHECK constraint exists now | **Schema control implemented, enforcement deferred to Milestone 3/4** |
+| CSRF against enrollment mutations | Synchronizer CSRF tokens (HMAC of the enrollment context's stored secret) on requests/cancel/claim/ack; exact-Origin-or-same-origin-Referer required on every mutating public endpoint | `internal/enrollment` (`csrf.go`), `internal/httpserver.checkOrigin` | **Implemented and tested**, including end-to-end against real Traefik (`tests/integration/enrollment_flow_test.go`) -- which is what caught `Status` not actually carrying the CSRF token the waiting page's forms needed, before this line could honestly say "implemented" |
+| CSRF against admin mutations | Same synchronizer-token approach, on the admin API | Deferred to Milestone 4 -- `internal/admin`'s business logic exists and is tested, but no HTTP endpoint or admin session exists yet to attach CSRF protection to | **Deferred to Milestone 4** |
+| Guessed request IDs / verification-code enumeration | Verification codes are a comparison aid only, never sufficient to retrieve a record; live-request uniqueness is DB-enforced | `migrations/000003` (partial unique index on live `verification_code`); every public lookup (`Status`, `Cancel`, `Claim`, `Ack`) resolves by pending-proof hash, never by verification code | **Implemented** -- the public endpoints never accept a verification code as a lookup key at all |
+| Compromised low-privilege (`viewer`) admin account | Role check on every mutating call; `viewer` cannot mutate | `internal/admin` (Milestone 4 for the actual HTTP enforcement); `admin_sessions.role` CHECK constraint exists now | **Schema control implemented, HTTP-level enforcement deferred to Milestone 4** |
+| Claim-retry envelope misuse (replaying/relinking an encrypted retry blob to the wrong request or credential) | AES-256-GCM with the request and application IDs as authenticated additional data -- ciphertext associated with the wrong row fails to decrypt | `internal/enrollment/envelope.go` | **Implemented and tested** (`internal/enrollment/service_test.go`'s retry and envelope-purged cases) |
 
 ## 5. Residual risks (by design, not gaps)
 
@@ -61,13 +63,14 @@ compromised backend, database, or Swarm host -- see section 6.
   script-initiated requests -- applications are still responsible for
   their own XSS/CSRF defenses.
 
-## 6. Explicit non-goals for Milestone 1
+## 6. Explicit non-goals so far
 
-No ForwardAuth allow/deny decision, no enrollment flow, no admin
-authentication/authorization enforcement, no rate limiting, no CSRF
-protection (nothing mutates state from an untrusted caller yet), and no
-retention/cleanup worker. These are Milestones 2 through 5; this
-document will grow a row in the table above as each lands.
+No admin authentication/authorization enforcement (no OIDC, no admin
+session, no HTTP endpoint on the admin listener beyond a 501 stub) and
+no retention/cleanup worker (timed-out/claim-expired requests reach
+those states in the schema but nothing sweeps for them yet). These are
+Milestones 4 and 5; this document will grow a row in the table above as
+each lands.
 
 ## 7. Revision log
 
@@ -79,3 +82,9 @@ document will grow a row in the table above as each lands.
   is implemented and verified against a real Traefik instance, a real
   backend, and real database state (not mocks) -- see
   `tests/integration/traefik_test.go`.
+- 2026-09-17 -- Milestone 3: the enrollment flow (request/status/cancel/
+  claim/ack/logout/session), CSRF protection, claim-retry envelope
+  encryption, and admin approve/deny/renew/revoke business logic are all
+  implemented and tested, including a full real-Traefik end-to-end run
+  (`tests/integration/enrollment_flow_test.go`) and a genuine-concurrency
+  race test (`internal/store/race_test.go`).
