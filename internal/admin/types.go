@@ -24,6 +24,12 @@ type Store interface {
 	RevokeAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, reason, revokedBy string) error
 	RenewAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, newExpiresAt time.Time, renewedBy string) error
 	GetAuthorizationByID(ctx context.Context, id uuid.UUID) (store.Authorization, bool, error)
+
+	CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration) (store.Application, error)
+	GetApplicationByID(ctx context.Context, id uuid.UUID) (store.Application, bool, error)
+	UpdateApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, p store.UpdateApplicationParams, updatedBy string) (store.Application, error)
+	DisableApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, reason, disabledBy string) (store.Application, int, int, error)
+	EnableApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, enabledBy string) (store.Application, error)
 }
 
 // ApproveInput backs POST /api/v1/requests/{id}/approve (spec section 9).
@@ -63,4 +69,50 @@ type RenewInput struct {
 	ExpectedVersion int32
 	NewExpiresAt    time.Time
 	RenewedBy       string
+}
+
+// CreateApplicationInput backs POST /api/v1/applications (spec section
+// 9). DefaultDuration/MaxDuration of zero mean "use the service-wide
+// configured default" (Config.DefaultAuthorizationDuration /
+// MaxAuthorizationDuration), the same fallback Approve uses.
+type CreateApplicationInput struct {
+	Hostname        string
+	DisplayName     string
+	Description     string
+	DefaultDuration time.Duration
+	MaxDuration     time.Duration
+}
+
+// UpdateApplicationInput backs PATCH /api/v1/applications/{id}.
+type UpdateApplicationInput struct {
+	ApplicationID   string
+	ExpectedVersion int32
+	DisplayName     *string
+	Description     *string
+	DefaultDuration *time.Duration
+	MaxDuration     *time.Duration
+	UpdatedBy       string
+}
+
+// DisableApplicationInput backs POST /api/v1/applications/{id}/disable.
+type DisableApplicationInput struct {
+	ApplicationID   string
+	ExpectedVersion int32
+	Reason          string
+	DisabledBy      string
+}
+
+// DisableApplicationResult reports the affected-row counts spec section
+// 10 requires the confirmation UI to show.
+type DisableApplicationResult struct {
+	Application           store.Application
+	CanceledRequests      int
+	RevokedAuthorizations int
+}
+
+// EnableApplicationInput backs POST /api/v1/applications/{id}/enable.
+type EnableApplicationInput struct {
+	ApplicationID   string
+	ExpectedVersion int32
+	EnabledBy       string
 }
