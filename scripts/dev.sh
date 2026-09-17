@@ -10,7 +10,7 @@ export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL="*"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GO_IMAGE="golang:1.24.13"
+GO_IMAGE="golang:1.25.14"
 NODE_IMAGE="node:22.23.2"
 
 # DEV_NETWORK: set to the docker-compose network (default project name
@@ -24,6 +24,7 @@ go_run() {
   fi
   docker run --rm \
     -v "${ROOT}:/workspace" \
+    -v traefik-manual-proxy-gomod:/go/pkg/mod \
     -w /workspace \
     -e GOCACHE=/workspace/.gocache \
     -e GOFLAGS=-mod=mod \

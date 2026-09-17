@@ -1,0 +1,38 @@
+# Local development stack only -- not used in CI (which uses a GitHub
+# Actions Postgres service container instead) and not a production
+# deployment artifact (see deploy/stack.yml, added in a later milestone).
+#
+# Brings up:
+#   db      - PostgreSQL, for `scripts/dev.sh test` (TEST_DATABASE_URL) and
+#             for running the service locally against real Postgres.
+#
+# The two-host TLS test stack (app-a/app-b) is added alongside this file's
+# certs/ generation script; see docs/dev-environment.md.
+name: traefik-manual-proxy
+
+services:
+  db:
+    image: postgres:17.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: manual_approval
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d manual_approval"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - dev
+
+networks:
+  dev:
+    name: traefik-manual-proxy_dev
+
+volumes:
+  db-data:

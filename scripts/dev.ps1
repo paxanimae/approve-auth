@@ -12,7 +12,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$GoImage = "golang:1.24.13"
+$GoImage = "golang:1.25.14"
 $NodeImage = "node:22.23.2"
 
 function Invoke-Go {
@@ -21,6 +21,7 @@ function Invoke-Go {
     if ($env:DEV_NETWORK) { $netArgs = @("--network", $env:DEV_NETWORK) }
     docker run --rm `
         -v "${Root}:/workspace" `
+        -v traefik-manual-proxy-gomod:/go/pkg/mod `
         -w /workspace `
         -e GOCACHE=/workspace/.gocache `
         -e GOFLAGS=-mod=mod `
