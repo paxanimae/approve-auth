@@ -21,7 +21,7 @@ func TestMigrate_UpDownRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	var exists bool
 	err = conn.QueryRow(ctx, `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'applications')`).Scan(&exists)

@@ -170,10 +170,10 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 	authLn := tls.NewListener(authRawLn, authTLSConfig)
 
 	t.Cleanup(func() {
-		publicLn.Close()
-		adminLn.Close()
-		opsLn.Close()
-		authRawLn.Close()
+		_ = publicLn.Close()
+		_ = adminLn.Close()
+		_ = opsLn.Close()
+		_ = authRawLn.Close()
 	})
 
 	go func() { _ = http.Serve(publicLn, httpserver.NewPublicMux()) }()
@@ -186,7 +186,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusNotImplemented {
 			t.Errorf("got status %d, want 501 (stubbed but routed)", resp.StatusCode)
 		}
@@ -197,7 +197,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusNotImplemented {
 			t.Errorf("got status %d, want 501 (stubbed but routed)", resp.StatusCode)
 		}
@@ -208,7 +208,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("got status %d, want 200", resp.StatusCode)
 		}
@@ -223,7 +223,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 400 {
 			t.Errorf("plain HTTP against the TLS-only auth listener: got status %d, want an error or a 4xx response", resp.StatusCode)
 		}
@@ -268,7 +268,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET with a valid, allowlisted client certificate: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusNotImplemented {
 			t.Errorf("got status %d, want 501 (stubbed but routed)", resp.StatusCode)
 		}
@@ -283,7 +283,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("got status %d, want 404 (public route must not exist on the auth listener)", resp.StatusCode)
 		}

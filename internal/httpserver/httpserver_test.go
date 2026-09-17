@@ -96,7 +96,7 @@ func do(t *testing.T, mux *http.ServeMux, r route) int {
 	if err != nil {
 		t.Fatalf("performing request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode
 }
 
@@ -141,7 +141,7 @@ func TestPublicAssetsServeEmbeddedContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("got status %d, want 200", resp.StatusCode)
 	}
@@ -150,7 +150,7 @@ func TestPublicAssetsServeEmbeddedContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != http.StatusNotFound {
 		t.Errorf("got status %d, want 404 for a nonexistent asset", resp2.StatusCode)
 	}
@@ -165,7 +165,7 @@ func TestLivezReturnsOKWithNoStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /livez: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("GET /livez: got status %d, want 200", resp.StatusCode)

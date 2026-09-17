@@ -31,7 +31,7 @@ func MigrateUp(databaseURL string) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("store: migrate up: %w", err)
@@ -46,7 +46,7 @@ func MigrateDown(databaseURL string) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
 	if err := m.Down(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("store: migrate down: %w", err)
