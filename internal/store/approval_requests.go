@@ -27,17 +27,12 @@ func (db *DB) CreateApprovalRequest(ctx context.Context, p CreateApprovalRequest
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var r ApprovalRequest
-	err = tx.QueryRow(ctx, `
+	r, err := scanApprovalRequest(tx.QueryRow(ctx, `
 		INSERT INTO approval_requests (application_id, pending_token_hash, verification_code, label, message, return_path, deadline_at, source_ip, user_agent)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, application_id, pending_token_hash, verification_code, label, message, return_path, status, requested_at, deadline_at, decided_at, decided_by, claim_deadline_at, claimed_at, public_decision_message, private_note, user_agent, version`,
+		RETURNING `+approvalRequestColumns,
 		p.ApplicationID, p.PendingTokenHash, p.VerificationCode, nullableText(p.Label), nullableText(p.Message), nullableText(p.ReturnPath), p.DeadlineAt, nullableInet(p.SourceIP), nullableText(p.UserAgent),
-	).Scan(
-		&r.ID, &r.ApplicationID, &r.PendingTokenHash, &r.VerificationCode, &r.Label, &r.Message, &r.ReturnPath,
-		&r.Status, &r.RequestedAt, &r.DeadlineAt, &r.DecidedAt, &r.DecidedBy, &r.ClaimDeadlineAt, &r.ClaimedAt,
-		&r.PublicDecisionMessage, &r.PrivateNote, &r.UserAgent, &r.Version,
-	)
+	))
 	// A unique-constraint violation (duplicate pending_token_hash or a
 	// live verification_code collision) is the caller's to interpret --
 	// return it unwrapped-of-transaction-context so pgConstraintName
@@ -78,16 +73,7 @@ type CreateApprovalRequestParams struct {
 // resolves to its request -- status/cancel/claim all start here. Callers
 // distinguish "not found" via the bool, not an error.
 func (db *DB) GetApprovalRequestByTokenHash(ctx context.Context, hash []byte) (ApprovalRequest, bool, error) {
-	var r ApprovalRequest
-	err := db.Pool.QueryRow(ctx, `
-		SELECT id, application_id, pending_token_hash, verification_code, label, message, return_path, status, requested_at, deadline_at, decided_at, decided_by, claim_deadline_at, claimed_at, public_decision_message, private_note, user_agent, version
-		FROM approval_requests
-		WHERE pending_token_hash = $1`, hash,
-	).Scan(
-		&r.ID, &r.ApplicationID, &r.PendingTokenHash, &r.VerificationCode, &r.Label, &r.Message, &r.ReturnPath,
-		&r.Status, &r.RequestedAt, &r.DeadlineAt, &r.DecidedAt, &r.DecidedBy, &r.ClaimDeadlineAt, &r.ClaimedAt,
-		&r.PublicDecisionMessage, &r.PrivateNote, &r.UserAgent, &r.Version,
-	)
+	r, err := scanApprovalRequest(db.Pool.QueryRow(ctx, `SELECT `+approvalRequestColumns+` FROM approval_requests WHERE pending_token_hash = $1`, hash))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ApprovalRequest{}, false, nil
 	}
@@ -95,6 +81,71 @@ func (db *DB) GetApprovalRequestByTokenHash(ctx context.Context, hash []byte) (A
 		return ApprovalRequest{}, false, fmt.Errorf("store: looking up approval request: %w", err)
 	}
 	return r, true, nil
+}
+
+// scanner is satisfied by both pgx.Row (QueryRow) and pgx.Rows (each
+// Query iteration), so the single-row and list queries below share one
+// column list instead of repeating it four times.
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanApprovalRequest(row scanner) (ApprovalRequest, error) {
+	var r ApprovalRequest
+	err := row.Scan(
+		&r.ID, &r.ApplicationID, &r.PendingTokenHash, &r.VerificationCode, &r.Label, &r.Message, &r.ReturnPath,
+		&r.Status, &r.RequestedAt, &r.DeadlineAt, &r.DecidedAt, &r.DecidedBy, &r.ClaimDeadlineAt, &r.ClaimedAt,
+		&r.PublicDecisionMessage, &r.PrivateNote, &r.UserAgent, &r.Version,
+	)
+	return r, err
+}
+
+const approvalRequestColumns = `id, application_id, pending_token_hash, verification_code, label, message, return_path, status, requested_at, deadline_at, decided_at, decided_by, claim_deadline_at, claimed_at, public_decision_message, private_note, user_agent, version`
+
+// GetApprovalRequestByID is the admin API's lookup, as opposed to
+// GetApprovalRequestByTokenHash which is the browser's own.
+func (db *DB) GetApprovalRequestByID(ctx context.Context, id uuid.UUID) (ApprovalRequest, bool, error) {
+	r, err := scanApprovalRequest(db.Pool.QueryRow(ctx, `SELECT `+approvalRequestColumns+` FROM approval_requests WHERE id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ApprovalRequest{}, false, nil
+	}
+	if err != nil {
+		return ApprovalRequest{}, false, fmt.Errorf("store: looking up approval request %s: %w", id, err)
+	}
+	return r, true, nil
+}
+
+// ListApprovalRequests is a first-pass listing for the admin API (spec
+// section 9's GET /requests): newest first, optionally filtered by
+// application and/or status. Simple limit-bounded, not yet the full
+// cursor-paginated/sortable/searchable listing spec section 10
+// describes for the console -- that's follow-on work tracked in
+// docs/milestone-4-remaining.md.
+func (db *DB) ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID, status string, limit int) ([]ApprovalRequest, error) {
+	rows, err := db.Pool.Query(ctx, `
+		SELECT `+approvalRequestColumns+`
+		FROM approval_requests
+		WHERE ($1::uuid IS NULL OR application_id = $1)
+		  AND ($2::text = '' OR status = $2)
+		ORDER BY requested_at DESC, id DESC
+		LIMIT $3`, applicationID, status, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing approval requests: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ApprovalRequest
+	for rows.Next() {
+		r, err := scanApprovalRequest(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: scanning approval request: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: listing approval requests: %w", err)
+	}
+	return out, nil
 }
 
 // CancelApprovalRequest cancels a request the browser itself owns, only

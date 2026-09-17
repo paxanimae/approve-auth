@@ -229,16 +229,20 @@ func (db *DB) RenewAuthorization(ctx context.Context, authorizationID uuid.UUID,
 	return nil
 }
 
-func (db *DB) GetAuthorizationByID(ctx context.Context, id uuid.UUID) (Authorization, bool, error) {
+const authorizationColumns = `id, application_id, request_id, label, approved_by, approved_at, activated_at, expires_at, revoked_at, revoked_by, revocation_reason, last_seen_at, last_seen_ip, last_seen_user_agent, version`
+
+func scanAuthorization(row scanner) (Authorization, error) {
 	var auth Authorization
-	err := db.Pool.QueryRow(ctx, `
-		SELECT id, application_id, request_id, label, approved_by, approved_at, activated_at, expires_at, revoked_at, revoked_by, revocation_reason, last_seen_at, last_seen_ip, last_seen_user_agent, version
-		FROM authorizations WHERE id = $1`, id,
-	).Scan(
+	err := row.Scan(
 		&auth.ID, &auth.ApplicationID, &auth.RequestID, &auth.Label, &auth.ApprovedBy, &auth.ApprovedAt,
 		&auth.ActivatedAt, &auth.ExpiresAt, &auth.RevokedAt, &auth.RevokedBy, &auth.RevocationReason,
 		&auth.LastSeenAt, &auth.LastSeenIP, &auth.LastSeenUserAgent, &auth.Version,
 	)
+	return auth, err
+}
+
+func (db *DB) GetAuthorizationByID(ctx context.Context, id uuid.UUID) (Authorization, bool, error) {
+	auth, err := scanAuthorization(db.Pool.QueryRow(ctx, `SELECT `+authorizationColumns+` FROM authorizations WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Authorization{}, false, nil
 	}
@@ -246,4 +250,38 @@ func (db *DB) GetAuthorizationByID(ctx context.Context, id uuid.UUID) (Authoriza
 		return Authorization{}, false, fmt.Errorf("store: looking up authorization %s: %w", id, err)
 	}
 	return auth, true, nil
+}
+
+// ListAuthorizations is a first-pass listing for the admin API (spec
+// section 9's GET /authorizations and the "Expiring soon" view):
+// soonest-expiring first among non-revoked rows, optionally filtered by
+// application. activeOnly restricts to unrevoked rows only -- callers
+// wanting expired/revoked history pass false. Simple limit-bounded, like
+// ListApprovalRequests; the full filter/sort/search set spec section 10
+// describes for "Expiring soon" is follow-on work.
+func (db *DB) ListAuthorizations(ctx context.Context, applicationID *uuid.UUID, activeOnly bool, limit int) ([]Authorization, error) {
+	rows, err := db.Pool.Query(ctx, `
+		SELECT `+authorizationColumns+`
+		FROM authorizations
+		WHERE ($1::uuid IS NULL OR application_id = $1)
+		  AND ($2 = false OR revoked_at IS NULL)
+		ORDER BY expires_at ASC, id DESC
+		LIMIT $3`, applicationID, activeOnly, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing authorizations: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Authorization
+	for rows.Next() {
+		auth, err := scanAuthorization(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: scanning authorization: %w", err)
+		}
+		out = append(out, auth)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: listing authorizations: %w", err)
+	}
+	return out, nil
 }
