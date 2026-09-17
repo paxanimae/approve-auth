@@ -55,7 +55,17 @@ func setup(t *testing.T) (*store.DB, *enrollment.Service, string) {
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	t.Cleanup(func() { _, _ = db.Pool.Exec(ctx, `DELETE FROM applications WHERE id = $1`, app.ID) })
+	// One sweep covering everything a test creates on top of this
+	// application, in dependency order (see internal/admin's test
+	// helper, which hit exactly this as a silently-swallowed FK failure
+	// when it only cleaned up part of the chain).
+	t.Cleanup(func() {
+		_, _ = db.Pool.Exec(ctx, `DELETE FROM credentials WHERE application_id = $1`, app.ID)
+		_, _ = db.Pool.Exec(ctx, `DELETE FROM authorizations WHERE application_id = $1`, app.ID)
+		_, _ = db.Pool.Exec(ctx, `DELETE FROM approval_requests WHERE application_id = $1`, app.ID)
+		_, _ = db.Pool.Exec(ctx, `DELETE FROM enrollment_contexts WHERE application_id = $1`, app.ID)
+		_, _ = db.Pool.Exec(ctx, `DELETE FROM applications WHERE id = $1`, app.ID)
+	})
 
 	return db, enrollment.New(db, testConfig()), hostname
 }
@@ -318,6 +328,36 @@ func TestLogout_RevokesOwnAuthorization(t *testing.T) {
 	}
 	if err := svc.Logout(ctx, hostname, "not-a-real-token"); err != nil {
 		t.Errorf("Logout (garbage token): %v", err)
+	}
+}
+
+// TestStatus_IncludesCSRFTokenWhileContextIsLive is a regression test:
+// the waiting page's cancel/claim forms are only ever functional if
+// Status actually carries a CSRF token forward from the enrollment
+// context -- a real-Traefik end-to-end test (tests/integration/
+// enrollment_flow_test.go) caught this missing when every layer's own
+// mocked/fake-backed unit test had no way to notice.
+func TestStatus_IncludesCSRFTokenWhileContextIsLive(t *testing.T) {
+	_, svc, hostname := setup(t)
+	ctx := context.Background()
+
+	boot, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if _, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken}); err != nil {
+		t.Fatalf("SubmitRequest: %v", err)
+	}
+
+	status, err := svc.Status(ctx, boot.RawPendingToken)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if status.CSRFToken == "" {
+		t.Fatal("Status.CSRFToken is empty while the enrollment context is still live")
+	}
+	if status.CSRFToken != boot.CSRFToken {
+		t.Errorf("Status.CSRFToken = %q, want it to match Bootstrap's %q (same context)", status.CSRFToken, boot.CSRFToken)
 	}
 }
 

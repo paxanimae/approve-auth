@@ -91,6 +91,12 @@ type StatusResult struct {
 	DeadlineAt       time.Time
 	ClaimDeadlineAt  *time.Time
 	ServerTime       time.Time
+	// CSRFToken is set only while the enrollment context backing this
+	// pending proof is still live -- it's what the waiting page needs to
+	// render a working cancel/claim form. Empty means those actions are
+	// no longer available (spec section 5: the browser must request
+	// access again).
+	CSRFToken string
 }
 
 // ClaimOutcome backs POST /__manual-approval/claim.

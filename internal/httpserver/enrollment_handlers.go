@@ -267,6 +267,7 @@ func waitingPageHandler(enroller Enroller) http.HandlerFunc {
 				data.State = status.State
 				data.VerificationCode = status.VerificationCode
 				data.PublicMessage = status.PublicMessage
+				data.CSRFToken = status.CSRFToken
 			}
 		}
 		if accessToken, ok := singleCookieValue(r, accessCookieName); ok && accessToken != "" {

@@ -191,11 +191,12 @@ func TestRealTraefik_ReservedPathBypassesForwardAuth(t *testing.T) {
 	// No cookie was presented and the request would otherwise be denied,
 	// but the reserved-path router has no manual-approval middleware and
 	// goes straight to the Public listener (spec section 6's router
-	// topology) -- it must reach our stub (501, JSON), never the 401 the
-	// same-cookie-less request would get on the protected router, and
-	// never the backend's plain-text content.
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Errorf("status = %d, want 501 (the public listener's stub, unauthenticated)", resp.StatusCode)
+	// topology) -- it must reach the real /status endpoint (200 JSON,
+	// "not_requested"), never the 401 the same-cookie-less request would
+	// get on the protected router, and never the backend's plain-text
+	// content.
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200 (the public listener's real /status, unauthenticated)", resp.StatusCode)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json (reached manual-approval, not the backend)", ct)

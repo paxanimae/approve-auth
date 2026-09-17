@@ -183,6 +183,9 @@ func (s *Service) Status(ctx context.Context, pendingTokenRaw string) (StatusRes
 	if req.Status == "denied" {
 		result.PublicMessage = derefString(req.PublicDecisionMessage)
 	}
+	if ec, found, err := s.store.GetLiveEnrollmentContextByTokenHash(ctx, hashToken(pendingTokenRaw)); err == nil && found {
+		result.CSRFToken = csrfToken(ec.CSRFSecret)
+	}
 	return result, nil
 }
 
