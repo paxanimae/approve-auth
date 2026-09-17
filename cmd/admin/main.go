@@ -36,7 +36,7 @@ func run(args []string) error {
 	case "migrate-down":
 		return runMigrate(args[1:], "migrate-down", store.MigrateDown)
 	case "revoke-admin-session":
-		return fmt.Errorf("revoke-admin-session: not implemented until Milestone 4")
+		return runRevokeAdminSession(args[1:])
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", args[0])
@@ -53,7 +53,7 @@ Commands:
   register-application    Register a new protected application
   migrate-up              Apply pending migrations (needs a privileged connection -- see spec section 13)
   migrate-down            Reverse applied migrations (tests/local dev only)
-  revoke-admin-session    Force-revoke an admin session by issuer/subject (Milestone 4)
+  revoke-admin-session    Force-revoke all of one admin's sessions by OIDC issuer/subject
 `)
 }
 
@@ -125,5 +125,51 @@ func runRegisterApplication(args []string) error {
 	}
 
 	fmt.Printf("registered application %s (hostname=%s, enabled=%v)\n", app.ID, app.Hostname, app.Enabled)
+	return nil
+}
+
+// runRevokeAdminSession backs spec section 9's "deployment CLI command to
+// revoke sessions by issuer/subject for urgent removal" -- an operator
+// action that must work even if the admin console itself, or the
+// identity provider, is unreachable.
+func runRevokeAdminSession(args []string) error {
+	fs := flag.NewFlagSet("revoke-admin-session", flag.ContinueOnError)
+	configFile := fs.String("config", os.Getenv("CONFIG_FILE"), "path to the nonsecret YAML config file")
+	issuer := fs.String("issuer", "", "the OIDC issuer of the sessions to revoke (required)")
+	subject := fs.String("subject", "", "the OIDC subject of the sessions to revoke (required)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *issuer == "" {
+		return fmt.Errorf("revoke-admin-session: -issuer is required")
+	}
+	if *subject == "" {
+		return fmt.Errorf("revoke-admin-session: -subject is required")
+	}
+
+	cfg, err := config.Load(*configFile)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	if cfg.DatabaseURL == "" {
+		return fmt.Errorf("DATABASE_URL_FILE is not set (see -config or the env var)")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer db.Close()
+
+	count, err := db.RevokeAdminSessionsByIssuerSubject(ctx, *issuer, *subject)
+	if err != nil {
+		return fmt.Errorf("revoking admin sessions: %w", err)
+	}
+
+	fmt.Printf("revoked %d session(s) for issuer=%s subject=%s\n", count, *issuer, *subject)
 	return nil
 }
