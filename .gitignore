@@ -1,0 +1,28 @@
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+/.gocache/
+
+# Node / web
+web/admin/node_modules/
+web/admin/dist/
+web/admin/.svelte-kit/
+
+# Local dev secrets and generated TLS material — never commit.
+# (Fixture certs/keys under */testdata/ are deliberately NOT covered by a
+# blanket *.pem/*.key rule, since those are real, tracked test inputs.)
+deploy/dev/certs/
+deploy/dev/secrets/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Env
+.env
+.env.*

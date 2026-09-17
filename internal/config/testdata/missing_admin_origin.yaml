@@ -1,0 +1,41 @@
+oidc_issuer: https://idp.example.test/
+oidc_client_id: manual-approval-admin
+oidc_admin_groups: ["grp-manual-approval-admins"]
+oidc_viewer_groups: ["grp-manual-approval-viewers"]
+
+claim_encryption_key_id: primary-2026-09
+
+auth_tls_cert_file: testdata/certs/dummy-cert.pem
+auth_tls_key_file: testdata/certs/dummy-key.pem
+auth_client_ca_file: testdata/certs/dummy-ca.pem
+auth_allowed_client_identities: ["traefik-client"]
+
+trusted_traefik_cidrs: ["10.10.0.0/24"]
+
+default_authorization_duration: 720h
+max_authorization_duration: 8760h
+credential_max_age: 8760h
+request_ttl: 24h
+claim_ttl: 30m
+claim_retry_ttl: 10m
+expiring_soon_window: 168h
+admin_idle_ttl: 30m
+admin_absolute_ttl: 8h
+auth_decision_timeout: 2s
+
+log_level: info
+
+rate_limits:
+  pending_requests_per_hour_per_app_ip: 5
+  bootstrap_per_minute_per_ip: 30
+  status_per_minute_per_pending_proof: 20
+  admin_writes_per_minute_per_admin: 60
+  global_enrollment_per_hour: 1000
+
+retention:
+  audit_events: 8760h
+  resolved_requests: 2160h
+  ip_and_user_agent: 720h
+  return_paths: 168h
+  idempotency_records: 24h
+  claim_envelopes: 10m
