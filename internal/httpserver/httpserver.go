@@ -22,19 +22,27 @@ type apiError struct {
 	} `json:"error"`
 }
 
+// writeAPIError writes the structured error body every control-plane
+// response uses (spec section 9): { "error": { code, message,
+// request_id } }, with Cache-Control: no-store since nothing on this
+// path may be cached by an intermediary (spec section 6).
+func writeAPIError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	var body apiError
+	body.Error.Code = code
+	body.Error.Message = message
+	body.Error.RequestID = uuid.New().String()
+	_ = json.NewEncoder(w).Encode(body)
+}
+
 // writeNotImplemented is the standard response for every route this
 // milestone declares but doesn't implement: it exists on the right
 // listener (that's the part M1 tests), but the business logic behind it
 // is a later milestone.
 func writeNotImplemented(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusNotImplemented)
-	var body apiError
-	body.Error.Code = "not_implemented"
-	body.Error.Message = message
-	body.Error.RequestID = uuid.New().String()
-	_ = json.NewEncoder(w).Encode(body)
+	writeAPIError(w, http.StatusNotImplemented, "not_implemented", message)
 }
 
 func stub(message string) http.HandlerFunc {
@@ -108,15 +116,6 @@ func NewAdminMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/audit-events", stub("list audit events: Milestone 4"))
 	mux.HandleFunc("GET /api/v1/audit-events/export", stub("export audit events: Milestone 4"))
 
-	return mux
-}
-
-// NewAuthMux serves the ForwardAuth decision endpoint (spec section 6) on
-// the Authorization listener only. The listener itself always requires
-// mTLS -- see AuthTLSConfig -- independent of what this handler decides.
-func NewAuthMux() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /auth", stub("ForwardAuth decision: Milestone 2"))
 	return mux
 }
 

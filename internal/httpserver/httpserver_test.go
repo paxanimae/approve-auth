@@ -1,12 +1,27 @@
 package httpserver_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
 	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
 )
+
+// fakeDecider lets httpserver tests exercise the /auth response-mapping
+// contract without a real authz.Service (and therefore no database)
+// underneath it.
+type fakeDecider struct {
+	decision authz.Decision
+	err      error
+}
+
+func (f fakeDecider) Decide(_ context.Context, _ authz.AuthRequest) (authz.Decision, error) {
+	return f.decision, f.err
+}
 
 type route struct {
 	method string
@@ -68,7 +83,7 @@ func listeners() []listener {
 		},
 		{
 			name: "auth",
-			mux:  httpserver.NewAuthMux(),
+			mux:  httpserver.NewAuthMux(fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Second),
 			routes: []route{
 				{"GET", "/auth"},
 			},

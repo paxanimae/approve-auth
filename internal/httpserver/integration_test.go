@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
 	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
 )
 
@@ -179,7 +180,8 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 	go func() { _ = http.Serve(publicLn, httpserver.NewPublicMux()) }()
 	go func() { _ = http.Serve(adminLn, httpserver.NewAdminMux()) }()
 	go func() { _ = http.Serve(opsLn, httpserver.NewOpsMux()) }()
-	go func() { _ = http.Serve(authLn, httpserver.NewAuthMux()) }()
+	authMux := httpserver.NewAuthMux(fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Second)
+	go func() { _ = http.Serve(authLn, authMux) }()
 
 	t.Run("public listener serves plain HTTP", func(t *testing.T) {
 		resp, err := http.Get(fmt.Sprintf("http://%s/__manual-approval/status", publicLn.Addr()))
@@ -264,13 +266,21 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 			InsecureSkipVerify: true,
 			Certificates:       []tls.Certificate{goodClientCert},
 		}}}
-		resp, err := client.Get(fmt.Sprintf("https://%s/auth", authLn.Addr()))
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s/auth", authLn.Addr()), nil)
+		if err != nil {
+			t.Fatalf("building request: %v", err)
+		}
+		req.Header.Set("X-Forwarded-Host", "app.example.test")
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.Header.Set("X-Forwarded-Method", "GET")
+		req.Header.Set("X-Forwarded-Uri", "/")
+		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("GET with a valid, allowlisted client certificate: %v", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusNotImplemented {
-			t.Errorf("got status %d, want 501 (stubbed but routed)", resp.StatusCode)
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("got status %d, want 204 (the fake decider always allows)", resp.StatusCode)
 		}
 	})
 

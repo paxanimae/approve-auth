@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
 	"github.com/frid-iks/traefik-manual-proxy/internal/config"
 	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
@@ -61,10 +62,12 @@ func run() error {
 		return fmt.Errorf("building authorization listener TLS config: %w", err)
 	}
 
+	authzService := authz.New(db)
+
 	servers := []*http.Server{
 		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux()},
 		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux()},
-		{Addr: cfg.AuthAddr, Handler: httpserver.NewAuthMux(), TLSConfig: authTLSConfig},
+		{Addr: cfg.AuthAddr, Handler: httpserver.NewAuthMux(authzService, cfg.AuthDecisionTimeout.Std()), TLSConfig: authTLSConfig},
 		{Addr: cfg.OpsAddr, Handler: httpserver.NewOpsMux()},
 	}
 
