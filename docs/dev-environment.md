@@ -169,6 +169,25 @@ tests can't verify real routing/cookie behavior (spec section 16).
    header at all, and hostnames are registered without one (spec section
    3 rejects non-443 ports at registration time).
 
+5. To try the admin console itself, bring up `mock-oidc` too (a real,
+   minimal OIDC provider -- see `cmd/mock-oidc`'s doc comment -- that
+   auto-approves every login as one hardcoded `grp-admins` identity; it
+   is never a production component):
+
+   ```bash
+   docker compose -f deploy/dev/docker-compose.yml up -d --build \
+     migrate manual-approval mock-oidc backend-protected traefik
+   ```
+
+   Then, from the host browser: `https://admin.localtest.me:18443/`,
+   click "Log in" (accept the self-signed-cert warning, same as the
+   other `*.localtest.me` hosts). `deploy/dev/manual-approval-config.yaml`
+   already points `oidc_issuer`/`admin_origin` at this stack's addresses.
+   If plain DNS resolution of `*.localtest.me` isn't available in your
+   environment, use the same `curl --resolve` trick as step 4 above --
+   `admin.localtest.me` needs it for both `/` and `/auth/callback`, and
+   `mock-oidc.localtest.me` for the redirect in between.
+
 Notes on what's dev-only in this stack, not something a real deployment
 does: `manual-approval`'s compose service overrides to `user: "0:0"`
 because Docker Desktop's Windows bind-mount layer doesn't reliably
@@ -180,7 +199,12 @@ identical "tls: internal error" specific to this environment (see
 `deploy/dev/Caddyfile.protected`'s comment) that's unrelated to what
 this milestone verifies -- the browser-facing edge (Traefik's own
 `websecure` entry point) is still real HTTPS, which is what actually
-matters here.
+matters here. `mock-oidc` (see step 5) exists only because this dev
+stack has no real organizational identity provider to test the admin
+console's OIDC login against; `admin_origin` includes `:18443` for the
+same non-standard-port reason `docs/dev-environment.md`'s curl example
+above needs an explicit `Host` header -- a real deployment's admin
+hostname has no port, since Traefik only ever publishes 443.
 
 ## The two-host TLS test stack
 

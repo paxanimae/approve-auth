@@ -9,7 +9,7 @@ should re-verify each row, not assume history.
 |---|---|---|---|
 | Go | 1.25.14 | `scripts/dev.sh`/`dev.ps1` (`golang:1.25.14` image), `.go-version`, `.github/workflows/ci.yml` | `go.mod`'s `go 1.25.11` line is golang-migrate v4.20.1's actual minimum; the toolchain image is newer |
 | PostgreSQL | 17.6 | `deploy/dev/docker-compose.yml` (`postgres:17.6`), `.github/workflows/ci.yml` service container | |
-| Node.js | 22.23.2 | `scripts/dev.sh`/`dev.ps1` (`node:22.23.2` image), `.github/workflows/ci.yml` | Build-time only; no Node server ships in production |
+| Node.js | 22.23.2 | `scripts/dev.sh`/`dev.ps1` (`node:22.23.2` image), `Dockerfile` (digest-pinned build stage), `.github/workflows/ci.yml` | Build-time only; no Node server ships in production |
 | Svelte | 5.57.0 | `web/admin/package.json` | |
 | Vite | 8.3.0 | `web/admin/package.json` | |
 | TypeScript | 6.0.2 | `web/admin/package.json` | |

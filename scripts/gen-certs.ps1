@@ -26,6 +26,8 @@ function New-HostCert {
 New-HostCert -HostName "app-a.localtest.me"
 New-HostCert -HostName "app-b.localtest.me"
 New-HostCert -HostName "protected.localtest.me"
+New-HostCert -HostName "admin.localtest.me"
+New-HostCert -HostName "mock-oidc.localtest.me"
 
 Write-Host "Generated self-signed dev certs in $CertsDir"
 Write-Host "Browsers will show a certificate warning for these -- see this script's header comment."

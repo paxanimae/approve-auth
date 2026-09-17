@@ -16,6 +16,9 @@
 #                        one-off, locked migration step").
 #   manual-approval    - The actual service, built from ../../Dockerfile,
 #                        connecting with its least-privilege runtime role.
+#   mock-oidc          - A real, minimal OIDC provider for the admin
+#                        console's login flow (see cmd/mock-oidc) --
+#                        never a production component.
 #   backend-protected  - A Caddy placeholder standing in for the
 #                        protected application behind Traefik.
 #   traefik            - Real Traefik, wired with the ForwardAuth
@@ -73,6 +76,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      target: runtime
     entrypoint: ["/usr/local/bin/admin", "migrate-up"]
     environment:
       DATABASE_URL_FILE: /secrets/database-url-superuser.txt
@@ -88,6 +92,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      target: runtime
     restart: unless-stopped
     # Dev-only override: Docker Desktop's Windows bind-mount layer serves
     # host files to Linux containers in a way the image's nonroot user
@@ -111,6 +116,26 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      mock-oidc:
+        condition: service_started
+    networks:
+      - dev
+
+  # A real (not stubbed) OIDC provider for local dev and the
+  # real-Traefik integration stack, so the admin console's OIDC login
+  # can be exercised through an actual browser round trip -- see
+  # cmd/mock-oidc's doc comment. Never part of a release image.
+  mock-oidc:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: mock-oidc
+    restart: unless-stopped
+    command:
+      - -issuer=http://mock-oidc:8090
+      - -authorize-url=https://mock-oidc.localtest.me:18443/authorize
+      - -client-id=dev-placeholder
+      - -groups=grp-admins
     networks:
       - dev
 

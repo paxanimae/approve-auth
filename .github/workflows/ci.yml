@@ -14,6 +14,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # web/admin/dist is gitignored (a build artifact); internal/httpserver
+      # go:embeds it as the served admin console, so it must exist before
+      # go vet/build/lint even parses that package.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+      - working-directory: web/admin
+        run: npm ci && npm run build
       - run: go vet ./...
       - uses: golangci/golangci-lint-action@v6
         with:
@@ -48,6 +56,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # See the go job above: web/admin/dist must exist before anything
+      # imports web/admin (its go:embed target).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+      - working-directory: web/admin
+        run: npm ci && npm run build
       # -p 1: internal/store's tests drop and recreate the whole schema
       # mid-run, which races against other packages' DB tests if Go runs
       # package test binaries concurrently (see scripts/dev.sh).

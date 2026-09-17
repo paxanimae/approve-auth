@@ -5,6 +5,10 @@ tls:
   certificates:
     - certFile: /certs/protected.localtest.me.pem
       keyFile: /certs/protected.localtest.me-key.pem
+    - certFile: /certs/admin.localtest.me.pem
+      keyFile: /certs/admin.localtest.me-key.pem
+    - certFile: /certs/mock-oidc.localtest.me.pem
+      keyFile: /certs/mock-oidc.localtest.me-key.pem
 
 http:
   middlewares:
@@ -48,6 +52,27 @@ http:
       priority: 1000
       service: manual-public
 
+    # Dedicated admin hostname, dedicated listener (spec section 2/9) --
+    # a separate router/service from the reserved-path one above, never
+    # the manual-approval ForwardAuth middleware.
+    manual-admin:
+      rule: "Host(`admin.localtest.me`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      service: manual-admin
+
+    # Only mock-oidc's /authorize needs to be browser-reachable at all
+    # (discovery/jwks/token are called backend-to-backend, directly at
+    # http://mock-oidc:8090, by cmd/server) -- see cmd/mock-oidc's
+    # -authorize-url flag and deploy/dev/docker-compose.yml.
+    mock-oidc:
+      rule: "Host(`mock-oidc.localtest.me`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      service: mock-oidc
+
   services:
     backend-protected:
       loadBalancer:
@@ -58,3 +83,13 @@ http:
       loadBalancer:
         servers:
           - url: "http://manual-approval:8080"
+
+    manual-admin:
+      loadBalancer:
+        servers:
+          - url: "http://manual-approval:8081"
+
+    mock-oidc:
+      loadBalancer:
+        servers:
+          - url: "http://mock-oidc:8090"

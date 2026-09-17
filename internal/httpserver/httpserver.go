@@ -8,10 +8,12 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	webadmin "github.com/frid-iks/traefik-manual-proxy/web/admin"
 	webpublic "github.com/frid-iks/traefik-manual-proxy/web/public"
 )
 
@@ -132,7 +134,39 @@ func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminRe
 	mux.HandleFunc("GET /api/v1/audit-events", authed(listAuditEventsHandler(readStore)))
 	mux.HandleFunc("GET /api/v1/audit-events/export", authed(exportAuditEventsHandler(readStore)))
 
+	// The console itself: everything not matched above (spec section 2:
+	// "Serve compiled admin assets from the Go binary"). Deliberately not
+	// behind withHost: it's a static, unauthenticated shell with no
+	// secrets in it (same trust level as the public listener's own
+	// asset handler) -- every actual API call it makes is separately
+	// Host-checked, session-checked, and (for mutations) CSRF-checked.
+	// This also keeps an unmatched path here a plain 404 from the file
+	// server, not a Host-check 403, for the cross-listener isolation
+	// exit gate.
+	mux.HandleFunc("/", adminConsoleHandler())
+
 	return mux
+}
+
+// adminConsoleHandler serves the embedded, built Svelte admin console:
+// index.html at "/", its hashed asset files under "/assets/" (safe to
+// cache indefinitely -- Vite's content hash changes the filename on any
+// change), and a plain 404 for anything else, exactly like an ordinary
+// static file server would.
+func adminConsoleHandler() http.HandlerFunc {
+	sub, err := fs.Sub(webadmin.Dist, "dist")
+	if err != nil {
+		panic(err) // embedded at build time; cannot fail at runtime
+	}
+	fileServer := http.FileServerFS(sub)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		fileServer.ServeHTTP(w, r)
+	}
 }
 
 // NewOpsMux serves process-health endpoints on the Ops listener only.

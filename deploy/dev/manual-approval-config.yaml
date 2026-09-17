@@ -1,8 +1,13 @@
 # Dev-only nonsecret config for the manual-approval service in the
 # real-Traefik integration compose stack. Not a production config
 # example -- see deploy/stack.yml (Milestone 5) for that.
-admin_origin: https://admin.localtest.me
-oidc_issuer: https://idp.example.test/
+# :18443 because that's the nonstandard port this dev Traefik stack
+# publishes on (see docs/dev-environment.md) -- a real deployment's
+# ADMIN_ORIGIN has no port, since Traefik only ever publishes 443.
+admin_origin: https://admin.localtest.me:18443
+# mock-oidc (see cmd/mock-oidc): a real, minimal OIDC provider standing
+# in for the organizational IdP in this dev stack only.
+oidc_issuer: http://mock-oidc:8090
 oidc_client_id: dev-placeholder
 oidc_admin_groups: ["grp-admins"]
 oidc_viewer_groups: ["grp-viewers"]
