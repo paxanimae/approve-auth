@@ -18,12 +18,12 @@ type RateLimits struct {
 
 // Retention mirrors the default retention windows from spec section 12.
 type Retention struct {
-	AuditEvents         Duration `yaml:"audit_events"`
-	ResolvedRequests     Duration `yaml:"resolved_requests"`
-	IPAndUserAgent       Duration `yaml:"ip_and_user_agent"`
-	ReturnPaths          Duration `yaml:"return_paths"`
-	IdempotencyRecords   Duration `yaml:"idempotency_records"`
-	ClaimEnvelopes       Duration `yaml:"claim_envelopes"`
+	AuditEvents        Duration `yaml:"audit_events"`
+	ResolvedRequests   Duration `yaml:"resolved_requests"`
+	IPAndUserAgent     Duration `yaml:"ip_and_user_agent"`
+	ReturnPaths        Duration `yaml:"return_paths"`
+	IdempotencyRecords Duration `yaml:"idempotency_records"`
+	ClaimEnvelopes     Duration `yaml:"claim_envelopes"`
 }
 
 // Config is the fully loaded, environment-overridden, secret-resolved
@@ -65,9 +65,9 @@ type Config struct {
 	ClaimTTL                     Duration `yaml:"claim_ttl"`
 	ClaimRetryTTL                Duration `yaml:"claim_retry_ttl"`
 	ExpiringSoonWindow           Duration `yaml:"expiring_soon_window"`
-	AdminIdleTTL                  Duration `yaml:"admin_idle_ttl"`
-	AdminAbsoluteTTL              Duration `yaml:"admin_absolute_ttl"`
-	AuthDecisionTimeout           Duration `yaml:"auth_decision_timeout"`
+	AdminIdleTTL                 Duration `yaml:"admin_idle_ttl"`
+	AdminAbsoluteTTL             Duration `yaml:"admin_absolute_ttl"`
+	AuthDecisionTimeout          Duration `yaml:"auth_decision_timeout"`
 
 	LogLevel string `yaml:"log_level"`
 

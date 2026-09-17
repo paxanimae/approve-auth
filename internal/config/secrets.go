@@ -32,7 +32,7 @@ func secretBases(cfg *Config) []secretBase {
 		{
 			envBase: "CLAIM_ENCRYPTION_KEY",
 			file:    func(c *Config) string { return c.ClaimEncryptionKeyFile },
-			assign:  func(c *Config, raw string) error {
+			assign: func(c *Config, raw string) error {
 				key, err := decodeAESKey("CLAIM_ENCRYPTION_KEY_FILE", raw)
 				if err != nil {
 					return err
@@ -44,7 +44,7 @@ func secretBases(cfg *Config) []secretBase {
 		{
 			envBase: "OIDC_STATE_ENCRYPTION_KEY",
 			file:    func(c *Config) string { return c.OIDCStateEncryptionKeyFile },
-			assign:  func(c *Config, raw string) error {
+			assign: func(c *Config, raw string) error {
 				key, err := decodeAESKey("OIDC_STATE_ENCRYPTION_KEY_FILE", raw)
 				if err != nil {
 					return err

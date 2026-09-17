@@ -12,86 +12,86 @@ import (
 // alongside the code that actually calls them. They carry no behavior.
 
 type Application struct {
-	ID                      uuid.UUID
-	Hostname                string
-	DisplayName             string
-	Description             string
-	Enabled                 bool
-	DefaultDurationSeconds  int32
-	MaxDurationSeconds      int32
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
-	ArchivedAt              *time.Time
-	Version                 int32
-}
-
-type EnrollmentContext struct {
-	ID                uuid.UUID
-	ApplicationID     uuid.UUID
-	PendingTokenHash  []byte
-	CSRFSecret        []byte
-	CreatedAt         time.Time
-	ExpiresAt         time.Time
-	ConsumedAt        *time.Time
-}
-
-type ApprovalRequest struct {
 	ID                     uuid.UUID
-	ApplicationID          uuid.UUID
-	PendingTokenHash       []byte
-	VerificationCode       string
-	Label                  *string
-	Message                *string
-	ReturnPath             *string
-	Status                 string
-	RequestedAt            time.Time
-	DeadlineAt             time.Time
-	DecidedAt              *time.Time
-	DecidedBy              *string
-	ClaimDeadlineAt        *time.Time
-	ClaimedAt              *time.Time
-	PublicDecisionMessage  *string
-	PrivateNote            *string
-	SourceIP               *net.IP
-	UserAgent              *string
+	Hostname               string
+	DisplayName            string
+	Description            string
+	Enabled                bool
+	DefaultDurationSeconds int32
+	MaxDurationSeconds     int32
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	ArchivedAt             *time.Time
 	Version                int32
 }
 
+type EnrollmentContext struct {
+	ID               uuid.UUID
+	ApplicationID    uuid.UUID
+	PendingTokenHash []byte
+	CSRFSecret       []byte
+	CreatedAt        time.Time
+	ExpiresAt        time.Time
+	ConsumedAt       *time.Time
+}
+
+type ApprovalRequest struct {
+	ID                    uuid.UUID
+	ApplicationID         uuid.UUID
+	PendingTokenHash      []byte
+	VerificationCode      string
+	Label                 *string
+	Message               *string
+	ReturnPath            *string
+	Status                string
+	RequestedAt           time.Time
+	DeadlineAt            time.Time
+	DecidedAt             *time.Time
+	DecidedBy             *string
+	ClaimDeadlineAt       *time.Time
+	ClaimedAt             *time.Time
+	PublicDecisionMessage *string
+	PrivateNote           *string
+	SourceIP              *net.IP
+	UserAgent             *string
+	Version               int32
+}
+
 type Authorization struct {
-	ID                 uuid.UUID
-	ApplicationID      uuid.UUID
-	RequestID          uuid.UUID
-	Label              *string
-	ApprovedBy         string
-	ApprovedAt         time.Time
-	ActivatedAt        *time.Time
-	ExpiresAt          time.Time
-	RevokedAt          *time.Time
-	RevokedBy          *string
-	RevocationReason   *string
-	LastSeenAt         *time.Time
-	LastSeenIP         *net.IP
-	LastSeenUserAgent  *string
-	Version            int32
+	ID                uuid.UUID
+	ApplicationID     uuid.UUID
+	RequestID         uuid.UUID
+	Label             *string
+	ApprovedBy        string
+	ApprovedAt        time.Time
+	ActivatedAt       *time.Time
+	ExpiresAt         time.Time
+	RevokedAt         *time.Time
+	RevokedBy         *string
+	RevocationReason  *string
+	LastSeenAt        *time.Time
+	LastSeenIP        *net.IP
+	LastSeenUserAgent *string
+	Version           int32
 }
 
 type Credential struct {
-	ID                 uuid.UUID
-	AuthorizationID    uuid.UUID
-	ApplicationID      uuid.UUID
-	TokenHash          []byte
-	IssuedAt           time.Time
-	AbsoluteExpiresAt  time.Time
-	RevokedAt          *time.Time
+	ID                uuid.UUID
+	AuthorizationID   uuid.UUID
+	ApplicationID     uuid.UUID
+	TokenHash         []byte
+	IssuedAt          time.Time
+	AbsoluteExpiresAt time.Time
+	RevokedAt         *time.Time
 }
 
 type ClaimResult struct {
-	RequestID        uuid.UUID
-	CredentialID     uuid.UUID
-	EncryptionKeyID  string
-	Nonce            []byte
-	Ciphertext       []byte
-	ExpiresAt        time.Time
+	RequestID       uuid.UUID
+	CredentialID    uuid.UUID
+	EncryptionKeyID string
+	Nonce           []byte
+	Ciphertext      []byte
+	ExpiresAt       time.Time
 }
 
 type AdminSession struct {
@@ -119,20 +119,20 @@ type OIDCTransaction struct {
 }
 
 type AuditEvent struct {
-	ID               uuid.UUID
-	OccurredAt       time.Time
-	ActorType        string
-	ActorSubject     *string
-	Action           string
-	ApplicationID    *uuid.UUID
-	RequestID        *uuid.UUID
-	AuthorizationID  *uuid.UUID
-	CorrelationID    uuid.UUID
-	SourceIP         *net.IP
-	Reason           *string
-	RedactedBefore   []byte // JSONB
-	RedactedAfter    []byte // JSONB
-	Outcome          string
+	ID              uuid.UUID
+	OccurredAt      time.Time
+	ActorType       string
+	ActorSubject    *string
+	Action          string
+	ApplicationID   *uuid.UUID
+	RequestID       *uuid.UUID
+	AuthorizationID *uuid.UUID
+	CorrelationID   uuid.UUID
+	SourceIP        *net.IP
+	Reason          *string
+	RedactedBefore  []byte // JSONB
+	RedactedAfter   []byte // JSONB
+	Outcome         string
 }
 
 type RateLimitBucket struct {
@@ -143,12 +143,12 @@ type RateLimitBucket struct {
 }
 
 type IdempotencyRecord struct {
-	ID              uuid.UUID
-	ActorSessionID  uuid.UUID
-	Key             string
-	Operation       string
-	RequestHash     []byte
-	ResultStatus    int32
-	ResultBody      []byte // JSONB
-	ExpiresAt       time.Time
+	ID             uuid.UUID
+	ActorSessionID uuid.UUID
+	Key            string
+	Operation      string
+	RequestHash    []byte
+	ResultStatus   int32
+	ResultBody     []byte // JSONB
+	ExpiresAt      time.Time
 }
