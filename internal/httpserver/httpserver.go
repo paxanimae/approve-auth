@@ -38,20 +38,6 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// writeNotImplemented is the standard response for every route this
-// milestone declares but doesn't implement: it exists on the right
-// listener (that's the part M1 tests), but the business logic behind it
-// is a later milestone.
-func writeNotImplemented(w http.ResponseWriter, message string) {
-	writeAPIError(w, http.StatusNotImplemented, "not_implemented", message)
-}
-
-func stub(message string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		writeNotImplemented(w, message)
-	}
-}
-
 // NewPublicMux serves the same-host reserved-path endpoints (spec
 // section 9) on the Public listener only. Traefik's reserved-path
 // router points here; the protected application router never does.
@@ -91,38 +77,53 @@ func publicAssetsHandler() http.Handler {
 }
 
 // NewAdminMux serves OIDC login/callback/logout and the /api/v1 admin API
-// (spec section 9) on the Admin listener only.
-func NewAdminMux() *http.ServeMux {
+// (spec section 9) on the Admin listener only. adminHost is the
+// configured admin hostname (spec section 9: "Verify admin Host equals
+// configured admin hostname"); sessionCookieMaxAge bounds the admin
+// session cookie's browser lifetime, matching AdminAbsoluteTTL so the
+// cookie never outlives the session it names; expiringSoonWindow and
+// recentWindow back GET /overview's counts.
+func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminReadStore, adminHost string, sessionCookieMaxAge, expiringSoonWindow, recentWindow time.Duration) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /auth/login", stub("admin OIDC login: Milestone 4"))
-	mux.HandleFunc("GET /auth/callback", stub("admin OIDC callback: Milestone 4"))
-	mux.HandleFunc("POST /auth/logout", stub("admin logout: Milestone 4"))
-	mux.HandleFunc("GET /api/v1/me", stub("admin identity: Milestone 4"))
+	// Every route below checks the admin Host first (spec section 9).
+	withHost := func(h http.HandlerFunc) http.HandlerFunc { return requireAdminHost(adminHost, h) }
+	// Any live session, either role (spec section 9: "viewer reads
+	// operational state and audit; administrator also mutates").
+	authed := func(h http.HandlerFunc) http.HandlerFunc { return withHost(requireAdminSession(sessions, h)) }
+	// Administrator role plus a valid CSRF token -- every mutation.
+	mutating := func(h http.HandlerFunc) http.HandlerFunc {
+		return withHost(requireAdminSession(sessions, requireAdministrator(requireAdminCSRF(h))))
+	}
 
-	mux.HandleFunc("GET /api/v1/overview", stub("overview counts: Milestone 4"))
+	mux.HandleFunc("GET /auth/login", withHost(adminLoginHandler(sessions)))
+	mux.HandleFunc("GET /auth/callback", withHost(adminCallbackHandler(sessions, sessionCookieMaxAge)))
+	mux.HandleFunc("POST /auth/logout", authed(adminLogoutHandler(sessions)))
+	mux.HandleFunc("GET /api/v1/me", authed(adminMeHandler()))
 
-	mux.HandleFunc("GET /api/v1/applications", stub("list applications: Milestone 4"))
-	mux.HandleFunc("POST /api/v1/applications", stub("register application: Milestone 4"))
-	mux.HandleFunc("GET /api/v1/applications/{id}", stub("application detail: Milestone 4"))
-	mux.HandleFunc("PATCH /api/v1/applications/{id}", stub("update application: Milestone 4"))
-	mux.HandleFunc("POST /api/v1/applications/{id}/disable", stub("disable application: Milestone 4"))
-	mux.HandleFunc("POST /api/v1/applications/{id}/enable", stub("enable application: Milestone 4"))
+	mux.HandleFunc("GET /api/v1/overview", authed(overviewHandler(readStore, expiringSoonWindow, recentWindow)))
 
-	mux.HandleFunc("GET /api/v1/requests", stub("list requests: Milestone 4"))
-	mux.HandleFunc("GET /api/v1/requests/{id}", stub("request detail: Milestone 4"))
-	mux.HandleFunc("POST /api/v1/requests/{id}/approve", stub("approve request: Milestone 3"))
-	mux.HandleFunc("POST /api/v1/requests/{id}/deny", stub("deny request: Milestone 3"))
+	mux.HandleFunc("GET /api/v1/applications", authed(listApplicationsHandler(readStore)))
+	mux.HandleFunc("POST /api/v1/applications", mutating(createApplicationHandler(actions)))
+	mux.HandleFunc("GET /api/v1/applications/{id}", authed(getApplicationHandler(readStore)))
+	mux.HandleFunc("PATCH /api/v1/applications/{id}", mutating(updateApplicationHandler(actions)))
+	mux.HandleFunc("POST /api/v1/applications/{id}/disable", mutating(disableApplicationHandler(actions)))
+	mux.HandleFunc("POST /api/v1/applications/{id}/enable", mutating(enableApplicationHandler(actions)))
 
-	mux.HandleFunc("GET /api/v1/authorizations", stub("list authorizations: Milestone 4"))
-	mux.HandleFunc("GET /api/v1/authorizations/{id}", stub("authorization detail: Milestone 4"))
-	mux.HandleFunc("POST /api/v1/authorizations/{id}/renew", stub("renew authorization: Milestone 3"))
-	mux.HandleFunc("POST /api/v1/authorizations/{id}/revoke", stub("revoke authorization: Milestone 3"))
-	mux.HandleFunc("POST /api/v1/authorizations/bulk-renew", stub("bulk renew: Milestone 4"))
-	mux.HandleFunc("POST /api/v1/authorizations/bulk-revoke", stub("bulk revoke: Milestone 4"))
+	mux.HandleFunc("GET /api/v1/requests", authed(listRequestsHandler(readStore)))
+	mux.HandleFunc("GET /api/v1/requests/{id}", authed(getRequestHandler(readStore)))
+	mux.HandleFunc("POST /api/v1/requests/{id}/approve", mutating(approveRequestHandler(actions)))
+	mux.HandleFunc("POST /api/v1/requests/{id}/deny", mutating(denyRequestHandler(actions)))
 
-	mux.HandleFunc("GET /api/v1/audit-events", stub("list audit events: Milestone 4"))
-	mux.HandleFunc("GET /api/v1/audit-events/export", stub("export audit events: Milestone 4"))
+	mux.HandleFunc("GET /api/v1/authorizations", authed(listAuthorizationsHandler(readStore)))
+	mux.HandleFunc("GET /api/v1/authorizations/{id}", authed(getAuthorizationHandler(readStore)))
+	mux.HandleFunc("POST /api/v1/authorizations/{id}/renew", mutating(renewAuthorizationHandler(actions)))
+	mux.HandleFunc("POST /api/v1/authorizations/{id}/revoke", mutating(revokeAuthorizationHandler(actions)))
+	mux.HandleFunc("POST /api/v1/authorizations/bulk-renew", mutating(bulkRenewHandler(actions, readStore)))
+	mux.HandleFunc("POST /api/v1/authorizations/bulk-revoke", mutating(bulkRevokeHandler(actions)))
+
+	mux.HandleFunc("GET /api/v1/audit-events", authed(listAuditEventsHandler(readStore)))
+	mux.HandleFunc("GET /api/v1/audit-events/export", authed(exportAuditEventsHandler(readStore)))
 
 	return mux
 }

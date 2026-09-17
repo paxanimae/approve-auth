@@ -82,7 +82,7 @@ func listeners() []listener {
 		},
 		{
 			name: "admin",
-			mux:  httpserver.NewAdminMux(),
+			mux:  httpserver.NewAdminMux(fakeAdminSessions{}, fakeAdminActions{}, fakeAdminReadStore{}, "admin.example.test", time.Hour, time.Hour, time.Hour),
 			routes: []route{
 				{"GET", "/auth/login"},
 				{"GET", "/auth/callback"},

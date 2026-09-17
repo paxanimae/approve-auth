@@ -1,0 +1,137 @@
+package httpserver
+
+import (
+	"context"
+	"crypto/subtle"
+	"errors"
+	"net/http"
+
+	"github.com/frid-iks/traefik-manual-proxy/internal/admin"
+	"github.com/frid-iks/traefik-manual-proxy/internal/adminsession"
+)
+
+// csrfHeaderName carries the admin API's synchronizer token (spec
+// section 9: "CSRF token ... for every [admin] mutation"). Unlike the
+// public listener's HTML-form CSRF field, the admin console is a JSON
+// API, so the token travels as a header on every mutating request.
+const csrfHeaderName = "X-CSRF-Token"
+
+// AdminSessions is the internal/adminsession.Service surface the admin
+// listener's handlers need.
+type AdminSessions interface {
+	BeginLogin(ctx context.Context, returnTo string) (adminsession.BeginLoginResult, error)
+	HandleCallback(ctx context.Context, state, code string) (rawSessionToken, returnPath string, err error)
+	ValidateSession(ctx context.Context, rawToken string) (adminsession.SessionInfo, error)
+	Logout(ctx context.Context, rawToken, csrfToken string) error
+}
+
+type adminIdentityContextKey struct{}
+
+func adminIdentityFromContext(ctx context.Context) (adminsession.SessionInfo, bool) {
+	info, ok := ctx.Value(adminIdentityContextKey{}).(adminsession.SessionInfo)
+	return info, ok
+}
+
+// actorSubject is every mutation handler's audit-actor value: the OIDC
+// subject of the caller requireAdminSession already validated. Empty
+// only if called outside that middleware, which no route does.
+func actorSubject(r *http.Request) string {
+	if info, ok := adminIdentityFromContext(r.Context()); ok {
+		return info.Subject
+	}
+	return ""
+}
+
+// adminErrorDetails centralizes internal/admin's error -> HTTP mapping
+// (spec section 9's status codes) so both a single-item mutation
+// handler and a bulk handler's per-item result can use the same mapping.
+func adminErrorDetails(err error) (status int, code, message string) {
+	switch {
+	case errors.Is(err, admin.ErrConflict):
+		return http.StatusConflict, "conflict", "the record was modified by someone else -- reload and try again"
+	case errors.Is(err, admin.ErrInvalidExpiry):
+		return http.StatusUnprocessableEntity, "invalid_expiry", "expires_at must be in the future and within the configured maximum duration"
+	case errors.Is(err, admin.ErrDuplicateHostname):
+		return http.StatusConflict, "duplicate_hostname", "an application with this hostname is already registered"
+	case errors.Is(err, admin.ErrInvalidDuration):
+		return http.StatusUnprocessableEntity, "invalid_duration", "default_duration and max_duration must be positive, with default_duration <= max_duration"
+	default:
+		return http.StatusInternalServerError, "internal_error", "the request could not be completed"
+	}
+}
+
+func mapAdminError(w http.ResponseWriter, err error) {
+	status, code, message := adminErrorDetails(err)
+	writeAPIError(w, status, code, message)
+}
+
+// requireAdminHost implements spec section 9: "Verify admin Host equals
+// configured admin hostname." Applied per registered route (folded into
+// NewAdminMux's authed/mutating helpers) rather than around the whole
+// mux: a path nobody registered must still 404 from the mux itself --
+// the cross-listener-isolation exit gate (spec section 2) checks other
+// listeners' routes against this one and expects exactly 404, not a
+// Host-check 403 that would fire before the mux even looks at the path.
+func requireAdminHost(adminHost string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if requestHostname(r) != adminHost {
+			writeAPIError(w, http.StatusForbidden, "unknown_host", "this host is not configured for admin access")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// requireAdminSession resolves the admin session cookie to a live
+// session of any role and stores it in the request context; on failure
+// it writes 401 and never calls next. Every /api/v1 route needs at least
+// this; requireAdministrator further restricts mutations.
+func requireAdminSession(sessions AdminSessions, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := singleCookieValue(r, adminCookieName)
+		if !ok {
+			writeAPIError(w, http.StatusBadRequest, "malformed_cookie", "duplicate admin session cookie")
+			return
+		}
+		info, err := sessions.ValidateSession(r.Context(), token)
+		if err != nil {
+			writeAPIError(w, http.StatusUnauthorized, "no_session", "no active admin session")
+			return
+		}
+		next(w, r.WithContext(context.WithValue(r.Context(), adminIdentityContextKey{}, info)))
+	}
+}
+
+// requireAdministrator further restricts a requireAdminSession-wrapped
+// handler to the administrator role (spec section 9: "viewer reads
+// operational state and audit; administrator also mutates").
+func requireAdministrator(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		info, ok := adminIdentityFromContext(r.Context())
+		if !ok || info.Role != "administrator" {
+			writeAPIError(w, http.StatusForbidden, "forbidden", "administrator role required")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// requireAdminCSRF enforces the synchronizer-token check for a mutation:
+// the caller must echo back the session's own derived token, which a
+// cross-origin/CSRF request cannot read. Must run after
+// requireAdminSession so adminIdentityFromContext is populated.
+func requireAdminCSRF(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		info, ok := adminIdentityFromContext(r.Context())
+		if !ok {
+			writeAPIError(w, http.StatusUnauthorized, "no_session", "no active admin session")
+			return
+		}
+		candidate := r.Header.Get(csrfHeaderName)
+		if candidate == "" || subtle.ConstantTimeCompare([]byte(candidate), []byte(info.CSRFToken)) != 1 {
+			writeAPIError(w, http.StatusForbidden, "invalid_csrf", "invalid or missing CSRF token")
+			return
+		}
+		next(w, r)
+	}
+}

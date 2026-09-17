@@ -80,3 +80,23 @@ func nullableTime(t time.Time) any {
 	}
 	return t
 }
+
+// RecordAuditEvent writes one standalone audit event not otherwise tied
+// to a row mutation -- currently just the audit export itself (spec
+// section 9: "audit the export itself").
+func (db *DB) RecordAuditEvent(ctx context.Context, actorType, actorSubject, action, reason string) error {
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: recording audit event %q: begin: %w", action, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := insertAuditEvent(ctx, tx, auditParams{ActorType: actorType, ActorSubject: actorSubject, Action: action, Reason: reason}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: recording audit event %q: commit: %w", action, err)
+	}
+	return nil
+}

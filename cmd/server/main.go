@@ -9,20 +9,34 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/frid-iks/traefik-manual-proxy/internal/admin"
+	"github.com/frid-iks/traefik-manual-proxy/internal/adminsession"
 	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
 	"github.com/frid-iks/traefik-manual-proxy/internal/config"
 	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
 	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
+	"github.com/frid-iks/traefik-manual-proxy/internal/oidc"
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 )
 
 const shutdownGrace = 30 * time.Second
+
+// oidcTransactionTTL is spec section 9's fixed 10-minute OIDC transient-
+// state expiry -- unlike ADMIN_IDLE_TTL/ADMIN_ABSOLUTE_TTL, section 14's
+// configuration table does not list this as an operator-tunable setting.
+const oidcTransactionTTL = 10 * time.Minute
+
+// overviewRecentWindow bounds GET /overview's "revoked/expired recently"
+// count (spec section 9 names the count but not its exact window).
+const overviewRecentWindow = 24 * time.Hour
 
 func main() {
 	if err := run(); err != nil {
@@ -77,9 +91,31 @@ func run() error {
 		PendingRequestsPerHourPerAppIP: cfg.RateLimits.PendingRequestsPerHourPerAppIP,
 	})
 
+	adminHost, err := adminOriginHost(cfg.AdminOrigin)
+	if err != nil {
+		return fmt.Errorf("invalid admin_origin: %w", err)
+	}
+	oidcClient, err := oidc.NewClient(ctx, cfg.OIDCIssuer, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.AdminOrigin+"/auth/callback")
+	if err != nil {
+		return fmt.Errorf("building OIDC client: %w", err)
+	}
+	adminSessions := adminsession.New(db, oidcClient, adminsession.Config{
+		OIDCAdminGroups:    cfg.OIDCAdminGroups,
+		OIDCViewerGroups:   cfg.OIDCViewerGroups,
+		IdleTTL:            cfg.AdminIdleTTL.Std(),
+		AbsoluteTTL:        cfg.AdminAbsoluteTTL.Std(),
+		TransactionTTL:     oidcTransactionTTL,
+		StateEncryptionKey: cfg.OIDCStateEncryptionKey,
+	})
+	adminActions := admin.New(db, admin.Config{
+		DefaultAuthorizationDuration: cfg.DefaultAuthorizationDuration.Std(),
+		MaxAuthorizationDuration:     cfg.MaxAuthorizationDuration.Std(),
+		ClaimTTL:                     cfg.ClaimTTL.Std(),
+	})
+
 	servers := []*http.Server{
 		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux(enrollmentService, authzService, cfg.RequestTTL.Std(), cfg.CredentialMaxAge.Std(), cfg.AuthDecisionTimeout.Std())},
-		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux()},
+		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux(adminSessions, adminActions, db, adminHost, cfg.AdminAbsoluteTTL.Std(), cfg.ExpiringSoonWindow.Std(), overviewRecentWindow)},
 		{Addr: cfg.AuthAddr, Handler: httpserver.NewAuthMux(authzService, cfg.AuthDecisionTimeout.Std()), TLSConfig: authTLSConfig},
 		{Addr: cfg.OpsAddr, Handler: httpserver.NewOpsMux()},
 	}
@@ -125,4 +161,17 @@ func run() error {
 	wg.Wait()
 
 	return nil
+}
+
+// adminOriginHost extracts just the hostname from the configured
+// ADMIN_ORIGIN (e.g. "https://approval-admin.example.com" ->
+// "approval-admin.example.com"), matching the port-stripped, lowercased
+// form httpserver.requestHostname derives from an incoming request's
+// Host header.
+func adminOriginHost(adminOrigin string) (string, error) {
+	u, err := url.Parse(adminOrigin)
+	if err != nil || u.Hostname() == "" {
+		return "", fmt.Errorf("could not parse a hostname from %q", adminOrigin)
+	}
+	return strings.ToLower(u.Hostname()), nil
 }

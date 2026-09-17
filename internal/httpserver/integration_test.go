@@ -179,7 +179,10 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 
 	publicMux := httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Hour, time.Hour, time.Second)
 	go func() { _ = http.Serve(publicLn, publicMux) }()
-	go func() { _ = http.Serve(adminLn, httpserver.NewAdminMux()) }()
+	go func() {
+		adminMux := httpserver.NewAdminMux(fakeAdminSessions{}, fakeAdminActions{}, fakeAdminReadStore{}, "admin.example.test", time.Hour, time.Hour, time.Hour)
+		_ = http.Serve(adminLn, adminMux)
+	}()
 	go func() { _ = http.Serve(opsLn, httpserver.NewOpsMux()) }()
 	authMux := httpserver.NewAuthMux(fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Second)
 	go func() { _ = http.Serve(authLn, authMux) }()
@@ -200,13 +203,19 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 	})
 
 	t.Run("admin listener serves plain HTTP", func(t *testing.T) {
+		// The request's Host (127.0.0.1) never matches the fake "admin
+		// .example.test" this test configured NewAdminMux with, so
+		// requireAdminHost rejects it with 403 -- proving the listener
+		// itself is up and the route matched, same intent as the public
+		// listener check above. The real Host-match/session/CSRF behavior
+		// has its own tests.
 		resp, err := http.Get(fmt.Sprintf("http://%s/api/v1/me", adminLn.Addr()))
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusNotImplemented {
-			t.Errorf("got status %d, want 501 (stubbed but routed)", resp.StatusCode)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("got status %d, want 403 (routed, rejected by the admin Host check)", resp.StatusCode)
 		}
 	})
 
