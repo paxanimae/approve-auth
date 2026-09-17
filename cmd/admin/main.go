@@ -1,33 +1,41 @@
 // Command admin is the operator CLI: it talks to PostgreSQL directly for
 // tasks like registering the first application or force-revoking an admin
 // session (spec section 9), rather than being a network listener like
-// cmd/server. Subcommands are parsed but not implemented yet -- Milestone 4.
+// cmd/server. See docs/adr/0002-cmd-admin-is-a-cli-not-a-listener.md.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"time"
+
+	"github.com/frid-iks/traefik-manual-proxy/internal/config"
+	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 )
 
 func main() {
-	flag.Usage = usage
-	flag.Parse()
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
-	args := flag.Args()
+func run(args []string) error {
 	if len(args) == 0 {
 		usage()
-		os.Exit(2)
+		return fmt.Errorf("no command given")
 	}
 
 	switch args[0] {
-	case "register-application", "revoke-admin-session":
-		fmt.Fprintf(os.Stderr, "%s: not implemented until Milestone 4\n", args[0])
-		os.Exit(1)
+	case "register-application":
+		return runRegisterApplication(args[1:])
+	case "revoke-admin-session":
+		return fmt.Errorf("revoke-admin-session: not implemented until Milestone 4")
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", args[0])
 		usage()
-		os.Exit(2)
+		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
@@ -38,7 +46,52 @@ Usage:
   admin <command> [flags]
 
 Commands:
-  register-application    Register a new protected application (Milestone 4)
+  register-application    Register a new protected application
   revoke-admin-session    Force-revoke an admin session by issuer/subject (Milestone 4)
 `)
+}
+
+func runRegisterApplication(args []string) error {
+	fs := flag.NewFlagSet("register-application", flag.ContinueOnError)
+	configFile := fs.String("config", os.Getenv("CONFIG_FILE"), "path to the nonsecret YAML config file")
+	hostname := fs.String("hostname", "", "exact application hostname (required)")
+	displayName := fs.String("display-name", "", "human-readable name (required)")
+	description := fs.String("description", "", "optional description")
+	defaultDuration := fs.Duration("default-duration", 30*24*time.Hour, "default authorization duration (e.g. 720h)")
+	maxDuration := fs.Duration("max-duration", 365*24*time.Hour, "maximum authorization duration (e.g. 8760h)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *hostname == "" {
+		return fmt.Errorf("register-application: -hostname is required")
+	}
+	if *displayName == "" {
+		return fmt.Errorf("register-application: -display-name is required")
+	}
+
+	cfg, err := config.Load(*configFile)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	if cfg.DatabaseURL == "" {
+		return fmt.Errorf("DATABASE_URL_FILE is not set (see -config or the env var)")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer db.Close()
+
+	app, err := db.CreateApplication(ctx, *hostname, *displayName, *description, *defaultDuration, *maxDuration)
+	if err != nil {
+		return fmt.Errorf("registering application: %w", err)
+	}
+
+	fmt.Printf("registered application %s (hostname=%s, enabled=%v)\n", app.ID, app.Hostname, app.Enabled)
+	return nil
 }

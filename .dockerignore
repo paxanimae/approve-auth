@@ -1,0 +1,8 @@
+.git
+.gocache
+deploy/dev/certs
+deploy/dev/secrets
+web/admin/node_modules
+web/admin/dist
+**/*.md
+.claude
