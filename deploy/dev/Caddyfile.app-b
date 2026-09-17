@@ -1,0 +1,8 @@
+{
+	auto_https off
+}
+
+app-b.localtest.me:443 {
+	tls /certs/app-b.localtest.me.pem /certs/app-b.localtest.me-key.pem
+	respond "app-b placeholder (Milestone 1 two-host TLS test stack)" 200
+}
