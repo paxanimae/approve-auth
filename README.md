@@ -1,6 +1,7 @@
-# Traefik Manual Approval Authorization Service
+# Approve
 
-Lets an administrator manually approve a browser (e.g. a reception TV) for
+**Approve** is a Traefik manual-approval authorization service: it lets an
+administrator manually approve a browser (e.g. a reception TV) for
 time-limited access to one Traefik-protected application hostname, via
 ForwardAuth. Traefik remains the sole reverse proxy; this service owns
 authorization decisions, approval requests, credentials, administration, and

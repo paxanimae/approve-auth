@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Traefik Manual Approval -- Public API
+  title: Approve -- Public API
   version: "0.5.0"
   description: >
     Same-host reserved-path endpoints (spec section 9), served on the

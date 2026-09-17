@@ -44,13 +44,13 @@
     <p>Loading…</p>
   {:else if !me}
     <div class="login">
-      <h1>Manual Approval Admin Console</h1>
+      <h1>Approve Admin Console</h1>
       <p>Sign in with your organizational identity provider to continue.</p>
       <a class="button" href="/auth/login?return_to=/">Log in</a>
     </div>
   {:else}
     <header>
-      <h1>Manual Approval Admin Console</h1>
+      <h1>Approve Admin Console</h1>
       <div class="identity">
         <span>{me.display_name || me.subject} ({me.role})</span>
         <button onclick={logout}>Log out</button>

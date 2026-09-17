@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Traefik Manual Approval -- Admin API
+  title: Approve -- Admin API
   version: "0.5.0"
   description: >
     OIDC login/callback/logout and the /api/v1 admin console API (spec
