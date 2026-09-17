@@ -146,7 +146,7 @@ func TestLifecycle_ApproveClaimRenewRevoke(t *testing.T) {
 		t.Fatalf("GetAuthorizationByID: ok=%v err=%v", ok, err)
 	}
 	newExpiry := authAfterClaim.ExpiresAt.Add(7 * 24 * time.Hour)
-	if err := db.RenewAuthorization(ctx, auth.ID, authAfterClaim.Version, newExpiry); err != nil {
+	if err := db.RenewAuthorization(ctx, auth.ID, authAfterClaim.Version, newExpiry, "admin@example.test"); err != nil {
 		t.Fatalf("RenewAuthorization: %v", err)
 	}
 
@@ -155,7 +155,7 @@ func TestLifecycle_ApproveClaimRenewRevoke(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("GetAuthorizationByID (after renew): ok=%v err=%v", ok, err)
 	}
-	if err := db.RenewAuthorization(ctx, auth.ID, renewed.Version, time.Now().Add(1000*24*time.Hour)); err != store.ErrConflict {
+	if err := db.RenewAuthorization(ctx, auth.ID, renewed.Version, time.Now().Add(1000*24*time.Hour), "admin@example.test"); err != store.ErrConflict {
 		t.Errorf("renewing past the credential ceiling: got %v, want ErrConflict", err)
 	}
 

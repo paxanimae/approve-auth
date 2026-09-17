@@ -71,6 +71,13 @@ func (db *DB) ApproveRequest(ctx context.Context, requestID uuid.UUID, expectedV
 		return Authorization{}, fmt.Errorf("store: approve: creating authorization: %w", err)
 	}
 
+	if err := insertAuditEvent(ctx, tx, auditParams{
+		ActorType: "admin", ActorSubject: approvedBy, Action: "request.approved",
+		ApplicationID: &applicationID, RequestID: &requestID, AuthorizationID: &auth.ID,
+	}); err != nil {
+		return Authorization{}, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return Authorization{}, fmt.Errorf("store: approve: commit: %w", err)
 	}
@@ -90,7 +97,8 @@ func (db *DB) DenyRequest(ctx context.Context, requestID uuid.UUID, expectedVers
 
 	var status string
 	var version int32
-	err = tx.QueryRow(ctx, `SELECT status, version FROM approval_requests WHERE id = $1 FOR UPDATE`, requestID).Scan(&status, &version)
+	var applicationID uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT status, version, application_id FROM approval_requests WHERE id = $1 FOR UPDATE`, requestID).Scan(&status, &version, &applicationID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrConflict
 	}
@@ -108,6 +116,13 @@ func (db *DB) DenyRequest(ctx context.Context, requestID uuid.UUID, expectedVers
 		return fmt.Errorf("store: deny: updating request: %w", err)
 	}
 
+	if err := insertAuditEvent(ctx, tx, auditParams{
+		ActorType: "admin", ActorSubject: deniedBy, Action: "request.denied",
+		ApplicationID: &applicationID, RequestID: &requestID, Reason: reason,
+	}); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("store: deny: commit: %w", err)
 	}
@@ -120,7 +135,14 @@ func (db *DB) DenyRequest(ctx context.Context, requestID uuid.UUID, expectedVers
 // credential-row update is needed). Returns ErrConflict if already
 // revoked or expectedVersion is stale.
 func (db *DB) RevokeAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, reason, revokedBy string) error {
-	tag, err := db.Pool.Exec(ctx, `
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: revoke: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var applicationID, requestID uuid.UUID
+	tag, err := tx.Exec(ctx, `
 		UPDATE authorizations
 		SET revoked_at = now(), revoked_by = $2, revocation_reason = $3, version = version + 1
 		WHERE id = $1 AND revoked_at IS NULL AND version = $4`,
@@ -131,6 +153,20 @@ func (db *DB) RevokeAuthorization(ctx context.Context, authorizationID uuid.UUID
 	if tag.RowsAffected() == 0 {
 		return ErrConflict
 	}
+	if err := tx.QueryRow(ctx, `SELECT application_id, request_id FROM authorizations WHERE id = $1`, authorizationID).Scan(&applicationID, &requestID); err != nil {
+		return fmt.Errorf("store: revoke: reading application_id: %w", err)
+	}
+
+	if err := insertAuditEvent(ctx, tx, auditParams{
+		ActorType: "admin", ActorSubject: revokedBy, Action: "authorization.revoked",
+		ApplicationID: &applicationID, RequestID: &requestID, AuthorizationID: &authorizationID, Reason: reason,
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: revoke: commit: %w", err)
+	}
 	return nil
 }
 
@@ -139,7 +175,7 @@ func (db *DB) RevokeAuthorization(ctx context.Context, authorizationID uuid.UUID
 // and must not exceed the credential's hard absolute_expires_at ceiling.
 // An unclaimed authorization (no credential yet) cannot be renewed --
 // spec section 7: "Renew only active, unrevoked, claimed authorizations."
-func (db *DB) RenewAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, newExpiresAt time.Time) error {
+func (db *DB) RenewAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, newExpiresAt time.Time, renewedBy string) error {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: renew: begin: %w", err)
@@ -152,13 +188,14 @@ func (db *DB) RenewAuthorization(ctx context.Context, authorizationID uuid.UUID,
 	var version int32
 	var credentialAbsoluteExpiresAt *time.Time
 	var databaseNow time.Time
+	var applicationID, requestID uuid.UUID
 	err = tx.QueryRow(ctx, `
-		SELECT z.revoked_at, z.activated_at, z.expires_at, z.version, c.absolute_expires_at, now()
+		SELECT z.revoked_at, z.activated_at, z.expires_at, z.version, c.absolute_expires_at, now(), z.application_id, z.request_id
 		FROM authorizations z
 		LEFT JOIN credentials c ON c.authorization_id = z.id AND c.revoked_at IS NULL
 		WHERE z.id = $1
 		FOR UPDATE OF z`, authorizationID,
-	).Scan(&revokedAt, &activatedAt, &currentExpiresAt, &version, &credentialAbsoluteExpiresAt, &databaseNow)
+	).Scan(&revokedAt, &activatedAt, &currentExpiresAt, &version, &credentialAbsoluteExpiresAt, &databaseNow, &applicationID, &requestID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrConflict
 	}
@@ -177,6 +214,13 @@ func (db *DB) RenewAuthorization(ctx context.Context, authorizationID uuid.UUID,
 
 	if _, err := tx.Exec(ctx, `UPDATE authorizations SET expires_at = $2, version = version + 1 WHERE id = $1`, authorizationID, newExpiresAt); err != nil {
 		return fmt.Errorf("store: renew: updating authorization: %w", err)
+	}
+
+	if err := insertAuditEvent(ctx, tx, auditParams{
+		ActorType: "admin", ActorSubject: renewedBy, Action: "authorization.renewed",
+		ApplicationID: &applicationID, RequestID: &requestID, AuthorizationID: &authorizationID,
+	}); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

@@ -77,6 +77,13 @@ func (db *DB) ClaimApproved(ctx context.Context, requestID uuid.UUID, tokenHash 
 		return uuid.UUID{}, uuid.UUID{}, false, fmt.Errorf("store: claim: updating request: %w", err)
 	}
 
+	if err := insertAuditEvent(ctx, tx, auditParams{
+		ActorType: "browser", Action: "claim.completed",
+		ApplicationID: &applicationID, RequestID: &requestID, AuthorizationID: &authorizationID,
+	}); err != nil {
+		return uuid.UUID{}, uuid.UUID{}, false, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return uuid.UUID{}, uuid.UUID{}, false, fmt.Errorf("store: claim: commit: %w", err)
 	}

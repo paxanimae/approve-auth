@@ -16,8 +16,14 @@ import (
 // than a raw constraint violation for the common case of a caller not
 // having lowercased it themselves.
 func (db *DB) CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration) (Application, error) {
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return Application{}, fmt.Errorf("store: creating application %q: begin: %w", hostname, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	var app Application
-	err := db.Pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO applications (hostname, display_name, description, default_duration_seconds, max_duration_seconds)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version`,
@@ -30,6 +36,19 @@ func (db *DB) CreateApplication(ctx context.Context, hostname, displayName, desc
 	)
 	if err != nil {
 		return Application{}, fmt.Errorf("store: creating application %q: %w", hostname, err)
+	}
+
+	// ActorSubject is empty: cmd/admin has no identity system of its own
+	// yet (no OIDC integration until Milestone 4) -- still worth an
+	// audit row naming the action and the application it created.
+	if err := insertAuditEvent(ctx, tx, auditParams{
+		ActorType: "admin", Action: "application.created", ApplicationID: &app.ID,
+	}); err != nil {
+		return Application{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Application{}, fmt.Errorf("store: creating application %q: commit: %w", hostname, err)
 	}
 	return app, nil
 }
