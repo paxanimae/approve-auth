@@ -25,6 +25,24 @@ type apiError struct {
 	} `json:"error"`
 }
 
+// securityHeaders applies spec section 11 control 4 to every response
+// on a browser-facing listener: a restrictive CSP (default-src 'none',
+// same-origin only for the asset types this service actually serves,
+// no framing), plus Referrer-Policy and X-Content-Type-Options. Wrapping
+// the whole mux rather than each handler is safe here -- unlike a
+// gating middleware, this only ever adds headers and always calls next,
+// so it can't change any response's status code (in particular, the
+// cross-listener-isolation exit gate's 404s are unaffected).
+func securityHeaders(next http.Handler) http.Handler {
+	const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", csp)
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // writeAPIError writes the structured error body every control-plane
 // response uses (spec section 9): { "error": { code, message,
 // request_id } }, with Cache-Control: no-store since nothing on this
@@ -64,7 +82,9 @@ func NewPublicMux(enroller Enroller, decider Decider, requestTTL, credentialCook
 	mux.HandleFunc("POST /__manual-approval/logout", logoutHandler(enroller))
 	mux.Handle("GET /__manual-approval/assets/", http.StripPrefix("/__manual-approval/assets/", publicAssetsHandler()))
 
-	return mux
+	wrapped := http.NewServeMux()
+	wrapped.Handle("/", securityHeaders(mux))
+	return wrapped
 }
 
 // publicAssetsHandler serves the embedded, locally bundled public-page
@@ -145,7 +165,9 @@ func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminRe
 	// exit gate.
 	mux.HandleFunc("/", adminConsoleHandler())
 
-	return mux
+	wrapped := http.NewServeMux()
+	wrapped.Handle("/", securityHeaders(mux))
+	return wrapped
 }
 
 // adminConsoleHandler serves the embedded, built Svelte admin console:

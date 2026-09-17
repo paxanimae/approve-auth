@@ -7,8 +7,10 @@
   <meta http-equiv="refresh" content="15" />
   <title>Access status</title>
   <link rel="stylesheet" href="/__manual-approval/assets/tokens.css" />
+  <script src="/__manual-approval/assets/app.js" defer></script>
 </head>
-<body>
+<body data-state="{{.State}}">
+  <p id="reconnecting-notice" role="status" hidden>Reconnecting&hellip;</p>
   <main>
     {{if eq .State "pending"}}
       <h1>Waiting for approval</h1>
