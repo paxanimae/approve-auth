@@ -77,26 +77,29 @@ type SubmitRequestInput struct {
 }
 
 type SubmitRequestResult struct {
-	RequestID        string
-	VerificationCode string
+	RequestID        string `json:"request_id"`
+	VerificationCode string `json:"verification_code"`
 }
 
 // StatusResult backs GET /__manual-approval/status (spec section 5,
-// step 4/5) -- deliberately no PII beyond the caller's own request.
+// step 4/5) -- deliberately no PII beyond the caller's own request. JSON
+// tags matter here specifically: the HTTP handler marshals this struct
+// directly rather than building a map (spec section 9: "JSON uses
+// snake_case").
 type StatusResult struct {
-	State            string
-	VerificationCode string
-	PublicMessage    string
-	RequestedAt      time.Time
-	DeadlineAt       time.Time
-	ClaimDeadlineAt  *time.Time
-	ServerTime       time.Time
+	State            string     `json:"state"`
+	VerificationCode string     `json:"verification_code"`
+	PublicMessage    string     `json:"public_message"`
+	RequestedAt      time.Time  `json:"requested_at"`
+	DeadlineAt       time.Time  `json:"deadline_at"`
+	ClaimDeadlineAt  *time.Time `json:"claim_deadline_at,omitempty"`
+	ServerTime       time.Time  `json:"server_time"`
 	// CSRFToken is set only while the enrollment context backing this
 	// pending proof is still live -- it's what the waiting page needs to
 	// render a working cancel/claim form. Empty means those actions are
 	// no longer available (spec section 5: the browser must request
 	// access again).
-	CSRFToken string
+	CSRFToken string `json:"csrf_token,omitempty"`
 }
 
 // ClaimOutcome backs POST /__manual-approval/claim.

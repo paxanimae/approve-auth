@@ -455,6 +455,6 @@ func logoutHandler(enroller Enroller) http.HandlerFunc {
 		}
 		clearCookie(w, accessCookieName)
 		clearCookie(w, pendingCookieName)
-		writeJSON(w, http.StatusOK, map[string]any{"loggedOut": true})
+		writeJSON(w, http.StatusOK, map[string]any{"logged_out": true})
 	}
 }
