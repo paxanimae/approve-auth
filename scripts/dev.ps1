@@ -41,7 +41,16 @@ function Invoke-Node {
 switch ($Command) {
     "build"        { Invoke-Go @("go", "build", "./...") }
     "vet"          { Invoke-Go @("go", "vet", "./...") }
-    "test"         { Invoke-Go (@("go", "test", "./...", "-race") + $Rest) }
+    "test" {
+        # -p 1: packages share one real Postgres instance via TEST_DATABASE_URL
+        # and some (internal/store) drop/recreate the whole schema mid-test, so
+        # running package test binaries concurrently races.
+        if ($env:TEST_DATABASE_URL) {
+            Invoke-Go (@("go", "test", "./...", "-race", "-p", "1") + $Rest)
+        } else {
+            Invoke-Go (@("go", "test", "./...", "-race") + $Rest)
+        }
+    }
     "tidy"         { Invoke-Go @("go", "mod", "tidy") }
     "fmt"          { Invoke-Go @("gofmt", "-l", "-w", ".") }
     "web-install"  { Invoke-Node @("npm", "install") }

@@ -46,7 +46,17 @@ shift || true
 case "$cmd" in
   build)      go_run go build ./... ;;
   vet)        go_run go vet ./... ;;
-  test)       go_run go test ./... -race "$@" ;;
+  test)
+    # -p 1: packages share one real Postgres instance via TEST_DATABASE_URL
+    # and some (internal/store) drop/recreate the whole schema mid-test, so
+    # running package test binaries concurrently races. Cheap enough at
+    # this repo's size; revisit if it ever becomes the bottleneck.
+    if [[ -n "${TEST_DATABASE_URL:-}" ]]; then
+      go_run go test ./... -race -p 1 "$@"
+    else
+      go_run go test ./... -race "$@"
+    fi
+    ;;
   tidy)       go_run go mod tidy ;;
   fmt)        go_run gofmt -l -w . ;;
   web-install) node_run npm install ;;
