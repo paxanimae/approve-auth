@@ -1,13 +1,18 @@
 openapi: 3.1.0
 info:
   title: Traefik Manual Approval -- Public API
-  version: "0.1.0-draft"
+  version: "0.5.0"
   description: >
     Same-host reserved-path endpoints (spec section 9), served on the
     Public listener only, under Traefik's `/__manual-approval` reserved
-    router. Milestone 1 draft: paths and shapes are fixed, request/response
-    bodies are placeholders pending Milestone 2/3 implementation (see each
-    operation's TODO).
+    router. Reflects the actual implementation as of Milestone 5
+    (internal/httpserver's enrollment_handlers.go), not a draft.
+
+    Every POST endpoint here accepts both `application/x-www-form-
+    urlencoded` (the no-JS HTML form path, which responds with a 303
+    redirect) and `application/json` (which responds with a JSON body
+    instead) -- content negotiation is by the caller's own Content-Type/
+    Accept headers, not a separate path.
 paths:
   /__manual-approval/request:
     get:
@@ -22,11 +27,21 @@ paths:
             maxLength: 2048
       responses:
         "200":
-          description: "TODO(M2): HTML enrollment form"
+          description: HTML enrollment form; sets the pending-proof cookie if the caller didn't already have a live one
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
           content:
             text/html:
               schema:
                 type: string
+        "400":
+          description: Duplicate pending-request cookie (malformed client state)
+          $ref: "#/components/responses/Error"
+        "403":
+          description: This application is unknown or disabled
+          $ref: "#/components/responses/Error"
 
   /__manual-approval/requests:
     post:
@@ -43,13 +58,23 @@ paths:
               $ref: "#/components/schemas/SubmitRequestForm"
       responses:
         "201":
-          description: "TODO(M2): created (JSON caller)"
+          description: Created (JSON caller) -- repeated submissions with the same pending proof reuse the existing pending request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SubmitRequestResult"
         "303":
-          description: "TODO(M2): redirect to the waiting page (HTML form caller)"
+          description: Redirect to the waiting page (HTML form caller)
+          headers:
+            Location:
+              schema:
+                type: string
+        "400":
+          description: Missing pending-proof cookie, or a malformed body
+          $ref: "#/components/responses/Error"
+        "403":
+          description: Bad Origin, or this application is unavailable
+          $ref: "#/components/responses/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -59,11 +84,14 @@ paths:
       summary: Waiting page for the current pending proof
       responses:
         "200":
-          description: "TODO(M2): HTML waiting page"
+          description: HTML waiting page, reflecting the current request's state (or "not requested" if there is none)
           content:
             text/html:
               schema:
                 type: string
+        "400":
+          description: Duplicate pending-request cookie
+          $ref: "#/components/responses/Error"
 
   /__manual-approval/status:
     get:
@@ -71,35 +99,98 @@ paths:
       summary: Poll the current pending request's status
       responses:
         "200":
-          description: "TODO(M2): status snapshot, no PII beyond the caller's own request"
+          description: >
+            Status snapshot, no PII beyond the caller's own request.
+            `{"state": "not_requested", "server_time": ...}` if there is
+            no live pending proof at all (never an error for that case).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusResult"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /__manual-approval/cancel:
     post:
       operationId: cancelRequest
       summary: Cancel the caller's own pending/unclaimed request
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/CsrfOnlyForm"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CsrfOnlyForm"
       responses:
         "200":
-          description: "TODO(M2)"
+          description: Canceled (JSON caller)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  canceled:
+                    type: boolean
+                required: [canceled]
         "303":
-          description: "TODO(M2): redirect to the waiting page (HTML form caller)"
+          description: Redirect to the waiting page (HTML form caller)
+        "400":
+          description: No pending-request cookie, or a malformed body
+          $ref: "#/components/responses/Error"
+        "403":
+          description: Bad Origin, or invalid CSRF token
+          $ref: "#/components/responses/Error"
+        "409":
+          description: The request is no longer in a cancelable state
+          $ref: "#/components/responses/Error"
 
   /__manual-approval/claim:
     post:
       operationId: claimCredential
       summary: Claim the access credential for an approved request
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/CsrfOnlyForm"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CsrfOnlyForm"
       responses:
         "200":
-          description: "TODO(M2): JSON with a safe relative return path"
+          description: Sets the access cookie; JSON body carries a safe relative return path (JSON caller)
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClaimResult"
         "303":
-          description: "TODO(M2): redirect to the waiting page (HTML form caller)"
+          description: >
+            Sets the access cookie; redirect to the waiting page (HTML
+            form caller) -- not straight to return_to, per spec section
+            5 step 7's no-JS path.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        "400":
+          description: No pending-request cookie, or a malformed body
+          $ref: "#/components/responses/Error"
+        "401":
+          description: The claim window has passed and the retry envelope is gone -- request access again
+          $ref: "#/components/responses/Error"
+        "403":
+          description: Bad Origin, or invalid CSRF token
+          $ref: "#/components/responses/Error"
+        "409":
+          description: The request is not in a claimable state
+          $ref: "#/components/responses/Error"
 
   /__manual-approval/session:
     get:
@@ -107,10 +198,23 @@ paths:
       summary: Current access-cookie state and authorization expiry
       responses:
         "200":
-          description: "TODO(M2): active session"
-        "401":
+          description: Active session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                required: [active]
+        "400":
+          description: Duplicate access cookie
           $ref: "#/components/responses/Error"
-        "403":
+        "401":
+          description: No active session
+          $ref: "#/components/responses/Error"
+        "503":
+          description: Decision temporarily unavailable (fail closed)
           $ref: "#/components/responses/Error"
 
   /__manual-approval/ack:
@@ -119,9 +223,30 @@ paths:
       summary: Acknowledge a claimed credential and consume the pending proof
       responses:
         "200":
-          description: "TODO(M2)"
+          description: JSON body carries the validated return path (JSON caller)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  return_to:
+                    type: string
+                required: [return_to]
         "303":
-          description: "TODO(M2): redirect to the validated return path"
+          description: Redirect to the validated return path (HTML form caller)
+          headers:
+            Location:
+              schema:
+                type: string
+        "400":
+          description: No pending-request cookie
+          $ref: "#/components/responses/Error"
+        "401":
+          description: No active access cookie to acknowledge
+          $ref: "#/components/responses/Error"
+        "403":
+          description: Bad Origin
+          $ref: "#/components/responses/Error"
 
   /__manual-approval/logout:
     post:
@@ -129,7 +254,18 @@ paths:
       summary: Revoke the caller's own authorization and clear its cookies
       responses:
         "200":
-          description: "TODO(M2)"
+          description: OK -- always succeeds even if there was no active session to log out of
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logged_out:
+                    type: boolean
+                required: [logged_out]
+        "403":
+          description: Bad Origin
+          $ref: "#/components/responses/Error"
 
   /__manual-approval/assets/{file}:
     get:
@@ -151,7 +287,6 @@ components:
   schemas:
     SubmitRequestForm:
       type: object
-      description: "TODO(M2): finalize field constraints"
       properties:
         label:
           type: string
@@ -162,6 +297,18 @@ components:
         return_to:
           type: string
           maxLength: 2048
+          description: Origin-relative path only; invalid input falls back to "/" (spec section 5)
+        csrf_token:
+          type: string
+      required: [csrf_token]
+      additionalProperties: false
+
+    CsrfOnlyForm:
+      type: object
+      properties:
+        csrf_token:
+          type: string
+      required: [csrf_token]
       additionalProperties: false
 
     SubmitRequestResult:
@@ -172,6 +319,7 @@ components:
           format: uuid
         verification_code:
           type: string
+      required: [request_id, verification_code]
       additionalProperties: false
 
     StatusResult:
@@ -179,13 +327,27 @@ components:
       properties:
         state:
           type: string
-        public_message:
-          type: string
+          enum: [not_requested, pending, approved, denied, canceled, timed_out, claimed, claim_expired]
         verification_code:
           type: string
+        public_message:
+          type: string
+        requested_at:
+          type: string
+          format: date-time
+        deadline_at:
+          type: string
+          format: date-time
+        claim_deadline_at:
+          type: [string, "null"]
+          format: date-time
         server_time:
           type: string
           format: date-time
+        csrf_token:
+          type: string
+          description: Present only while the pending proof's enrollment context is still live
+      required: [state, server_time]
       additionalProperties: false
 
     ClaimResult:
@@ -193,6 +355,7 @@ components:
       properties:
         return_to:
           type: string
+      required: [return_to]
       additionalProperties: false
 
     ApiError:
