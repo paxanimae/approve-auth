@@ -1,0 +1,409 @@
+openapi: 3.1.0
+info:
+  title: Traefik Manual Approval -- Admin API
+  version: "0.1.0-draft"
+  description: >
+    OIDC login/callback/logout and the /api/v1 admin console API (spec
+    section 9), served on the Admin listener only. Milestone 1 draft:
+    paths and shapes are fixed, request/response bodies are placeholders
+    pending Milestone 3/4 implementation (see each operation's TODO).
+paths:
+  /auth/login:
+    get:
+      operationId: adminLogin
+      summary: Start the OIDC Authorization Code + PKCE flow
+      responses:
+        "302":
+          description: "TODO(M4): redirect to the OIDC provider"
+
+  /auth/callback:
+    get:
+      operationId: adminCallback
+      summary: OIDC callback
+      responses:
+        "302":
+          description: "TODO(M4): redirect into the console on success"
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /auth/logout:
+    post:
+      operationId: adminLogout
+      summary: End the admin session
+      responses:
+        "200":
+          description: "TODO(M4)"
+
+  /api/v1/me:
+    get:
+      operationId: getMe
+      summary: Current admin identity and role
+      responses:
+        "200":
+          description: "TODO(M4)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/overview:
+    get:
+      operationId: getOverview
+      summary: Pending / active / expiring-within-7-days / recently revoked-or-expired counts
+      responses:
+        "200":
+          description: "TODO(M4)"
+
+  /api/v1/applications:
+    get:
+      operationId: listApplications
+      summary: List registered applications
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: "TODO(M4)"
+    post:
+      operationId: createApplication
+      summary: Register a new application (exact hostname)
+      responses:
+        "201":
+          description: "TODO(M4)"
+        "422":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/applications/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getApplication
+      summary: Application detail
+      responses:
+        "200":
+          description: "TODO(M4)"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: updateApplication
+      summary: Update name/policy (hostname is immutable)
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "200":
+          description: "TODO(M4)"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/applications/{id}/disable:
+    post:
+      operationId: disableApplication
+      summary: Disable, cancel pending requests, revoke live grants (reason required)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: "TODO(M4)"
+
+  /api/v1/applications/{id}/enable:
+    post:
+      operationId: enableApplication
+      summary: Re-enable new enrollment (does not restore prior access)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: "TODO(M4)"
+
+  /api/v1/requests:
+    get:
+      operationId: listRequests
+      summary: Filter by application, state, requested time, label/code search
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: "TODO(M4)"
+
+  /api/v1/requests/{id}:
+    get:
+      operationId: getRequest
+      summary: Request detail and audit timeline
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: "TODO(M4)"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/requests/{id}/approve:
+    post:
+      operationId: approveRequest
+      summary: Approve, creating an unclaimed authorization
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveRequestInput"
+      responses:
+        "200":
+          description: "TODO(M3)"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/requests/{id}/deny:
+    post:
+      operationId: denyRequest
+      summary: Deny (reason required; optional safe public message)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: "TODO(M3)"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/authorizations:
+    get:
+      operationId: listAuthorizations
+      summary: Filter by application/state/expiry/last-seen; sortable
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: "TODO(M4)"
+
+  /api/v1/authorizations/{id}:
+    get:
+      operationId: getAuthorization
+      summary: Details, hard credential expiry, source metadata, timeline
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: "TODO(M4)"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/authorizations/{id}/renew:
+    post:
+      operationId: renewAuthorization
+      summary: Renew (new_expires_at must exceed current and stay within the credential ceiling)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewAuthorizationInput"
+      responses:
+        "200":
+          description: "TODO(M3)"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/authorizations/{id}/revoke:
+    post:
+      operationId: revokeAuthorization
+      summary: Revoke (reason required)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: "TODO(M3)"
+
+  /api/v1/authorizations/bulk-renew:
+    post:
+      operationId: bulkRenewAuthorizations
+      summary: Explicit IDs + versions, duration_days, reason; max 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkRenewInput"
+      responses:
+        "200":
+          description: "TODO(M4): per-item success/error results"
+
+  /api/v1/authorizations/bulk-revoke:
+    post:
+      operationId: bulkRevokeAuthorizations
+      summary: Explicit IDs + versions, reason; max 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkRevokeInput"
+      responses:
+        "200":
+          description: "TODO(M4): per-item success/error results"
+
+  /api/v1/audit-events:
+    get:
+      operationId: listAuditEvents
+      summary: Filtered, paginated audit events
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: "TODO(M4)"
+
+  /api/v1/audit-events/export:
+    get:
+      operationId: exportAuditEvents
+      summary: Restricted CSV export of the filtered result set (max 10,000 rows)
+      responses:
+        "200":
+          description: "TODO(M4)"
+          content:
+            text/csv:
+              schema:
+                type: string
+
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      schema:
+        type: string
+
+  schemas:
+    Me:
+      type: object
+      properties:
+        issuer:
+          type: string
+        subject:
+          type: string
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [viewer, administrator]
+      additionalProperties: false
+
+    ApproveRequestInput:
+      type: object
+      properties:
+        expires_at:
+          type: string
+          format: date-time
+        label:
+          type: string
+          maxLength: 100
+        private_note:
+          type: string
+      required: [expires_at]
+      additionalProperties: false
+
+    RenewAuthorizationInput:
+      type: object
+      properties:
+        new_expires_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+      required: [new_expires_at, reason]
+      additionalProperties: false
+
+    BulkRenewInput:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              version:
+                type: integer
+            required: [id, version]
+        duration_days:
+          type: integer
+        reason:
+          type: string
+      required: [items, duration_days, reason]
+      additionalProperties: false
+
+    BulkRevokeInput:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              version:
+                type: integer
+            required: [id, version]
+        reason:
+          type: string
+      required: [items, reason]
+      additionalProperties: false
+
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
+          required: [code, message, request_id]
+      required: [error]
+
+  responses:
+    Error:
+      description: Structured error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"

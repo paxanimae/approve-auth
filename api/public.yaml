@@ -1,0 +1,229 @@
+openapi: 3.1.0
+info:
+  title: Traefik Manual Approval -- Public API
+  version: "0.1.0-draft"
+  description: >
+    Same-host reserved-path endpoints (spec section 9), served on the
+    Public listener only, under Traefik's `/__manual-approval` reserved
+    router. Milestone 1 draft: paths and shapes are fixed, request/response
+    bodies are placeholders pending Milestone 2/3 implementation (see each
+    operation's TODO).
+paths:
+  /__manual-approval/request:
+    get:
+      operationId: getRequestPage
+      summary: Enrollment request page (HTML form, CSRF bootstrap)
+      parameters:
+        - name: return_to
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        "200":
+          description: "TODO(M2): HTML enrollment form"
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /__manual-approval/requests:
+    post:
+      operationId: createRequest
+      summary: Create or reuse a pending approval request
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/SubmitRequestForm"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitRequestForm"
+      responses:
+        "201":
+          description: "TODO(M2): created (JSON caller)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitRequestResult"
+        "303":
+          description: "TODO(M2): redirect to the waiting page (HTML form caller)"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /__manual-approval/waiting:
+    get:
+      operationId: getWaitingPage
+      summary: Waiting page for the current pending proof
+      responses:
+        "200":
+          description: "TODO(M2): HTML waiting page"
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /__manual-approval/status:
+    get:
+      operationId: getStatus
+      summary: Poll the current pending request's status
+      responses:
+        "200":
+          description: "TODO(M2): status snapshot, no PII beyond the caller's own request"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResult"
+
+  /__manual-approval/cancel:
+    post:
+      operationId: cancelRequest
+      summary: Cancel the caller's own pending/unclaimed request
+      responses:
+        "200":
+          description: "TODO(M2)"
+        "303":
+          description: "TODO(M2): redirect to the waiting page (HTML form caller)"
+
+  /__manual-approval/claim:
+    post:
+      operationId: claimCredential
+      summary: Claim the access credential for an approved request
+      responses:
+        "200":
+          description: "TODO(M2): JSON with a safe relative return path"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResult"
+        "303":
+          description: "TODO(M2): redirect to the waiting page (HTML form caller)"
+
+  /__manual-approval/session:
+    get:
+      operationId: getSession
+      summary: Current access-cookie state and authorization expiry
+      responses:
+        "200":
+          description: "TODO(M2): active session"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+
+  /__manual-approval/ack:
+    post:
+      operationId: acknowledgeClaim
+      summary: Acknowledge a claimed credential and consume the pending proof
+      responses:
+        "200":
+          description: "TODO(M2)"
+        "303":
+          description: "TODO(M2): redirect to the validated return path"
+
+  /__manual-approval/logout:
+    post:
+      operationId: logout
+      summary: Revoke the caller's own authorization and clear its cookies
+      responses:
+        "200":
+          description: "TODO(M2)"
+
+  /__manual-approval/assets/{file}:
+    get:
+      operationId: getAsset
+      summary: Locally bundled public-page assets only
+      parameters:
+        - name: file
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Static asset
+        "404":
+          description: Not found
+
+components:
+  schemas:
+    SubmitRequestForm:
+      type: object
+      description: "TODO(M2): finalize field constraints"
+      properties:
+        label:
+          type: string
+          maxLength: 100
+        message:
+          type: string
+          maxLength: 500
+        return_to:
+          type: string
+          maxLength: 2048
+      additionalProperties: false
+
+    SubmitRequestResult:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        verification_code:
+          type: string
+      additionalProperties: false
+
+    StatusResult:
+      type: object
+      properties:
+        state:
+          type: string
+        public_message:
+          type: string
+        verification_code:
+          type: string
+        server_time:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    ClaimResult:
+      type: object
+      properties:
+        return_to:
+          type: string
+      additionalProperties: false
+
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
+          required: [code, message, request_id]
+      required: [error]
+
+  responses:
+    Error:
+      description: Structured error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    RateLimited:
+      description: Rate limited
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
