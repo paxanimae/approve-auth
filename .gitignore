@@ -15,6 +15,7 @@ web/admin/.svelte-kit/
 # blanket *.pem/*.key rule, since those are real, tracked test inputs.)
 deploy/dev/certs/
 deploy/dev/secrets/
+deploy/dev/mtls/
 
 # Editors / OS
 .vscode/

@@ -1,0 +1,12 @@
+{
+	auto_https off
+}
+
+# The application backend behind Traefik + manual-approval in the
+# real-Traefik integration test. Not published to the host directly --
+# spec section 6: "No host-published ports on ... application backends.
+# Traefik alone publishes public ingress."
+protected.localtest.me:443 {
+	tls /certs/protected.localtest.me.pem /certs/protected.localtest.me-key.pem
+	respond "protected backend content (Milestone 2 real-Traefik integration test)" 200
+}

@@ -1,0 +1,67 @@
+# Rendered dev version of spec section 6's example file-provider config,
+# for the real-Traefik integration test. Not a production deployment
+# artifact -- see deploy/stack.yml (Milestone 5) for that.
+tls:
+  certificates:
+    - certFile: /certs/protected.localtest.me.pem
+      keyFile: /certs/protected.localtest.me-key.pem
+
+http:
+  middlewares:
+    manual-approval:
+      forwardAuth:
+        address: https://manual-approval:8443/auth
+        trustForwardHeader: true
+        preserveLocationHeader: true
+        forwardBody: false
+        authRequestHeaders:
+          - Cookie
+          - Accept
+          - User-Agent
+          - Sec-Fetch-Mode
+          - Sec-Fetch-Dest
+        addAuthCookiesToResponse:
+          - __Host-manual-proxy
+        tls:
+          ca: /mtls/ca-cert.pem
+          cert: /mtls/traefik-client-cert.pem
+          key: /mtls/traefik-client-key.pem
+
+  routers:
+    protected-app:
+      rule: "Host(`protected.localtest.me`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      priority: 100
+      middlewares:
+        - manual-approval
+      service: backend-protected
+
+    # Higher priority, no manual-approval middleware, and no other
+    # service paths -- spec section 6's router topology requirement.
+    protected-app-approval:
+      rule: "Host(`protected.localtest.me`) && (Path(`/__manual-approval`) || PathPrefix(`/__manual-approval/`))"
+      entryPoints:
+        - websecure
+      tls: {}
+      priority: 1000
+      service: manual-public
+
+  services:
+    backend-protected:
+      loadBalancer:
+        serversTransport: insecure-dev-backend
+        servers:
+          - url: "https://backend-protected:443"
+
+    manual-public:
+      loadBalancer:
+        servers:
+          - url: "http://manual-approval:8080"
+
+  serversTransports:
+    # Dev only: backend-protected's cert is self-signed (scripts/gen-certs.sh),
+    # not from a CA Traefik would otherwise trust.
+    insecure-dev-backend:
+      insecureSkipVerify: true

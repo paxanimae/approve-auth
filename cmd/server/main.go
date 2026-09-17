@@ -52,9 +52,12 @@ func run() error {
 	if err := db.Ping(ctx); err != nil {
 		return fmt.Errorf("database not reachable at startup: %w", err)
 	}
-
-	if err := store.MigrateUp(cfg.DatabaseURL); err != nil {
-		return fmt.Errorf("running migrations: %w", err)
+	ready, err := db.SchemaReady(ctx)
+	if err != nil {
+		return fmt.Errorf("checking schema readiness: %w", err)
+	}
+	if !ready {
+		return fmt.Errorf("schema not migrated -- run `admin migrate-up` with a privileged database connection first")
 	}
 
 	authTLSConfig, err := httpserver.AuthTLSConfig(cfg.AuthTLSCertFile, cfg.AuthTLSKeyFile, cfg.AuthClientCAFile, cfg.AuthAllowedClientIdentities)

@@ -33,6 +33,7 @@ gen_host_cert() {
 
 gen_host_cert "app-a.localtest.me"
 gen_host_cert "app-b.localtest.me"
+gen_host_cert "protected.localtest.me"
 
 echo "Generated self-signed dev certs in ${CERTS_DIR}"
 echo "Browsers will show a certificate warning for these -- see this script's header comment."

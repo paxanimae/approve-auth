@@ -31,6 +31,10 @@ func run(args []string) error {
 	switch args[0] {
 	case "register-application":
 		return runRegisterApplication(args[1:])
+	case "migrate-up":
+		return runMigrate(args[1:], "migrate-up", store.MigrateUp)
+	case "migrate-down":
+		return runMigrate(args[1:], "migrate-down", store.MigrateDown)
 	case "revoke-admin-session":
 		return fmt.Errorf("revoke-admin-session: not implemented until Milestone 4")
 	default:
@@ -47,8 +51,36 @@ Usage:
 
 Commands:
   register-application    Register a new protected application
+  migrate-up              Apply pending migrations (needs a privileged connection -- see spec section 13)
+  migrate-down            Reverse applied migrations (tests/local dev only)
   revoke-admin-session    Force-revoke an admin session by issuer/subject (Milestone 4)
 `)
+}
+
+// runMigrate backs both migrate-up and migrate-down: schema migrations
+// are a separate, privileged, one-off step (spec section 13), not
+// something cmd/server does with its own least-privilege runtime role
+// (migration 000012's CREATE ROLE statements need more than that).
+func runMigrate(args []string, name string, apply func(databaseURL string) error) error {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	configFile := fs.String("config", os.Getenv("CONFIG_FILE"), "path to the nonsecret YAML config file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load(*configFile)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	if cfg.DatabaseURL == "" {
+		return fmt.Errorf("DATABASE_URL_FILE is not set (see -config or the env var)")
+	}
+
+	if err := apply(cfg.DatabaseURL); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	fmt.Printf("%s: done\n", name)
+	return nil
 }
 
 func runRegisterApplication(args []string) error {
