@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
+	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
 	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
 )
 
@@ -21,6 +22,33 @@ type fakeDecider struct {
 
 func (f fakeDecider) Decide(_ context.Context, _ authz.AuthRequest) (authz.Decision, error) {
 	return f.decision, f.err
+}
+
+// fakeEnroller is a minimal stand-in for internal/enrollment.Service, for
+// tests that only care about routing/listener separation, not the real
+// enrollment business logic (that's internal/enrollment's own tests).
+type fakeEnroller struct{}
+
+func (fakeEnroller) Bootstrap(context.Context, enrollment.BootstrapInput) (enrollment.BootstrapResult, error) {
+	return enrollment.BootstrapResult{}, enrollment.ErrApplicationUnavailable
+}
+func (fakeEnroller) SubmitRequest(context.Context, enrollment.SubmitRequestInput) (enrollment.SubmitRequestResult, error) {
+	return enrollment.SubmitRequestResult{}, enrollment.ErrInvalidPendingProof
+}
+func (fakeEnroller) Status(context.Context, string) (enrollment.StatusResult, error) {
+	return enrollment.StatusResult{}, enrollment.ErrInvalidPendingProof
+}
+func (fakeEnroller) Cancel(context.Context, string, string) error {
+	return enrollment.ErrInvalidPendingProof
+}
+func (fakeEnroller) Claim(context.Context, string, string) (enrollment.ClaimOutcome, error) {
+	return enrollment.ClaimOutcome{}, enrollment.ErrInvalidPendingProof
+}
+func (fakeEnroller) Ack(context.Context, string) (string, error) {
+	return "", enrollment.ErrInvalidPendingProof
+}
+func (fakeEnroller) Logout(context.Context, string, string) error {
+	return nil
 }
 
 type route struct {
@@ -38,7 +66,7 @@ func listeners() []listener {
 	return []listener{
 		{
 			name: "public",
-			mux:  httpserver.NewPublicMux(),
+			mux:  httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Hour, time.Hour, time.Second),
 			routes: []route{
 				{"GET", "/__manual-approval/request"},
 				{"POST", "/__manual-approval/requests"},
@@ -148,7 +176,7 @@ func TestCrossListenerRoutesAreUnreachable(t *testing.T) {
 }
 
 func TestPublicAssetsServeEmbeddedContent(t *testing.T) {
-	mux := httpserver.NewPublicMux()
+	mux := httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{}, time.Hour, time.Hour, time.Second)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 

@@ -1,0 +1,60 @@
+{{define "waiting.html.tmpl"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="15" />
+  <title>Access status</title>
+  <link rel="stylesheet" href="/__manual-approval/assets/tokens.css" />
+</head>
+<body>
+  <main>
+    {{if eq .State "pending"}}
+      <h1>Waiting for approval</h1>
+      <p>Verification code: <strong>{{.VerificationCode}}</strong></p>
+      <p>Show this code to your administrator so they can confirm it's you.</p>
+      <form method="post" action="/__manual-approval/cancel">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <button type="submit">Cancel request</button>
+      </form>
+    {{else if eq .State "approved"}}
+      <h1>Approved</h1>
+      <p>Verification code: <strong>{{.VerificationCode}}</strong></p>
+      <form method="post" action="/__manual-approval/claim">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+        <button type="submit">Continue</button>
+      </form>
+    {{else if eq .State "claimed"}}
+      {{if .HasAccessCookie}}
+        <h1>Ready</h1>
+        <form method="post" action="/__manual-approval/ack">
+          <button type="submit">Open application</button>
+        </form>
+      {{else}}
+        <h1>Almost there</h1>
+        <p>Please refresh this page.</p>
+      {{end}}
+    {{else if eq .State "denied"}}
+      <h1>Request denied</h1>
+      {{if .PublicMessage}}<p>{{.PublicMessage}}</p>{{end}}
+      <p>You may request access again.</p>
+      <p><a href="/__manual-approval/request">Request access</a></p>
+    {{else if eq .State "canceled"}}
+      <h1>Request canceled</h1>
+      <p><a href="/__manual-approval/request">Request access</a></p>
+    {{else if eq .State "timed_out"}}
+      <h1>Request timed out</h1>
+      <p><a href="/__manual-approval/request">Request access</a></p>
+    {{else if eq .State "claim_expired"}}
+      <h1>Approval window expired</h1>
+      <p><a href="/__manual-approval/request">Request access</a></p>
+    {{else}}
+      <h1>No pending request</h1>
+      <p><a href="/__manual-approval/request">Request access</a></p>
+    {{end}}
+    <p><a href="/__manual-approval/waiting">Refresh</a></p>
+  </main>
+</body>
+</html>
+{{end}}

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -51,21 +52,28 @@ func stub(message string) http.HandlerFunc {
 	}
 }
 
-// NewPublicMux serves the same-host reserved-path endpoints (spec section
-// 9) on the Public listener only. Traefik's reserved-path router points
-// here; the protected application router never does.
-func NewPublicMux() *http.ServeMux {
+// NewPublicMux serves the same-host reserved-path endpoints (spec
+// section 9) on the Public listener only. Traefik's reserved-path
+// router points here; the protected application router never does.
+//
+// requestTTL bounds the pending-proof cookie's lifetime (spec section
+// 14's REQUEST_TTL); credentialCookieMaxAge is the access cookie's fixed
+// browser lifetime (spec section 4: 365 days, bounded separately by the
+// credential's own absolute_expires_at, which internal/authz enforces);
+// decisionTimeout bounds the /session check the same way it bounds
+// /auth on the Authorization listener.
+func NewPublicMux(enroller Enroller, decider Decider, requestTTL, credentialCookieMaxAge, decisionTimeout time.Duration) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /__manual-approval/request", stub("enrollment request page: Milestone 2"))
-	mux.HandleFunc("POST /__manual-approval/requests", stub("create approval request: Milestone 2"))
-	mux.HandleFunc("GET /__manual-approval/waiting", stub("waiting page: Milestone 2"))
-	mux.HandleFunc("GET /__manual-approval/status", stub("request status: Milestone 2"))
-	mux.HandleFunc("POST /__manual-approval/cancel", stub("cancel request: Milestone 2"))
-	mux.HandleFunc("POST /__manual-approval/claim", stub("claim credential: Milestone 2"))
-	mux.HandleFunc("GET /__manual-approval/session", stub("session status: Milestone 2"))
-	mux.HandleFunc("POST /__manual-approval/ack", stub("acknowledge claim: Milestone 2"))
-	mux.HandleFunc("POST /__manual-approval/logout", stub("logout: Milestone 2"))
+	mux.HandleFunc("GET /__manual-approval/request", requestPageHandler(enroller, requestTTL))
+	mux.HandleFunc("POST /__manual-approval/requests", submitRequestHandler(enroller))
+	mux.HandleFunc("GET /__manual-approval/waiting", waitingPageHandler(enroller))
+	mux.HandleFunc("GET /__manual-approval/status", statusHandler(enroller))
+	mux.HandleFunc("POST /__manual-approval/cancel", cancelHandler(enroller))
+	mux.HandleFunc("POST /__manual-approval/claim", claimHandler(enroller, credentialCookieMaxAge))
+	mux.HandleFunc("GET /__manual-approval/session", sessionHandler(decider, decisionTimeout))
+	mux.HandleFunc("POST /__manual-approval/ack", ackHandler(enroller))
+	mux.HandleFunc("POST /__manual-approval/logout", logoutHandler(enroller))
 	mux.Handle("GET /__manual-approval/assets/", http.StripPrefix("/__manual-approval/assets/", publicAssetsHandler()))
 
 	return mux

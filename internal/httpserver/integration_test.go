@@ -177,20 +177,25 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 		_ = authRawLn.Close()
 	})
 
-	go func() { _ = http.Serve(publicLn, httpserver.NewPublicMux()) }()
+	publicMux := httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Hour, time.Hour, time.Second)
+	go func() { _ = http.Serve(publicLn, publicMux) }()
 	go func() { _ = http.Serve(adminLn, httpserver.NewAdminMux()) }()
 	go func() { _ = http.Serve(opsLn, httpserver.NewOpsMux()) }()
 	authMux := httpserver.NewAuthMux(fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Second)
 	go func() { _ = http.Serve(authLn, authMux) }()
 
 	t.Run("public listener serves plain HTTP", func(t *testing.T) {
+		// /status is a real endpoint now (Milestone 3): with no pending
+		// cookie it reports "not_requested" at 200, which is enough here
+		// to prove the listener itself is up and routed -- the real
+		// behavior has its own tests.
 		resp, err := http.Get(fmt.Sprintf("http://%s/__manual-approval/status", publicLn.Addr()))
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusNotImplemented {
-			t.Errorf("got status %d, want 501 (stubbed but routed)", resp.StatusCode)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("got status %d, want 200", resp.StatusCode)
 		}
 	})
 

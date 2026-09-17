@@ -17,6 +17,7 @@ import (
 
 	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
 	"github.com/frid-iks/traefik-manual-proxy/internal/config"
+	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
 	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
 	"github.com/frid-iks/traefik-manual-proxy/internal/store"
 )
@@ -66,9 +67,18 @@ func run() error {
 	}
 
 	authzService := authz.New(db)
+	enrollmentService := enrollment.New(db, enrollment.Config{
+		RequestTTL:                     cfg.RequestTTL.Std(),
+		ClaimTTL:                       cfg.ClaimTTL.Std(),
+		ClaimRetryTTL:                  cfg.ClaimRetryTTL.Std(),
+		CredentialMaxAge:               cfg.CredentialMaxAge.Std(),
+		ClaimEncryptionKey:             cfg.ClaimEncryptionKey,
+		ClaimEncryptionKeyID:           cfg.ClaimEncryptionKeyID,
+		PendingRequestsPerHourPerAppIP: cfg.RateLimits.PendingRequestsPerHourPerAppIP,
+	})
 
 	servers := []*http.Server{
-		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux()},
+		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux(enrollmentService, authzService, cfg.RequestTTL.Std(), cfg.CredentialMaxAge.Std(), cfg.AuthDecisionTimeout.Std())},
 		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux()},
 		{Addr: cfg.AuthAddr, Handler: httpserver.NewAuthMux(authzService, cfg.AuthDecisionTimeout.Std()), TLSConfig: authTLSConfig},
 		{Addr: cfg.OpsAddr, Handler: httpserver.NewOpsMux()},

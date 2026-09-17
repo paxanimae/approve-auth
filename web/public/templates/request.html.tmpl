@@ -1,0 +1,30 @@
+{{define "request.html.tmpl"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Request access</title>
+  <link rel="stylesheet" href="/__manual-approval/assets/tokens.css" />
+</head>
+<body>
+  <main>
+    <h1>Request access to {{.DisplayName}}</h1>
+    <p>Host: {{.Hostname}}</p>
+    <form method="post" action="/__manual-approval/requests">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <input type="hidden" name="return_to" value="{{.ReturnTo}}" />
+      <p>
+        <label for="label">Device label (optional)</label><br />
+        <input type="text" id="label" name="label" maxlength="100" />
+      </p>
+      <p>
+        <label for="message">Message to the administrator (optional)</label><br />
+        <textarea id="message" name="message" maxlength="500"></textarea>
+      </p>
+      <button type="submit">Request access</button>
+    </form>
+  </main>
+</body>
+</html>
+{{end}}
