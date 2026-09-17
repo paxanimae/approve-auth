@@ -26,6 +26,7 @@ function Invoke-Go {
         -e GOCACHE=/workspace/.gocache `
         -e GOFLAGS=-mod=mod `
         -e "TEST_DATABASE_URL=$($env:TEST_DATABASE_URL)" `
+        -e "TRAEFIK_ADDR=$($env:TRAEFIK_ADDR)" `
         @netArgs `
         $GoImage @GoArgs
 }

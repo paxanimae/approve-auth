@@ -101,11 +101,90 @@ port range (8080/8081/8443/9090 -- see `internal/config`'s
 `PUBLIC_ADDR`/`ADMIN_ADDR`/`AUTH_ADDR`/`OPS_ADDR`), so there's no
 confusion between "fake test hosts" and "the actual service."
 
-## Running the service itself locally
+## Running the real-Traefik integration stack
 
-Not yet meaningful: Milestone 1 has no ForwardAuth logic, enrollment
-flow, or admin console (see each `internal/*` package's `doc.go`). Once
-those land, `cmd/server` will need `deploy/dev/certs`-style TLS material
-for its own Authorization listener (distinct from the app-a/app-b certs
-above, which are just test backends) -- see `internal/config`'s
-`AUTH_TLS_CERT_FILE` / `AUTH_TLS_KEY_FILE` / `AUTH_CLIENT_CA_FILE`.
+Milestone 2 added a real ForwardAuth decision, so this now runs the
+actual service, a real Traefik, and a placeholder backend together.
+`tests/integration/traefik_test.go` exercises this stack -- mock-only
+tests can't verify real routing/cookie behavior (spec section 16).
+
+1. Generate certs (both scripts; the mTLS ones are new for this stack):
+
+   ```bash
+   scripts/gen-certs.sh
+   scripts/gen-mtls-certs.sh
+   ```
+
+2. Bring up the stack (`--build` picks up any source change; `migrate`
+   is one-shot and applies migrations with a privileged connection --
+   spec section 13 -- before `manual-approval` starts, which connects
+   with its own least-privilege runtime role):
+
+   ```bash
+   docker compose -f deploy/dev/docker-compose.yml up -d --build \
+     migrate manual-approval backend-protected traefik
+   ```
+
+3. Run the integration tests. Like the Postgres-backed tests, these
+   `t.Skip` cleanly when unconfigured:
+
+   ```bash
+   export DEV_NETWORK=traefik-manual-proxy_dev
+   export TEST_DATABASE_URL="postgres://postgres:devpassword@db:5432/manual_approval?sslmode=disable"
+   export TRAEFIK_ADDR="traefik:443"
+   scripts/dev.sh test ./tests/integration/...
+   ```
+
+   `TRAEFIK_ADDR` uses the internal service name/port (not the
+   host-published `18443`) because the Go test itself runs inside a
+   container on the same Docker network -- see `newTraefikClient` in
+   that file for how it dials this address while still sending
+   `protected.localtest.me` as the Host/SNI.
+
+   Don't run `internal/store`'s tests (which drop and recreate the whole
+   schema, e.g. plain `scripts/dev.sh test` with no package path) against
+   the same database while `manual-approval` is left running against it:
+   its connection pool ends up with stale state from the schema churn and
+   every query starts failing closed (503) until it's restarted --
+   `docker compose -f deploy/dev/docker-compose.yml restart
+   manual-approval` fixes it. This can't happen in CI, where each job
+   gets a fresh database and a freshly-started service with no such
+   churn in between.
+
+4. To poke at it manually instead, from the host: Traefik's edge is
+   published at `127.0.0.1:18443`. `protected.localtest.me` isn't
+   registered as an application until a test (or
+   `admin register-application`) creates it, so an unregistered request
+   gets a generic 403 first. Example, once registered:
+
+   ```bash
+   curl -sk -D - --resolve protected.localtest.me:18443:127.0.0.1 \
+     -H "Host: protected.localtest.me" \
+     https://protected.localtest.me:18443/dashboard
+   ```
+
+   The explicit `Host` header matters here specifically because `18443`
+   is a non-standard port for local testing -- a browser or curl
+   connecting to the real port 443 wouldn't include a port in the Host
+   header at all, and hostnames are registered without one (spec section
+   3 rejects non-443 ports at registration time).
+
+Notes on what's dev-only in this stack, not something a real deployment
+does: `manual-approval`'s compose service overrides to `user: "0:0"`
+because Docker Desktop's Windows bind-mount layer doesn't reliably
+preserve the permissions the image's nonroot user needs to read
+`/mtls/*` -- a Swarm deployment uses secrets/volumes instead of a host
+bind mount and doesn't hit this. `backend-protected` speaks plain HTTP
+to Traefik (not HTTPS): every TLS variant tried on that hop hit an
+identical "tls: internal error" specific to this environment (see
+`deploy/dev/Caddyfile.protected`'s comment) that's unrelated to what
+this milestone verifies -- the browser-facing edge (Traefik's own
+`websecure` entry point) is still real HTTPS, which is what actually
+matters here.
+
+## The two-host TLS test stack
+
+This one is unrelated to the real-Traefik stack above -- it predates
+ForwardAuth logic existing at all, and just proves two independent HTTPS
+origins exist to build cookie-isolation tests against. It does not run
+the actual `traefik-manual-proxy` service.

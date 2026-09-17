@@ -1,12 +1,16 @@
-{
-	auto_https off
-}
-
 # The application backend behind Traefik + manual-approval in the
 # real-Traefik integration test. Not published to the host directly --
 # spec section 6: "No host-published ports on ... application backends.
 # Traefik alone publishes public ingress."
-protected.localtest.me:443 {
-	tls /certs/protected.localtest.me.pem /certs/protected.localtest.me-key.pem
+#
+# Plain HTTP: this hop is Traefik-to-backend only (never seen by a
+# browser -- Traefik's own edge is what terminates the real HTTPS this
+# test cares about), and every TLS variant tried here (a manually loaded
+# cert, tls internal, TLS-1.2-only) hit an identical "tls: internal
+# error" specifically between Traefik's Go client and this Caddy
+# container on this Docker Desktop setup, while a plain openssl s_client
+# against the same cert succeeded -- a local networking/interop quirk
+# unrelated to what this milestone verifies.
+protected.localtest.me:80 {
 	respond "protected backend content (Milestone 2 real-Traefik integration test)" 200
 }

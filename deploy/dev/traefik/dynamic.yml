@@ -51,17 +51,10 @@ http:
   services:
     backend-protected:
       loadBalancer:
-        serversTransport: insecure-dev-backend
         servers:
-          - url: "https://backend-protected:443"
+          - url: "http://backend-protected:80"
 
     manual-public:
       loadBalancer:
         servers:
           - url: "http://manual-approval:8080"
-
-  serversTransports:
-    # Dev only: backend-protected's cert is self-signed (scripts/gen-certs.sh),
-    # not from a CA Traefik would otherwise trust.
-    insecure-dev-backend:
-      insecureSkipVerify: true

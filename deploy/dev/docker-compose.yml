@@ -3,15 +3,28 @@
 # deployment artifact (see deploy/stack.yml, added in a later milestone).
 #
 # Brings up:
-#   db      - PostgreSQL, for `scripts/dev.sh test` (TEST_DATABASE_URL) and
-#             for running the service locally against real Postgres.
-#   app-a,
-#   app-b   - Two independent HTTPS hosts (self-signed certs from
-#             scripts/gen-certs.sh; run that first) proving two-origin TLS
-#             separation exists to build on for Milestone 2's cookie-
-#             isolation tests. They do NOT run the actual
-#             traefik-manual-proxy service or touch the Docker socket --
-#             see docs/dev-environment.md.
+#   db                 - PostgreSQL, for `scripts/dev.sh test`
+#                        (TEST_DATABASE_URL) and for running the service
+#                        locally against real Postgres.
+#   app-a, app-b       - Two independent HTTPS hosts (self-signed certs
+#                        from scripts/gen-certs.sh; run that first)
+#                        proving two-origin TLS separation exists to
+#                        build on for cookie-isolation tests. Unrelated
+#                        to the real-Traefik stack below.
+#   migrate            - One-shot: applies migrations with a privileged
+#                        connection, then exits (spec section 13: "a
+#                        one-off, locked migration step").
+#   manual-approval    - The actual service, built from ../../Dockerfile,
+#                        connecting with its least-privilege runtime role.
+#   backend-protected  - A Caddy placeholder standing in for the
+#                        protected application behind Traefik.
+#   traefik            - Real Traefik, wired with the ForwardAuth
+#                        middleware from spec section 6 (rendered into
+#                        ./traefik/dynamic.yml). The only service that
+#                        publishes a host port for this part of the
+#                        stack -- see docs/dev-environment.md.
+#
+# Run scripts/gen-certs.sh and scripts/gen-mtls-certs.sh first.
 name: traefik-manual-proxy
 
 services:
@@ -53,6 +66,80 @@ services:
     volumes:
       - ./Caddyfile.app-b:/etc/caddy/Caddyfile:ro
       - ./certs:/certs:ro
+    networks:
+      - dev
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/local/bin/admin", "migrate-up"]
+    environment:
+      DATABASE_URL_FILE: /secrets/database-url-superuser.txt
+    volumes:
+      - ./secrets:/secrets:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dev
+
+  manual-approval:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Dev-only override: Docker Desktop's Windows bind-mount layer serves
+    # host files to Linux containers in a way the image's nonroot user
+    # (uid 65532) can't always read, regardless of the host-side
+    # permission bits. A real deployment uses Swarm secrets/volumes with
+    # correct ownership instead of a host bind mount, so this override
+    # has no production equivalent -- see deploy/stack.yml (Milestone 5).
+    user: "0:0"
+    environment:
+      CONFIG_FILE: /config/manual-approval.yaml
+      DATABASE_URL_FILE: /secrets/database-url.txt
+      OIDC_CLIENT_SECRET_FILE: /secrets/oidc-client-secret.txt
+      CLAIM_ENCRYPTION_KEY_FILE: /secrets/claim-encryption-key.txt
+      OIDC_STATE_ENCRYPTION_KEY_FILE: /secrets/oidc-state-key.txt
+    volumes:
+      - ./manual-approval-config.yaml:/config/manual-approval.yaml:ro
+      - ./secrets:/secrets:ro
+      - ./mtls:/mtls:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - dev
+
+  backend-protected:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile.protected:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+    networks:
+      - dev
+
+  traefik:
+    image: traefik:v3.6.25
+    restart: unless-stopped
+    command:
+      - --entrypoints.websecure.address=:443
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --log.level=INFO
+    ports:
+      - "127.0.0.1:18443:443"
+    volumes:
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+      - ./certs:/certs:ro
+      - ./mtls:/mtls:ro
+    depends_on:
+      - manual-approval
+      - backend-protected
     networks:
       - dev
 

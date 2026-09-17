@@ -24,6 +24,7 @@ should re-verify each row, not assume history.
 | gopkg.in/yaml.v3 | v3.0.1 | `go.mod` | |
 | getkin/kin-openapi | v0.149.0 | `go.mod` (test-only, `api/validate_test.go`) | |
 | golangci-lint | *(resolved by CI action, see `.github/workflows/ci.yml`)* | `.github/workflows/ci.yml` | Pinned indirectly via the pinned `golangci-lint-action` version |
-| Caddy | 2.10.2 | `deploy/dev/docker-compose.yml` | Local two-host TLS test stack only, not a production component |
-| alpine/openssl | digest `sha256:f6def4887e8413b228b66f314d0bcf5c25b128d918a258f3b0b9d66a0327edcb` (OpenSSL 3.5.8) | `scripts/gen-certs.sh`/`.ps1` | Dev cert generation only; pinned by digest since this image publishes no version tags |
-| Traefik | *(not yet pinned)* | -- | No Traefik integration exists yet -- Milestone 2. Spec section 20 flags that `trustForwardHeader` is deprecated in current docs and must be re-checked against whatever version is pinned then |
+| Caddy | 2.10.2 | `deploy/dev/docker-compose.yml` | Two-host TLS test stack, and stands in for the protected application backend in the real-Traefik integration test -- not a production component either way |
+| alpine/openssl | digest `sha256:f6def4887e8413b228b66f314d0bcf5c25b128d918a258f3b0b9d66a0327edcb` (OpenSSL 3.5.8) | `scripts/gen-certs.sh`/`.ps1`, `scripts/gen-mtls-certs.sh`/`.ps1` | Dev cert generation only; pinned by digest since this image publishes no version tags |
+| Traefik | v3.6.25 | `deploy/dev/docker-compose.yml` | Real-Traefik integration test only (Milestone 2) -- `deploy/dev/traefik/dynamic.yml` mirrors spec section 6's example almost verbatim, still using `trustForwardHeader: true` per that example; spec section 20 flags that setting as deprecated in some documentation versions and asks it be re-checked, which hasn't happened yet |
+| gcr.io/distroless/static-debian12 | tag `nonroot` (digest-pinned in `Dockerfile`) | `Dockerfile` | Runtime base image for the service binaries |

@@ -29,6 +29,7 @@ go_run() {
     -e GOCACHE=/workspace/.gocache \
     -e GOFLAGS=-mod=mod \
     -e TEST_DATABASE_URL="${TEST_DATABASE_URL:-}" \
+    -e TRAEFIK_ADDR="${TRAEFIK_ADDR:-}" \
     "${net_args[@]}" \
     "${GO_IMAGE}" "$@"
 }

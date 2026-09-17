@@ -53,6 +53,34 @@ jobs:
       # package test binaries concurrently (see scripts/dev.sh).
       - run: go test ./... -race -p 1
 
+  traefik-integration:
+    name: real-Traefik integration test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: scripts/gen-certs.sh
+      - run: scripts/gen-mtls-certs.sh
+      - run: |
+          docker compose -f deploy/dev/docker-compose.yml up -d --build \
+            migrate manual-approval backend-protected traefik
+      - name: Wait for Traefik's edge to accept connections
+        run: |
+          for i in $(seq 1 30); do
+            curl -sk --max-time 2 https://127.0.0.1:18443/ -o /dev/null && exit 0
+            sleep 1
+          done
+          echo "Traefik never became reachable" >&2
+          exit 1
+      - env:
+          TEST_DATABASE_URL: postgres://postgres:devpassword@localhost:5432/manual_approval?sslmode=disable
+          TRAEFIK_ADDR: 127.0.0.1:18443
+        run: go test ./tests/integration/... -race -v
+      - if: always()
+        run: docker compose -f deploy/dev/docker-compose.yml logs
+
   web:
     name: web/admin build
     runs-on: ubuntu-latest
