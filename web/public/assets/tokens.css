@@ -1,0 +1,27 @@
+/* Placeholder tokens for the TV request/waiting pages. Plain CSS, no
+   build step -- these pages are served as-is, not bundled. Real styling
+   (centered, high-contrast, large verification code, reduced-motion
+   respecting -- spec section 10 "TV UX") lands with the actual pages in
+   Milestone 2. */
+
+:root {
+  --color-bg: #ffffff;
+  --color-text: #1a1a1a;
+  --color-accent: #2f6fed;
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #14161a;
+    --color-text: #eaeaea;
+    --color-accent: #5b8def;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+}

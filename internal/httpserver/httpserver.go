@@ -5,10 +5,13 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 
 	"github.com/google/uuid"
+
+	webpublic "github.com/frid-iks/traefik-manual-proxy/web/public"
 )
 
 type apiError struct {
@@ -55,9 +58,20 @@ func NewPublicMux() *http.ServeMux {
 	mux.HandleFunc("GET /__manual-approval/session", stub("session status: Milestone 2"))
 	mux.HandleFunc("POST /__manual-approval/ack", stub("acknowledge claim: Milestone 2"))
 	mux.HandleFunc("POST /__manual-approval/logout", stub("logout: Milestone 2"))
-	mux.HandleFunc("GET /__manual-approval/assets/{file...}", stub("public assets: Milestone 1 step 8"))
+	mux.Handle("GET /__manual-approval/assets/", http.StripPrefix("/__manual-approval/assets/", publicAssetsHandler()))
 
 	return mux
+}
+
+// publicAssetsHandler serves the embedded, locally bundled public-page
+// assets only (spec section 9: "Locally bundled public-page assets
+// only") -- no filesystem access outside web/public/assets.
+func publicAssetsHandler() http.Handler {
+	sub, err := fs.Sub(webpublic.Assets, "assets")
+	if err != nil {
+		panic(err) // embedded at build time; cannot fail at runtime
+	}
+	return http.FileServerFS(sub)
 }
 
 // NewAdminMux serves OIDC login/callback/logout and the /api/v1 admin API
