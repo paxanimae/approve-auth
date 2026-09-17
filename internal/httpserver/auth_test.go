@@ -1,6 +1,7 @@
 package httpserver_test
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -53,6 +54,40 @@ func TestAuthHandler_Allow(t *testing.T) {
 	}
 	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+}
+
+// hostCapturingDecider records the Host it was actually called with, so
+// tests can assert on what parseAuthRequest resolved rather than just
+// the mapped HTTP response.
+type hostCapturingDecider struct {
+	decision authz.Decision
+	lastHost *string
+}
+
+func (d hostCapturingDecider) Decide(_ context.Context, req authz.AuthRequest) (authz.Decision, error) {
+	*d.lastHost = req.Host
+	return d.decision, nil
+}
+
+// TestAuthHandler_StripsPortFromForwardedHost covers a real bug found in
+// manual testing: a dev/test deployment on a non-standard port (this
+// project's own dev stack uses :18443) sent X-Forwarded-Host with that
+// port still attached, while the Public listener's requestHostname
+// already stripped it before registering/looking up an application --
+// so a freshly claimed credential was never recognized as belonging to
+// the same application the browser enrolled against. Both listeners
+// must agree on this normalization (see stripPort's doc comment).
+func TestAuthHandler_StripsPortFromForwardedHost(t *testing.T) {
+	var lastHost string
+	resp := doAuth(t, hostCapturingDecider{decision: authz.Decision{Category: authz.CategoryAllow}, lastHost: &lastHost}, func(r *http.Request) {
+		r.Header.Set("X-Forwarded-Host", "app.example.test:18443")
+	})
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	if lastHost != "app.example.test" {
+		t.Errorf("Host passed to Decide = %q, want the port stripped (app.example.test)", lastHost)
 	}
 }
 

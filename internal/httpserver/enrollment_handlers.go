@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -38,11 +37,7 @@ var pageTemplates = template.Must(template.ParseFS(webpublic.Templates, "templat
 // with passHostHeader: true by default), no forwarded-header parsing
 // needed the way the mTLS Authorization listener requires.
 func requestHostname(r *http.Request) string {
-	host := r.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	return strings.ToLower(host)
+	return stripPort(r.Host)
 }
 
 func wantsJSON(r *http.Request) bool {

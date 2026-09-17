@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +12,27 @@ import (
 	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
 	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
 )
+
+// stripPort removes a ":port" suffix from a Host-style value, lowercasing
+// the result. Applications are registered by hostname alone (spec
+// section 3 rejects non-443 ports at registration), and in a real
+// deployment neither the Public listener's Host header nor the
+// Authorization listener's X-Forwarded-Host ever carries a port at all
+// -- browsers only include one for a non-default port, and production
+// only ever runs on 443. Both listeners that resolve "which application
+// does this request belong to" share this helper so they stay
+// consistent with each other; without it, a dev/test deployment on a
+// non-standard port (this project's own dev stack uses :18443 to avoid
+// colliding with other local services) enrolls a browser against the
+// port-stripped hostname while the Authorization listener's decision
+// checks the port-inclusive one, so a freshly claimed credential is
+// never recognized as belonging to the same application.
+func stripPort(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.ToLower(host)
+}
 
 // Decider is the authz.Service surface the /auth handler needs. Defined
 // here (not just *authz.Service) so httpserver_test.go can substitute a
@@ -69,7 +91,7 @@ func parseAuthRequest(r *http.Request) parsedAuthRequest {
 	}
 
 	return parsedAuthRequest{req: authz.AuthRequest{
-		Host:           strings.ToLower(host),
+		Host:           stripPort(host),
 		Method:         strings.ToUpper(method),
 		URI:            uri,
 		ClientAddr:     clientAddr(r),
