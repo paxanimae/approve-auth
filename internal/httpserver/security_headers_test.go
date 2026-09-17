@@ -33,8 +33,8 @@ func TestSecurityHeaders_PresentOnBothBrowserFacingListeners(t *testing.T) {
 		if got := resp.Header.Get("Content-Security-Policy"); got == "" {
 			t.Errorf("%s: missing Content-Security-Policy header", name)
 		}
-		if got := resp.Header.Get("Referrer-Policy"); got != "no-referrer" {
-			t.Errorf("%s: Referrer-Policy = %q, want no-referrer", name, got)
+		if got := resp.Header.Get("Referrer-Policy"); got != "same-origin" {
+			t.Errorf("%s: Referrer-Policy = %q, want same-origin", name, got)
 		}
 		if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
 			t.Errorf("%s: X-Content-Type-Options = %q, want nosniff", name, got)

@@ -35,11 +35,23 @@ type apiError struct {
 // gating middleware, this only ever adds headers and always calls next,
 // so it can't change any response's status code (in particular, the
 // cross-listener-isolation exit gate's 404s are unaffected).
+//
+// Referrer-Policy is "same-origin", not the spec text's literal
+// "no-referrer": found via manual testing that "no-referrer" makes the
+// browser omit Referer even for the enrollment endpoints' own
+// same-origin form submissions, which breaks checkOrigin's spec
+// section 9 fallback ("if Origin is absent, require a same-origin
+// Referer") on any navigation path where Origin comes back empty or
+// "null" (e.g. after /auth's own 303 redirect into the request page) --
+// a real, reproducible lockout, not a hypothetical one. "same-origin"
+// still never leaks a Referer to a different origin, which is the
+// actual privacy property control 4 is after; it only stops suppressing
+// the one same-origin case this service's own CSRF fallback needs.
 func securityHeaders(next http.Handler) http.Handler {
 	const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", csp)
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		next.ServeHTTP(w, r)
 	})
