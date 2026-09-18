@@ -41,6 +41,10 @@ func durationSetter(name string, dst *Duration) func(*Config, string) error {
 func envOverrides(cfg *Config) []envOverride {
 	return []envOverride{
 		{"ADMIN_ORIGIN", func(c *Config, v string) error { c.AdminOrigin = v; return nil }},
+		{"ADMIN_AUTH_MODE", func(c *Config, v string) error { c.AdminAuthMode = v; return nil }},
+		{"ADMIN_ANONYMOUS_SUBJECT", func(c *Config, v string) error { c.AdminAnonymousSubject = v; return nil }},
+		{"ADMIN_ANONYMOUS_DISPLAY_NAME", func(c *Config, v string) error { c.AdminAnonymousDisplayName = v; return nil }},
+		{"ADMIN_ANONYMOUS_ROLE", func(c *Config, v string) error { c.AdminAnonymousRole = v; return nil }},
 		{"OIDC_ISSUER", func(c *Config, v string) error { c.OIDCIssuer = v; return nil }},
 		{"OIDC_CLIENT_ID", func(c *Config, v string) error { c.OIDCClientID = v; return nil }},
 		{"OIDC_ADMIN_GROUPS", func(c *Config, v string) error { c.OIDCAdminGroups = splitCSV(v); return nil }},

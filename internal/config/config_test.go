@@ -102,6 +102,60 @@ func TestValidate_RejectsBadClaimEncryptionKeyLength(t *testing.T) {
 	}
 }
 
+func TestLoadAndValidate_AnonymousAdminModeSkipsOIDCRequirements(t *testing.T) {
+	// Deliberately not setSecretEnv(t) -- anonymous mode must not require
+	// OIDC_CLIENT_SECRET_FILE or OIDC_STATE_ENCRYPTION_KEY_FILE at all.
+	t.Setenv("DATABASE_URL_FILE", "testdata/secrets/database-url.txt")
+	t.Setenv("CLAIM_ENCRYPTION_KEY_FILE", "testdata/secrets/claim-encryption-key.txt")
+
+	cfg, err := config.Load("testdata/anonymous.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if cfg.AdminAnonymousSubject != "vpn-perimeter" {
+		t.Errorf("AdminAnonymousSubject = %q, want vpn-perimeter", cfg.AdminAnonymousSubject)
+	}
+}
+
+func TestValidate_RejectsUnknownAdminAuthMode(t *testing.T) {
+	t.Setenv("DATABASE_URL_FILE", "testdata/secrets/database-url.txt")
+	t.Setenv("CLAIM_ENCRYPTION_KEY_FILE", "testdata/secrets/claim-encryption-key.txt")
+	t.Setenv("ADMIN_AUTH_MODE", "sso-magic")
+
+	cfg, err := config.Load("testdata/anonymous.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ADMIN_AUTH_MODE") {
+		t.Errorf("Validate error %q does not mention ADMIN_AUTH_MODE", err)
+	}
+}
+
+func TestValidate_RejectsBadAnonymousRole(t *testing.T) {
+	t.Setenv("DATABASE_URL_FILE", "testdata/secrets/database-url.txt")
+	t.Setenv("CLAIM_ENCRYPTION_KEY_FILE", "testdata/secrets/claim-encryption-key.txt")
+	t.Setenv("ADMIN_ANONYMOUS_ROLE", "superuser")
+
+	cfg, err := config.Load("testdata/anonymous.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ADMIN_ANONYMOUS_ROLE") {
+		t.Errorf("Validate error %q does not mention ADMIN_ANONYMOUS_ROLE", err)
+	}
+}
+
 func TestValidate_RejectsDuplicateListenerAddrs(t *testing.T) {
 	setSecretEnv(t)
 	t.Setenv("ADMIN_ADDR", ":8080") // collides with the default PUBLIC_ADDR

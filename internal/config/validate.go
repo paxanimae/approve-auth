@@ -18,16 +18,32 @@ func (c *Config) Validate() error {
 	var errs []error
 
 	errs = append(errs, requireHTTPSOrigin("ADMIN_ORIGIN", c.AdminOrigin))
-	errs = append(errs, requireURL("OIDC_ISSUER", c.OIDCIssuer))
-	errs = append(errs, requireNonEmpty("OIDC_CLIENT_ID", c.OIDCClientID))
+
+	switch c.AdminAuthMode {
+	case "oidc":
+		errs = append(errs, requireURL("OIDC_ISSUER", c.OIDCIssuer))
+		errs = append(errs, requireNonEmpty("OIDC_CLIENT_ID", c.OIDCClientID))
+		errs = append(errs, requireNonEmpty("OIDC_CLIENT_SECRET_FILE", c.OIDCClientSecret))
+		if len(c.OIDCStateEncryptionKey) != 32 {
+			errs = append(errs, fmt.Errorf("OIDC_STATE_ENCRYPTION_KEY_FILE: required 32-byte key, got %d bytes", len(c.OIDCStateEncryptionKey)))
+		}
+	case "anonymous":
+		// This service's own login is skipped entirely (see
+		// internal/adminsession.Anonymous) -- none of the OIDC settings
+		// above apply, but the fixed identity every caller resolves to
+		// must still be well-formed, since it's what ends up in the
+		// audit trail and gates mutation access.
+		errs = append(errs, requireNonEmpty("ADMIN_ANONYMOUS_SUBJECT", c.AdminAnonymousSubject))
+		if c.AdminAnonymousRole != "administrator" && c.AdminAnonymousRole != "viewer" {
+			errs = append(errs, fmt.Errorf("ADMIN_ANONYMOUS_ROLE: must be administrator or viewer, got %q", c.AdminAnonymousRole))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("ADMIN_AUTH_MODE: must be oidc or anonymous, got %q", c.AdminAuthMode))
+	}
 
 	errs = append(errs, requireNonEmpty("DATABASE_URL_FILE", c.DatabaseURL))
-	errs = append(errs, requireNonEmpty("OIDC_CLIENT_SECRET_FILE", c.OIDCClientSecret))
 	if len(c.ClaimEncryptionKey) != 32 {
 		errs = append(errs, fmt.Errorf("CLAIM_ENCRYPTION_KEY_FILE: required 32-byte key, got %d bytes", len(c.ClaimEncryptionKey)))
-	}
-	if len(c.OIDCStateEncryptionKey) != 32 {
-		errs = append(errs, fmt.Errorf("OIDC_STATE_ENCRYPTION_KEY_FILE: required 32-byte key, got %d bytes", len(c.OIDCStateEncryptionKey)))
 	}
 	errs = append(errs, requireNonEmpty("CLAIM_ENCRYPTION_KEY_ID", c.ClaimEncryptionKeyID))
 

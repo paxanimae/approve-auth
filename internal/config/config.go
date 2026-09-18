@@ -32,6 +32,19 @@ type Retention struct {
 type Config struct {
 	AdminOrigin string `yaml:"admin_origin"`
 
+	// AdminAuthMode is "oidc" (default) or "anonymous". Anonymous mode
+	// skips this service's own login entirely -- every request to the
+	// admin listener is treated as the fixed identity described by the
+	// AdminAnonymous* fields below, for a deployment that already gates
+	// who can reach the admin listener some other way (a VPN, an
+	// upstream SSO reverse proxy, network ACLs). See
+	// internal/adminsession.Anonymous for what this does and does not
+	// weaken.
+	AdminAuthMode             string `yaml:"admin_auth_mode"`
+	AdminAnonymousSubject     string `yaml:"admin_anonymous_subject"`
+	AdminAnonymousDisplayName string `yaml:"admin_anonymous_display_name"`
+	AdminAnonymousRole        string `yaml:"admin_anonymous_role"`
+
 	OIDCIssuer       string   `yaml:"oidc_issuer"`
 	OIDCClientID     string   `yaml:"oidc_client_id"`
 	OIDCAdminGroups  []string `yaml:"oidc_admin_groups"`
@@ -91,6 +104,11 @@ func Defaults() *Config {
 		return d
 	}
 	return &Config{
+		AdminAuthMode:             "oidc",
+		AdminAnonymousSubject:     "anonymous",
+		AdminAnonymousDisplayName: "Anonymous",
+		AdminAnonymousRole:        "administrator",
+
 		ClaimEncryptionKeyID: "primary",
 
 		DefaultAuthorizationDuration: hours(30 * 24),

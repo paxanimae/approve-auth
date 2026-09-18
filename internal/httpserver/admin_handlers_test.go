@@ -21,7 +21,7 @@ const testAdminHost = "admin.example.test"
 
 func newAdminServer(t *testing.T, sessions httpserver.AdminSessions, actions httpserver.AdminActions, readStore httpserver.AdminReadStore) *httptest.Server {
 	t.Helper()
-	mux := httpserver.NewAdminMux(sessions, actions, readStore, testAdminHost, time.Hour, 7*24*time.Hour, 24*time.Hour)
+	mux := httpserver.NewAdminMux(sessions, actions, readStore, testAdminHost, time.Hour, 7*24*time.Hour, 24*time.Hour, 30*24*time.Hour, 365*24*time.Hour)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -96,6 +96,15 @@ func TestAdminMe_ReturnsIdentity(t *testing.T) {
 	}
 	if body["subject"] != "user-1" || body["role"] != "viewer" || body["csrf_token"] != "tok-abc" {
 		t.Errorf("unexpected /me body: %+v", body)
+	}
+	// Matches newAdminServer's own (30d, 365d) durations -- the console's
+	// approve/renew "permanent" option relies on this being the server's
+	// real configured ceiling, not a client-side guess.
+	if body["default_authorization_duration_seconds"] != float64(30*24*time.Hour/time.Second) {
+		t.Errorf("default_authorization_duration_seconds = %v, want %v", body["default_authorization_duration_seconds"], 30*24*time.Hour/time.Second)
+	}
+	if body["max_authorization_duration_seconds"] != float64(365*24*time.Hour/time.Second) {
+		t.Errorf("max_authorization_duration_seconds = %v, want %v", body["max_authorization_duration_seconds"], 365*24*time.Hour/time.Second)
 	}
 }
 
@@ -382,5 +391,65 @@ func TestOverview_ReturnsCounts(t *testing.T) {
 	}
 	if out["pending"] != float64(3) || out["active"] != float64(5) || out["expiring_soon"] != float64(2) || out["revoked_or_expired_recent"] != float64(1) {
 		t.Errorf("unexpected /overview body: %+v", out)
+	}
+}
+
+// TestAdminAnonymousMode_NoCookieRequired proves NewAdminMux works end
+// to end when wired with a real adminsession.Anonymous instead of an
+// OIDC-backed session store: GET /api/v1/me succeeds with no cookie at
+// all, a mutation succeeds once the caller echoes back the CSRF token
+// /me handed it, and CSRF protection still rejects a mismatched token
+// -- anonymous mode removes the login gate, not the other admin API
+// protections.
+func TestAdminAnonymousMode_NoCookieRequired(t *testing.T) {
+	anon, err := adminsession.NewAnonymous("vpn-perimeter", "VPN-authenticated operator", "administrator")
+	if err != nil {
+		t.Fatalf("NewAnonymous: %v", err)
+	}
+	srv := newAdminServer(t, anon, fakeAdminActions{}, fakeAdminReadStore{})
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me", nil)
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	req.Host = testAdminHost
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/me: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/v1/me with no cookie: got status %d, want 200", resp.StatusCode)
+	}
+	var me map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
+		t.Fatalf("decoding /me body: %v", err)
+	}
+	if me["subject"] != "vpn-perimeter" || me["role"] != "administrator" {
+		t.Errorf("unexpected /me body: %+v", me)
+	}
+	csrfToken, _ := me["csrf_token"].(string)
+	if csrfToken == "" {
+		t.Fatal("expected a non-empty csrf_token")
+	}
+
+	mutation := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/applications/"+uuid.New().String()+"/enable", "", csrfToken, strings.NewReader(`{"version":1}`))
+	resp, err = http.DefaultClient.Do(mutation)
+	if err != nil {
+		t.Fatalf("POST enable: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		t.Errorf("mutation with the correct CSRF token got status %d, want it to reach the (fake) action layer", resp.StatusCode)
+	}
+
+	badMutation := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/applications/"+uuid.New().String()+"/enable", "", "wrong-token", strings.NewReader(`{"version":1}`))
+	resp, err = http.DefaultClient.Do(badMutation)
+	if err != nil {
+		t.Fatalf("POST enable with bad CSRF: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("mutation with a wrong CSRF token: got status %d, want 403", resp.StatusCode)
 	}
 }

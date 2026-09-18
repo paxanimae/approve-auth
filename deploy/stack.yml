@@ -33,6 +33,19 @@
 #     driver for anything beyond a single pinned node (spec section 13
 #     is explicit that a single-node Postgres is a deliberate, documented
 #     single point of failure, not something to paper over here).
+#
+# Running the admin listener with admin_auth_mode: anonymous (some
+# other mechanism -- a VPN, an upstream SSO reverse proxy, network
+# ACLs -- gates who reaches it instead of this service's own OIDC
+# login; see deploy/manual-approval-config.example.yaml): the
+# oidc_client_secret and oidc_state_key secrets below are still
+# required to exist (Swarm refuses to deploy a service referencing a
+# secret that was never created), but their *values* are never read in
+# that mode, so any placeholder works, e.g.:
+#   printf 'unused-in-anonymous-mode' | docker secret create oidc_client_secret -
+#   openssl rand -base64 32 | docker secret create oidc_state_key -
+# (oidc_state_key still needs to decode as a 32-byte key even though
+# it's unused, since config loading validates its shape unconditionally.)
 
 services:
   db:

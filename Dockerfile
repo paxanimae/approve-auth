@@ -19,6 +19,22 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/server ./cmd/server
 RUN CGO_ENABLED=0 go build -trimpath -o /out/admin ./cmd/admin
 RUN CGO_ENABLED=0 go build -trimpath -o /out/mock-oidc ./cmd/mock-oidc
 
+# mock-oidc is a real (not stubbed) OIDC provider for local dev and the
+# real-Traefik integration stack only (see cmd/mock-oidc's doc comment) --
+# it is never the default build target and never part of a release
+# image. This stage must stay ABOVE runtime below: `docker build` with
+# no --target builds whichever stage is LAST in the file, and this one
+# existing after runtime instead of before it is exactly how an earlier
+# version of this Dockerfile shipped the mock-oidc dev tool as the
+# untargeted default image (a real bug, found by actually running a
+# plain `docker build .` and getting "-issuer is required" instead of
+# the server starting) -- keep it first so an untargeted build can never
+# regress to that again.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS mock-oidc
+COPY --from=build /out/mock-oidc /usr/local/bin/mock-oidc
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/mock-oidc"]
+
 # distroless:nonroot runs as uid/gid 65532 -- no shell, no package
 # manager, nothing beyond the binary and its runtime deps (spec section
 # 13: "nonroot user"). Read-only filesystem, dropped capabilities, and a
@@ -26,19 +42,11 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/mock-oidc ./cmd/mock-oidc
 # baked into the image -- see deploy/dev/docker-compose.yml.
 #
 # This is the default (last) stage, and the one production actually
-# ships: docker build with no --target produces this image. The
-# mock-oidc dev-tool stage below is only ever built by explicitly naming
-# its target (see deploy/dev/docker-compose.yml's mock-oidc service).
+# ships: docker build with no --target produces this image (see the
+# mock-oidc stage's comment above for why its position in this file
+# matters, not just its name).
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS runtime
 COPY --from=build /out/server /usr/local/bin/server
 COPY --from=build /out/admin /usr/local/bin/admin
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/server"]
-
-# mock-oidc is a real (not stubbed) OIDC provider for local dev and the
-# real-Traefik integration stack only (see cmd/mock-oidc's doc comment) --
-# it is never the default build target and never part of a release image.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS mock-oidc
-COPY --from=build /out/mock-oidc /usr/local/bin/mock-oidc
-USER nonroot:nonroot
-ENTRYPOINT ["/usr/local/bin/mock-oidc"]

@@ -24,17 +24,35 @@ repository layout, and this build's product spec for the full contract
   status/cancel/claim/ack/logout, CSRF-protected, rate-limited
   (bootstrap, status, and pending-submission limits all enforced), with
   a retry-safe encrypted claim envelope proven correct under genuine
-  concurrency (`internal/store/race_test.go`). The waiting page works
-  fully without JavaScript and, when JavaScript is available, polls on
-  the spec's real schedule (5s+jitter, backing off on failure, pausing
-  while hidden) instead of a fixed dumb reload.
+  concurrency (`internal/store/race_test.go`). The request and waiting
+  pages both work fully without JavaScript; when JavaScript is
+  available, the request page auto-submits itself a few seconds after
+  load (canceled the moment a human starts typing a label/message, so
+  that stays genuinely usable rather than just technically present),
+  and the waiting page polls on the spec's real schedule (5s+jitter,
+  backing off on failure, pausing while hidden) and, once approved,
+  drives claim/session-verify/ack/navigate straight through to the
+  protected application with no further clicks -- built for unattended
+  browsers (e.g. a reception TV) that have no one present to click
+  "Request access", "Continue", or "Open application". Canceling,
+  denying, or timing out a request now also releases its enrollment
+  context, so a fresh request from the same browser afterward doesn't
+  collide with the dead one and silently discard its message.
 - **Admin product**: real OIDC Authorization Code + PKCE login
   (`internal/oidc`, `internal/adminsession`) against a mature library,
-  never hand-rolled JWT verification; role-based access (viewer/
-  administrator); a CSRF-protected admin API covering applications,
-  requests, authorizations (including bulk renew/revoke), and the audit
-  log with CSV export; and a minimal but functional Svelte admin
-  console served straight out of the Go binary.
+  never hand-rolled JWT verification, plus an anonymous mode
+  (`admin_auth_mode: anonymous`) that skips this service's own login
+  entirely for a deployment that already gates the admin listener some
+  other way (a VPN, an upstream SSO reverse proxy, network ACLs) --
+  CSRF protection, the role split, and the audit trail all still apply
+  to the one fixed identity that mode resolves to; role-based access
+  (viewer/administrator); a CSRF-protected admin API covering
+  applications, requests, authorizations (including bulk renew/revoke),
+  and the audit log with CSV export; and a dark-by-default (light
+  theme optional) Svelte admin console, with real rendered forms for
+  choosing a session's duration (including a "permanent" option capped
+  at the server's actual configured maximum) instead of browser
+  `prompt()` dialogs, served straight out of the Go binary.
 - **Operations**: a real retention/cleanup worker
   (`internal/worker`/`internal/store/retention.go`) coordinated across
   replicas via Postgres advisory locks, Prometheus metrics and a real

@@ -105,18 +105,32 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("invalid admin_origin: %w", err)
 	}
-	oidcClient, err := oidc.NewClient(ctx, cfg.OIDCIssuer, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.AdminOrigin+"/auth/callback")
-	if err != nil {
-		return fmt.Errorf("building OIDC client: %w", err)
+	var adminSessions httpserver.AdminSessions
+	switch cfg.AdminAuthMode {
+	case "anonymous":
+		// No login at all -- some other mechanism in front of the admin
+		// listener (VPN, SSO reverse proxy, network ACLs) is solely
+		// responsible for deciding who reaches it. See
+		// internal/adminsession.Anonymous for what this does and does
+		// not weaken.
+		adminSessions, err = adminsession.NewAnonymous(cfg.AdminAnonymousSubject, cfg.AdminAnonymousDisplayName, cfg.AdminAnonymousRole)
+		if err != nil {
+			return fmt.Errorf("building anonymous admin identity: %w", err)
+		}
+	default:
+		oidcClient, err := oidc.NewClient(ctx, cfg.OIDCIssuer, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.AdminOrigin+"/auth/callback")
+		if err != nil {
+			return fmt.Errorf("building OIDC client: %w", err)
+		}
+		adminSessions = adminsession.New(db, oidcClient, adminsession.Config{
+			OIDCAdminGroups:    cfg.OIDCAdminGroups,
+			OIDCViewerGroups:   cfg.OIDCViewerGroups,
+			IdleTTL:            cfg.AdminIdleTTL.Std(),
+			AbsoluteTTL:        cfg.AdminAbsoluteTTL.Std(),
+			TransactionTTL:     oidcTransactionTTL,
+			StateEncryptionKey: cfg.OIDCStateEncryptionKey,
+		})
 	}
-	adminSessions := adminsession.New(db, oidcClient, adminsession.Config{
-		OIDCAdminGroups:    cfg.OIDCAdminGroups,
-		OIDCViewerGroups:   cfg.OIDCViewerGroups,
-		IdleTTL:            cfg.AdminIdleTTL.Std(),
-		AbsoluteTTL:        cfg.AdminAbsoluteTTL.Std(),
-		TransactionTTL:     oidcTransactionTTL,
-		StateEncryptionKey: cfg.OIDCStateEncryptionKey,
-	})
 	adminActions := admin.New(db, admin.Config{
 		DefaultAuthorizationDuration: cfg.DefaultAuthorizationDuration.Std(),
 		MaxAuthorizationDuration:     cfg.MaxAuthorizationDuration.Std(),
@@ -134,7 +148,7 @@ func run() error {
 
 	servers := []*http.Server{
 		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux(enrollmentService, authzService, cfg.RequestTTL.Std(), cfg.CredentialMaxAge.Std(), cfg.AuthDecisionTimeout.Std())},
-		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux(adminSessions, adminActions, db, adminHost, cfg.AdminAbsoluteTTL.Std(), cfg.ExpiringSoonWindow.Std(), overviewRecentWindow)},
+		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux(adminSessions, adminActions, db, adminHost, cfg.AdminAbsoluteTTL.Std(), cfg.ExpiringSoonWindow.Std(), overviewRecentWindow, cfg.DefaultAuthorizationDuration.Std(), cfg.MaxAuthorizationDuration.Std())},
 		{Addr: cfg.AuthAddr, Handler: httpserver.NewAuthMux(authzService, cfg.AuthDecisionTimeout.Std()), TLSConfig: authTLSConfig},
 		{Addr: cfg.OpsAddr, Handler: httpserver.NewOpsMux(db)},
 	}

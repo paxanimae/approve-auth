@@ -8,6 +8,21 @@
 # nothing below this line is a secret.
 
 admin_origin: https://approval-admin.example.com
+
+# admin_auth_mode: "oidc" (default, shown here) or "anonymous".
+# Anonymous mode skips this service's own login entirely -- every
+# caller is treated as one fixed identity, for a deployment that
+# already gates who can reach the admin listener some other way (a
+# VPN, an upstream SSO reverse proxy, network ACLs). It does not
+# weaken CSRF protection, the administrator/viewer role split, or the
+# audit trail -- it only removes the login gate. If you switch to it,
+# delete the oidc_* lines below (they're ignored in anonymous mode)
+# and set these instead:
+#   admin_auth_mode: anonymous
+#   admin_anonymous_subject: vpn-perimeter       # becomes every audit_events.actor_subject -- pick something that identifies whatever perimeter authenticated the caller, since every action is attributed to this one shared identity
+#   admin_anonymous_display_name: VPN-authenticated operator
+#   admin_anonymous_role: administrator          # or viewer
+admin_auth_mode: oidc
 oidc_issuer: https://login.example.com/
 oidc_client_id: replace-with-your-real-oidc-client-id
 oidc_admin_groups: ["replace-with-a-real-admin-group-id"]
