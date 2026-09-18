@@ -91,6 +91,42 @@ func TestAuthHandler_StripsPortFromForwardedHost(t *testing.T) {
 	}
 }
 
+// TestAuthHandler_MissingCredential_Navigation_PreservesPortInRedirect
+// covers a real bug found in manual testing: after
+// TestAuthHandler_StripsPortFromForwardedHost's fix made the
+// Authorization listener strip the port for the *decision* (matching
+// the Public listener's own application lookup), the missing-credential
+// redirect's Location header started reusing that same stripped value
+// -- so a dev/test deployment on a non-standard port (this project's
+// own dev stack uses :18443) sent the browser an absolute redirect to
+// the default port 443, which nothing is listening on, and the browser
+// simply failed to connect. The redirect Location must keep the
+// original port so the browser can actually follow it back to wherever
+// it's currently connected; only the application-lookup Host needs
+// stripping.
+func TestAuthHandler_MissingCredential_Navigation_PreservesPortInRedirect(t *testing.T) {
+	mux := httpserver.NewAuthMux(fakeDecider{decision: authz.Decision{Category: authz.CategoryMissingOrInvalidCredential}}, time.Second)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	req := newAuthRequest(t, srv.URL)
+	req.Header.Set("X-Forwarded-Host", "app.example.test:18443")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("performing request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", resp.StatusCode)
+	}
+	want := "https://app.example.test:18443/__manual-approval/request?return_to=%2Fdashboard"
+	if got := resp.Header.Get("Location"); got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+}
+
 func TestAuthHandler_UnknownHost(t *testing.T) {
 	resp := doAuth(t, fakeDecider{decision: authz.Decision{Category: authz.CategoryUnknownHost}}, nil)
 	if resp.StatusCode != http.StatusForbidden {

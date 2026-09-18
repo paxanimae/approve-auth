@@ -64,6 +64,7 @@ func headerValue(r *http.Request, name string) string {
 // metadata/cookie" -> 400, no redirect).
 type parsedAuthRequest struct {
 	req       authz.AuthRequest
+	rawHost   string // X-Forwarded-Host verbatim (port included, if any) -- see requestPageRedirectLocation
 	malformed bool
 }
 
@@ -90,15 +91,18 @@ func parseAuthRequest(r *http.Request) parsedAuthRequest {
 		return parsedAuthRequest{malformed: true}
 	}
 
-	return parsedAuthRequest{req: authz.AuthRequest{
-		Host:           stripPort(host),
-		Method:         strings.ToUpper(method),
-		URI:            uri,
-		ClientAddr:     clientAddr(r),
-		UserAgent:      headerValue(r, "User-Agent"),
-		CookieValue:    cookieValue,
-		NavigationHint: isNavigation(r, method),
-	}}
+	return parsedAuthRequest{
+		rawHost: host,
+		req: authz.AuthRequest{
+			Host:           stripPort(host),
+			Method:         strings.ToUpper(method),
+			URI:            uri,
+			ClientAddr:     clientAddr(r),
+			UserAgent:      headerValue(r, "User-Agent"),
+			CookieValue:    cookieValue,
+			NavigationHint: isNavigation(r, method),
+		},
+	}
 }
 
 // isNavigation classifies the original request per spec section 6: a GET
@@ -132,7 +136,15 @@ func clientAddr(r *http.Request) string {
 }
 
 // requestPageRedirectLocation builds the same-host reserved-path
-// enrollment redirect (spec section 5, step 1).
+// enrollment redirect (spec section 5, step 1). host must be the
+// browser's own X-Forwarded-Host verbatim (port included, if any), not
+// the port-stripped value used for application lookup -- this is an
+// absolute URL the browser has to actually follow back to wherever it's
+// currently connected, and a dev/test deployment on a non-standard port
+// (this project's own dev stack uses :18443) would otherwise redirect
+// the browser to the default port 443, which nothing is listening on.
+// A real deployment only ever runs on 443, where this makes no
+// difference either way.
 func requestPageRedirectLocation(host, uri string) string {
 	return fmt.Sprintf("https://%s/__manual-approval/request?return_to=%s", host, url.QueryEscape(uri))
 }
@@ -182,7 +194,7 @@ func authHandler(decider Decider, decisionTimeout time.Duration) http.HandlerFun
 			writeAPIError(w, http.StatusForbidden, "access_denied", "access has been revoked or this application is disabled")
 		case authz.CategoryMissingOrInvalidCredential:
 			if parsed.req.NavigationHint {
-				w.Header().Set("Location", requestPageRedirectLocation(parsed.req.Host, parsed.req.URI))
+				w.Header().Set("Location", requestPageRedirectLocation(parsed.rawHost, parsed.req.URI))
 				w.Header().Set("Cache-Control", "no-store")
 				w.WriteHeader(http.StatusSeeOther)
 			} else {
