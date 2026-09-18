@@ -6,24 +6,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Request access</title>
   <link rel="stylesheet" href="/__manual-approval/assets/tokens.css" />
+  <script src="/__manual-approval/assets/app.js" defer></script>
 </head>
 <body>
   <main>
+    <div class="brand">
+      <img src="/__manual-approval/assets/logo.svg" alt="" />
+      <span>Approve</span>
+    </div>
     <h1>Request access to {{.DisplayName}}</h1>
-    <p>Host: {{.Hostname}}</p>
-    <form method="post" action="/__manual-approval/requests">
+    <p class="hostname">{{.Hostname}}</p>
+    <form id="request-form" method="post" action="/__manual-approval/requests">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
       <input type="hidden" name="return_to" value="{{.ReturnTo}}" />
-      <p>
-        <label for="label">Device label (optional)</label><br />
+      <div class="field">
+        <label for="label">Device label (optional)</label>
         <input type="text" id="label" name="label" maxlength="100" />
-      </p>
-      <p>
-        <label for="message">Message to the administrator (optional)</label><br />
-        <textarea id="message" name="message" maxlength="500"></textarea>
-      </p>
-      <button type="submit">Request access</button>
+      </div>
+      <div class="field">
+        <label for="message">Message to the administrator (optional)</label>
+        <textarea id="message" name="message" maxlength="500" rows="3"></textarea>
+      </div>
+      <button type="submit" class="btn-primary">Request access</button>
     </form>
+    <p class="auto-notice" id="auto-notice" aria-live="polite"></p>
   </main>
 </body>
 </html>

@@ -1,27 +1,202 @@
-/* Placeholder tokens for the TV request/waiting pages. Plain CSS, no
-   build step -- these pages are served as-is, not bundled. Real styling
-   (centered, high-contrast, large verification code, reduced-motion
-   respecting -- spec section 10 "TV UX") lands with the actual pages in
-   Milestone 2. */
+/* Same look and feel as the admin console (web/admin/src/lib/tokens.css)
+   -- dark by default, plain CSS since these pages ship with no build
+   step and must keep working with JavaScript disabled. No theme toggle
+   here, unlike the admin console: this page is usually unattended
+   (spec's TV/kiosk use case), so there's no one to flip it -- it always
+   renders dark, the same unconditional default the admin console
+   itself starts from. */
 
 :root {
-  --color-bg: #ffffff;
-  --color-text: #1a1a1a;
-  --color-accent: #2f6fed;
-  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-bg: #0a0c12;
+  --color-bg-elevated: #10121b;
+  --color-surface: #151824;
+  --color-border: #262b3b;
+  --color-border-strong: #343b4f;
+  --color-text: #e9eaf2;
+  --color-text-muted: #8b90a6;
+
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #9d72f8;
+  --color-accent-contrast: #ffffff;
+  --color-accent-soft: rgb(139 92 246 / 0.14);
+  --color-danger: #f0576b;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2rem;
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+
+  --radius: 10px;
+  --radius-lg: 20px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.24);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #14161a;
-    --color-text: #eaeaea;
-    --color-accent: #5b8def;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
 }
 
 body {
-  margin: 0;
   font-family: var(--font-sans);
-  background: var(--color-bg);
+  background: var(--color-bg) radial-gradient(circle at 50% 0%, var(--color-accent-soft), transparent 60%);
   color: var(--color-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+main {
+  width: min(28rem, 100%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.brand img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.brand span {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.hostname {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.verification-code {
+  font-family: var(--font-mono);
+  font-size: clamp(2.5rem, 12vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-accent);
+  margin: var(--space-2) 0;
+  word-break: break-word;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: left;
+}
+
+.field label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+input[type="text"],
+textarea {
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--color-text);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  padding: 0.625rem 0.75rem;
+  width: 100%;
+}
+
+input[type="text"]:focus,
+textarea:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+button,
+.btn {
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+button:hover,
+.btn:hover {
+  border-color: var(--color-accent);
+}
+
+.btn-primary,
+button[type="submit"] {
+  border-color: transparent;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.btn-primary:hover,
+button[type="submit"]:hover {
+  background: var(--color-accent-hover);
+}
+
+.auto-notice {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  min-height: 1.2em;
+}
+
+#reconnecting-notice {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+}
+
+.public-message {
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  font-size: 0.9375rem;
+}
+
+@media (max-width: 420px) {
+  main {
+    padding: var(--space-4);
+    border-radius: var(--radius);
+  }
 }

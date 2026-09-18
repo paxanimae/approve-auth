@@ -5,6 +5,8 @@ export interface Me {
   display_name: string;
   role: "administrator" | "viewer";
   csrf_token: string;
+  default_authorization_duration_seconds: number;
+  max_authorization_duration_seconds: number;
 }
 
 export interface Overview {
@@ -43,6 +45,7 @@ export interface ApprovalRequest {
   claimed_at?: string;
   public_decision_message?: string;
   private_note?: string;
+  source_ip?: string;
   user_agent?: string;
   version: number;
 }

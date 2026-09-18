@@ -77,8 +77,12 @@ func adminLogoutHandler(sessions AdminSessions) http.HandlerFunc {
 
 // adminMeHandler returns the caller's own identity, role, and CSRF token
 // -- the console's bootstrap call, and how it discovers the token it
-// must echo back on every mutation.
-func adminMeHandler() http.HandlerFunc {
+// must echo back on every mutation. It also carries the server's
+// configured default/max authorization duration so the console's
+// approve/renew forms can offer a "permanent" option that means
+// something real (the longest duration Approve/Renew will actually
+// accept) instead of a client-side guess that might get rejected.
+func adminMeHandler(defaultAuthorizationDuration, maxAuthorizationDuration time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		info, ok := adminIdentityFromContext(r.Context())
 		if !ok {
@@ -86,10 +90,12 @@ func adminMeHandler() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"subject":      info.Subject,
-			"display_name": info.DisplayName,
-			"role":         info.Role,
-			"csrf_token":   info.CSRFToken,
+			"subject":                                info.Subject,
+			"display_name":                           info.DisplayName,
+			"role":                                   info.Role,
+			"csrf_token":                             info.CSRFToken,
+			"default_authorization_duration_seconds": int64(defaultAuthorizationDuration.Seconds()),
+			"max_authorization_duration_seconds":     int64(maxAuthorizationDuration.Seconds()),
 		})
 	}
 }

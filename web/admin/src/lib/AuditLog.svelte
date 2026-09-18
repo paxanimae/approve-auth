@@ -21,57 +21,63 @@
 </script>
 
 <section>
-  <h2>Audit log</h2>
-  <div class="toolbar">
-    <button onclick={load}>Refresh</button>
-    <a href="/api/v1/audit-events/export">Export CSV</a>
+  <div class="section-header">
+    <h2>Audit log</h2>
+    <div class="toolbar">
+      <a class="btn" href="/api/v1/audit-events/export">Export CSV</a>
+      <button class="btn" onclick={load}>Refresh</button>
+    </div>
   </div>
 
   {#if error}
-    <p role="alert" class="error">{error}</p>
+    <p role="alert" class="error-text">{error}</p>
   {/if}
 
-  <table>
-    <thead>
-      <tr>
-        <th>When</th>
-        <th>Actor</th>
-        <th>Action</th>
-        <th>Outcome</th>
-        <th>Reason</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each events as e (e.id)}
+  <div class="card table-card">
+    <table class="data-table">
+      <thead>
         <tr>
-          <td>{formatDateTime(e.occurred_at)}</td>
-          <td>{e.actor_subject ?? e.actor_type}</td>
-          <td>{e.action}</td>
-          <td>{e.outcome}</td>
-          <td>{e.reason ?? "—"}</td>
+          <th>When</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Outcome</th>
+          <th>Reason</th>
         </tr>
-      {/each}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {#each events as e (e.id)}
+          <tr>
+            <td>{formatDateTime(e.occurred_at)}</td>
+            <td>{e.actor_subject ?? e.actor_type}</td>
+            <td class="mono">{e.action}</td>
+            <td><span class="badge {e.outcome === 'success' ? 'badge-success' : 'badge-danger'}">{e.outcome}</span></td>
+            <td>{e.reason ?? "—"}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <style>
+  .section-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
   .toolbar {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    margin-bottom: var(--space-3);
+    gap: var(--space-2);
   }
-  table {
-    width: 100%;
-    border-collapse: collapse;
+  .table-card {
+    overflow-x: auto;
   }
-  th, td {
-    text-align: left;
-    padding: var(--space-2);
-    border-bottom: 1px solid var(--color-border);
-  }
-  .error {
-    color: var(--color-danger);
+  .mono {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
   }
 </style>

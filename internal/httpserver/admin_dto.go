@@ -53,17 +53,26 @@ type requestDTO struct {
 	ClaimedAt             *time.Time `json:"claimed_at,omitempty"`
 	PublicDecisionMessage *string    `json:"public_decision_message,omitempty"`
 	PrivateNote           *string    `json:"private_note,omitempty"`
+	SourceIP              *string    `json:"source_ip,omitempty"`
 	UserAgent             *string    `json:"user_agent,omitempty"`
 	Version               int32      `json:"version"`
 }
 
 func newRequestDTO(r store.ApprovalRequest) requestDTO {
-	return requestDTO{
+	dto := requestDTO{
 		ID: r.ID.String(), ApplicationID: r.ApplicationID.String(), VerificationCode: r.VerificationCode,
 		Label: r.Label, Message: r.Message, Status: r.Status, RequestedAt: r.RequestedAt, DeadlineAt: r.DeadlineAt,
 		DecidedAt: r.DecidedAt, DecidedBy: r.DecidedBy, ClaimDeadlineAt: r.ClaimDeadlineAt, ClaimedAt: r.ClaimedAt,
 		PublicDecisionMessage: r.PublicDecisionMessage, PrivateNote: r.PrivateNote, UserAgent: r.UserAgent, Version: r.Version,
 	}
+	// Requests submitted without a device label rely on this (plus
+	// UserAgent) as the admin's only way to tell devices apart -- see
+	// the request page's auto-submit behavior in app.js.
+	if r.SourceIP != nil {
+		s := r.SourceIP.String()
+		dto.SourceIP = &s
+	}
+	return dto
 }
 
 type authorizationDTO struct {

@@ -5,6 +5,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Approve Admin</title>
+    <script>
+      // Applied before first paint to avoid a flash of the wrong theme;
+      // src/lib/theme.ts is the source of truth for reads/writes after
+      // this point.
+      try {
+        if (localStorage.getItem("approve-admin-theme") === "light") {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

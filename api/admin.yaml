@@ -848,6 +848,8 @@ components:
           type: [string, "null"]
         private_note:
           type: [string, "null"]
+        source_ip:
+          type: [string, "null"]
         user_agent:
           type: [string, "null"]
         version:

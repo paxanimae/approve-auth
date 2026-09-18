@@ -77,65 +77,77 @@
   <h2>Applications</h2>
 
   {#if error}
-    <p role="alert" class="error">{error}</p>
+    <p role="alert" class="error-text">{error}</p>
   {/if}
 
-  <table>
-    <thead>
-      <tr>
-        <th>Hostname</th>
-        <th>Display name</th>
-        <th>State</th>
-        <th>Default duration</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each applications as a (a.id)}
+  <div class="card table-card">
+    <table class="data-table">
+      <thead>
         <tr>
-          <td>{a.hostname}</td>
-          <td>{a.display_name}</td>
-          <td>{a.enabled ? "enabled" : "disabled"}</td>
-          <td title={formatDateTime(a.created_at)}>{Math.round(a.default_duration_seconds / 86400)} days</td>
-          <td>
-            {#if a.enabled}
-              <button disabled={busyId === a.id} class="danger" onclick={() => disable(a)}>Disable</button>
-            {:else}
-              <button disabled={busyId === a.id} onclick={() => enable(a)}>Enable</button>
-            {/if}
-          </td>
+          <th>Hostname</th>
+          <th>Display name</th>
+          <th>State</th>
+          <th>Default duration</th>
+          <th></th>
         </tr>
-      {/each}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {#each applications as a (a.id)}
+          <tr>
+            <td class="mono">{a.hostname}</td>
+            <td>{a.display_name}</td>
+            <td><span class="badge {a.enabled ? 'badge-success' : 'badge-neutral'}">{a.enabled ? "enabled" : "disabled"}</span></td>
+            <td title={formatDateTime(a.created_at)}>{Math.round(a.default_duration_seconds / 86400)} days</td>
+            <td class="actions">
+              {#if a.enabled}
+                <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => disable(a)}>Disable</button>
+              {:else}
+                <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => enable(a)}>Enable</button>
+              {/if}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
 
-  <h3>Register a new application</h3>
-  <form onsubmit={createApplication}>
-    <label>
-      Hostname
-      <input type="text" bind:value={newHostname} placeholder="app.example.com" required />
-    </label>
-    <label>
-      Display name
-      <input type="text" bind:value={newDisplayName} placeholder="Internal Dashboard" required />
-    </label>
-    <button type="submit" disabled={creating}>Register</button>
+  <div class="card register-card">
+    <h3>Register a new application</h3>
+    <form onsubmit={createApplication}>
+      <label class="field">
+        <span class="field-label">Hostname</span>
+        <input type="text" bind:value={newHostname} placeholder="app.example.com" required />
+      </label>
+      <label class="field">
+        <span class="field-label">Display name</span>
+        <input type="text" bind:value={newDisplayName} placeholder="Internal Dashboard" required />
+      </label>
+      <button type="submit" class="btn btn-primary" disabled={creating}>Register</button>
+    </form>
     {#if createError}
-      <p role="alert" class="error">{createError}</p>
+      <p role="alert" class="error-text">{createError}</p>
     {/if}
-  </form>
+  </div>
 </section>
 
 <style>
-  table {
-    width: 100%;
-    border-collapse: collapse;
+  h2 {
     margin-bottom: var(--space-4);
   }
-  th, td {
-    text-align: left;
-    padding: var(--space-2);
-    border-bottom: 1px solid var(--color-border);
+  .table-card {
+    overflow-x: auto;
+    margin-bottom: var(--space-5);
+  }
+  .register-card {
+    padding: var(--space-4);
+  }
+  .register-card h3 {
+    margin-bottom: var(--space-3);
+    font-size: var(--font-size-base);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
   }
   form {
     display: flex;
@@ -143,15 +155,7 @@
     align-items: end;
     gap: var(--space-3);
   }
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-  .error {
-    color: var(--color-danger);
-  }
-  button.danger {
-    color: var(--color-danger);
+  .actions {
+    white-space: nowrap;
   }
 </style>

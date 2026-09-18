@@ -1,44 +1,87 @@
-/* Placeholder design tokens. No real design system yet -- the admin
-   console's actual screens (Milestone 4) will settle these values;
-   this file exists so the light/dark/system theming structure and
-   token-based approach (spec section 10) is in place from the start. */
+/* Design tokens shared by every admin console screen. Dark is the
+   default look (spec: default to dark); [data-theme="light"] on <html>
+   is the only way to switch to light -- unlike a typical site, this
+   does NOT follow prefers-color-scheme, since the default is a
+   deliberate product choice, not a system-preference fallback. */
 
 :root {
-  --color-bg: #ffffff;
-  --color-bg-subtle: #f5f5f5;
-  --color-text: #1a1a1a;
-  --color-text-muted: #5f5f5f;
-  --color-border: #d9d9d9;
-  --color-accent: #2f6fed;
-  --color-danger: #c22f2f;
+  --color-bg: #0a0c12;
+  --color-bg-elevated: #10121b;
+  --color-surface: #151824;
+  --color-surface-hover: #1c202e;
+  --color-border: #262b3b;
+  --color-border-strong: #343b4f;
+  --color-text: #e9eaf2;
+  --color-text-muted: #8b90a6;
+  --color-text-faint: #5c6178;
+
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #9d72f8;
+  --color-accent-strong: #7e14ff;
+  --color-accent-contrast: #ffffff;
+  --color-accent-soft: rgb(139 92 246 / 0.14);
+
+  --color-info: #47bfff;
+  --color-info-soft: rgb(71 191 255 / 0.14);
+  --color-success: #2fd68a;
+  --color-success-soft: rgb(47 214 138 / 0.14);
+  --color-warning: #f5a623;
+  --color-warning-soft: rgb(245 166 35 / 0.14);
+  --color-danger: #f0576b;
+  --color-danger-soft: rgb(240 87 107 / 0.14);
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 1rem;
   --space-4: 1.5rem;
+  --space-5: 2rem;
+  --space-6: 3rem;
 
-  --radius: 6px;
-  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-base: 0.9375rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+  --font-size-3xl: 3rem;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.24);
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  --sidebar-width: 15.5rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-bg: #14161a;
-    --color-bg-subtle: #1c1f24;
-    --color-text: #eaeaea;
-    --color-text-muted: #a0a0a0;
-    --color-border: #2c2f36;
-    --color-accent: #5b8def;
-    --color-danger: #e0554f;
-  }
-}
+:root[data-theme="light"] {
+  --color-bg: #f3f4f9;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f2f3f9;
+  --color-border: #e2e4ee;
+  --color-border-strong: #cbcfdd;
+  --color-text: #191b28;
+  --color-text-muted: #5c6079;
+  --color-text-faint: #8b90a6;
 
-:root[data-theme="dark"] {
-  --color-bg: #14161a;
-  --color-bg-subtle: #1c1f24;
-  --color-text: #eaeaea;
-  --color-text-muted: #a0a0a0;
-  --color-border: #2c2f36;
-  --color-accent: #5b8def;
-  --color-danger: #e0554f;
+  --color-accent: #7c3aed;
+  --color-accent-hover: #6d28d9;
+  --color-accent-strong: #7e14ff;
+  --color-accent-contrast: #ffffff;
+  --color-accent-soft: rgb(124 58 237 / 0.1);
+
+  --color-info: #0284c7;
+  --color-info-soft: rgb(2 132 199 / 0.1);
+  --color-success: #15803d;
+  --color-success-soft: rgb(21 128 61 / 0.1);
+  --color-warning: #b45309;
+  --color-warning-soft: rgb(180 83 9 / 0.1);
+  --color-danger: #dc2626;
+  --color-danger-soft: rgb(220 38 38 / 0.1);
+
+  --shadow-card: 0 1px 2px rgb(20 22 40 / 0.04), 0 8px 24px rgb(20 22 40 / 0.08);
+  --shadow-popover: 0 12px 32px rgb(20 22 40 / 0.16);
 }
