@@ -12,8 +12,12 @@ import (
 
 // ExpireTimedOutRequests transitions pending requests whose deadline has
 // passed to 'timed_out' (spec section 7's lifecycle table), writing one
-// "request.timed_out" audit event per row. Bounded by limit; callers
-// loop until it returns 0 to drain a backlog without one huge
+// "request.timed_out" audit event per row, and consumes each request's
+// enrollment context (see CancelApprovalRequest's doc comment for why:
+// without it, a browser that reloads after its own request timed out
+// would reuse the same dead context and collide with this same
+// now-timed-out row instead of starting a fresh one). Bounded by limit;
+// callers loop until it returns 0 to drain a backlog without one huge
 // transaction. This never affects access decisions -- ForwardAuth
 // already denies purely from live timestamps regardless of this
 // worker's timing (spec section 7: "A worker's delay MUST NOT extend
@@ -34,14 +38,20 @@ func (db *DB) ExpireTimedOutRequests(ctx context.Context, limit int) (int, error
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, application_id`, limit)
+		RETURNING id, application_id, pending_token_hash`, limit)
 	if err != nil {
 		return 0, fmt.Errorf("store: expiring timed-out requests: %w", err)
 	}
-	var affected []struct{ requestID, applicationID uuid.UUID }
+	var affected []struct {
+		requestID, applicationID uuid.UUID
+		pendingTokenHash         []byte
+	}
 	for rows.Next() {
-		var a struct{ requestID, applicationID uuid.UUID }
-		if err := rows.Scan(&a.requestID, &a.applicationID); err != nil {
+		var a struct {
+			requestID, applicationID uuid.UUID
+			pendingTokenHash         []byte
+		}
+		if err := rows.Scan(&a.requestID, &a.applicationID, &a.pendingTokenHash); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("store: expiring timed-out requests: scanning: %w", err)
 		}
@@ -59,6 +69,9 @@ func (db *DB) ExpireTimedOutRequests(ctx context.Context, limit int) (int, error
 		}); err != nil {
 			return 0, err
 		}
+		if _, err := tx.Exec(ctx, `UPDATE enrollment_contexts SET consumed_at = now() WHERE pending_token_hash = $1 AND consumed_at IS NULL`, a.pendingTokenHash); err != nil {
+			return 0, fmt.Errorf("store: expiring timed-out requests: consuming enrollment context: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -68,12 +81,13 @@ func (db *DB) ExpireTimedOutRequests(ctx context.Context, limit int) (int, error
 }
 
 // ExpireClaimWindows transitions approved-but-unclaimed requests whose
-// claim window has passed to 'claim_expired' and revokes their still-
-// unclaimed authorization -- the time-driven equivalent of
-// CancelApprovalRequest's existing "revoke any unclaimed grant" step,
-// just triggered by the claim deadline passing instead of an explicit
-// cancel. Writes "request.claim_expired" and "authorization.revoked"
-// audit events.
+// claim window has passed to 'claim_expired', revokes their still-
+// unclaimed authorization, and consumes their enrollment context (see
+// CancelApprovalRequest's doc comment for why) -- the time-driven
+// equivalent of CancelApprovalRequest's existing "revoke any unclaimed
+// grant" step, just triggered by the claim deadline passing instead of
+// an explicit cancel. Writes "request.claim_expired" and
+// "authorization.revoked" audit events.
 func (db *DB) ExpireClaimWindows(ctx context.Context, limit int) (int, error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
@@ -90,14 +104,20 @@ func (db *DB) ExpireClaimWindows(ctx context.Context, limit int) (int, error) {
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, application_id`, limit)
+		RETURNING id, application_id, pending_token_hash`, limit)
 	if err != nil {
 		return 0, fmt.Errorf("store: expiring claim windows: %w", err)
 	}
-	var affected []struct{ requestID, applicationID uuid.UUID }
+	var affected []struct {
+		requestID, applicationID uuid.UUID
+		pendingTokenHash         []byte
+	}
 	for rows.Next() {
-		var a struct{ requestID, applicationID uuid.UUID }
-		if err := rows.Scan(&a.requestID, &a.applicationID); err != nil {
+		var a struct {
+			requestID, applicationID uuid.UUID
+			pendingTokenHash         []byte
+		}
+		if err := rows.Scan(&a.requestID, &a.applicationID, &a.pendingTokenHash); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("store: expiring claim windows: scanning: %w", err)
 		}
@@ -114,6 +134,9 @@ func (db *DB) ExpireClaimWindows(ctx context.Context, limit int) (int, error) {
 			ApplicationID: &a.applicationID, RequestID: &a.requestID,
 		}); err != nil {
 			return 0, err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE enrollment_contexts SET consumed_at = now() WHERE pending_token_hash = $1 AND consumed_at IS NULL`, a.pendingTokenHash); err != nil {
+			return 0, fmt.Errorf("store: expiring claim windows: consuming enrollment context: %w", err)
 		}
 
 		var authorizationID uuid.UUID

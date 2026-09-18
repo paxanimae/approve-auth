@@ -17,6 +17,7 @@ func TestExpireTimedOutRequests(t *testing.T) {
 
 	appID := insertApplication(t, ctx, conn, "retention-timeout.example.test")
 	overdueID := insertApprovalRequest(t, ctx, conn, appID, "TOUT-0001")
+	overdueEC := insertMatchingEnrollmentContext(t, ctx, conn, appID, "TOUT-0001")
 	if _, err := conn.Exec(ctx, `UPDATE approval_requests SET deadline_at = now() - interval '1 hour' WHERE id = $1`, overdueID); err != nil {
 		t.Fatalf("backdating deadline: %v", err)
 	}
@@ -51,6 +52,17 @@ func TestExpireTimedOutRequests(t *testing.T) {
 	if auditCount != 1 {
 		t.Errorf("audit event count = %d, want 1", auditCount)
 	}
+
+	// Regression: see CancelApprovalRequest's doc comment -- a timed-out
+	// request's enrollment context must also be consumed, or a browser
+	// that reloads keeps reusing the same dead context.
+	var consumedAt *time.Time
+	if err := conn.QueryRow(ctx, `SELECT consumed_at FROM enrollment_contexts WHERE id = $1`, overdueEC).Scan(&consumedAt); err != nil {
+		t.Fatalf("checking enrollment context: %v", err)
+	}
+	if consumedAt == nil {
+		t.Error("expected the timed-out request's enrollment context to be consumed")
+	}
 }
 
 func TestExpireClaimWindows(t *testing.T) {
@@ -61,6 +73,7 @@ func TestExpireClaimWindows(t *testing.T) {
 
 	appID := insertApplication(t, ctx, conn, "retention-claimwindow.example.test")
 	reqID := insertApprovalRequest(t, ctx, conn, appID, "CLMW-0001")
+	reqEC := insertMatchingEnrollmentContext(t, ctx, conn, appID, "CLMW-0001")
 	if _, err := conn.Exec(ctx, `UPDATE approval_requests SET status = 'approved', claim_deadline_at = now() - interval '1 minute' WHERE id = $1`, reqID); err != nil {
 		t.Fatalf("marking request approved-and-overdue: %v", err)
 	}
@@ -102,6 +115,16 @@ func TestExpireClaimWindows(t *testing.T) {
 		if count != 1 {
 			t.Errorf("audit event %s count = %d, want 1", action, count)
 		}
+	}
+
+	// Regression: see CancelApprovalRequest's doc comment -- a
+	// claim_expired request's enrollment context must also be consumed.
+	var consumedAt *time.Time
+	if err := conn.QueryRow(ctx, `SELECT consumed_at FROM enrollment_contexts WHERE id = $1`, reqEC).Scan(&consumedAt); err != nil {
+		t.Fatalf("checking enrollment context: %v", err)
+	}
+	if consumedAt == nil {
+		t.Error("expected the claim_expired request's enrollment context to be consumed")
 	}
 }
 
@@ -241,7 +264,9 @@ func TestPurgeExpiredRateLimitBuckets(t *testing.T) {
 		VALUES ('retention-test-live', now(), 1, now() + interval '1 hour')`); err != nil {
 		t.Fatalf("inserting live bucket: %v", err)
 	}
-	t.Cleanup(func() { _, _ = db.Pool.Exec(ctx, `DELETE FROM rate_limit_buckets WHERE bucket_key IN ('retention-test-expired', 'retention-test-live')`) })
+	t.Cleanup(func() {
+		_, _ = db.Pool.Exec(ctx, `DELETE FROM rate_limit_buckets WHERE bucket_key IN ('retention-test-expired', 'retention-test-live')`)
+	})
 
 	n, err := db.PurgeExpiredRateLimitBuckets(ctx, 100)
 	if err != nil {

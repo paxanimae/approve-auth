@@ -120,6 +120,26 @@ func insertApprovalRequest(t *testing.T, ctx context.Context, conn *pgx.Conn, ap
 	return id
 }
 
+// insertMatchingEnrollmentContext seeds an enrollment_contexts row with
+// the exact same pending_token_hash insertApprovalRequest computes for
+// the same (applicationID, verificationCode) pair, so a test can assert
+// that a request-lifecycle transition also consumed its context.
+func insertMatchingEnrollmentContext(t *testing.T, ctx context.Context, conn *pgx.Conn, applicationID, verificationCode string) string {
+	t.Helper()
+	tokenHash := sha256.Sum256([]byte(applicationID + ":" + verificationCode))
+
+	var id string
+	err := conn.QueryRow(ctx, `
+		INSERT INTO enrollment_contexts (application_id, pending_token_hash, csrf_secret, expires_at)
+		VALUES ($1, $2, $3, now() + interval '1 hour')
+		RETURNING id`, applicationID, tokenHash[:], []byte("csrf-secret-bytes")).Scan(&id)
+	if err != nil {
+		t.Fatalf("inserting enrollment_context: %v", err)
+	}
+	t.Cleanup(func() { _, _ = conn.Exec(ctx, `DELETE FROM enrollment_contexts WHERE id = $1`, id) })
+	return id
+}
+
 // authorizationOpts controls the state of a seeded authorization row --
 // tests set only the fields relevant to the scenario under test.
 type authorizationOpts struct {

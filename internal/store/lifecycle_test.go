@@ -187,6 +187,11 @@ func TestLifecycle_DenyAndCancel(t *testing.T) {
 	appUUID := mustParseUUID(t, appID)
 
 	denyHash := sha256.Sum256([]byte(t.Name() + ":deny"))
+	denyEC, err := db.CreateEnrollmentContext(ctx, appUUID, denyHash[:], []byte("csrf-secret-bytes"), time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("CreateEnrollmentContext: %v", err)
+	}
+	t.Cleanup(func() { _, _ = conn.Exec(ctx, `DELETE FROM enrollment_contexts WHERE id = $1`, denyEC.ID) })
 	denyReq, err := db.CreateApprovalRequest(ctx, store.CreateApprovalRequestParams{
 		ApplicationID: appUUID, PendingTokenHash: denyHash[:], VerificationCode: "LIFE-0002", DeadlineAt: time.Now().Add(24 * time.Hour),
 	})
@@ -205,6 +210,16 @@ func TestLifecycle_DenyAndCancel(t *testing.T) {
 	if afterDeny.Status != "denied" {
 		t.Errorf("Status = %q, want denied", afterDeny.Status)
 	}
+	// Regression: a denied request's enrollment context must also be
+	// consumed, or a browser that still has this pending cookie would
+	// reuse this same dead context on its next visit to the request
+	// page and collide with this denied row instead of starting fresh
+	// (see DenyRequest's doc comment).
+	if _, stillLive, err := db.GetLiveEnrollmentContextByTokenHash(ctx, denyHash[:]); err != nil {
+		t.Fatalf("GetLiveEnrollmentContextByTokenHash: %v", err)
+	} else if stillLive {
+		t.Error("expected the denied request's enrollment context to be consumed, but it's still live")
+	}
 
 	// Denying an already-decided request must conflict.
 	if err := db.DenyRequest(ctx, denyReq.ID, afterDeny.Version, "again", "", "admin@example.test"); err != store.ErrConflict {
@@ -212,6 +227,11 @@ func TestLifecycle_DenyAndCancel(t *testing.T) {
 	}
 
 	cancelHash := sha256.Sum256([]byte(t.Name() + ":cancel"))
+	cancelEC, err := db.CreateEnrollmentContext(ctx, appUUID, cancelHash[:], []byte("csrf-secret-bytes"), time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("CreateEnrollmentContext: %v", err)
+	}
+	t.Cleanup(func() { _, _ = conn.Exec(ctx, `DELETE FROM enrollment_contexts WHERE id = $1`, cancelEC.ID) })
 	cancelReq, err := db.CreateApprovalRequest(ctx, store.CreateApprovalRequestParams{
 		ApplicationID: appUUID, PendingTokenHash: cancelHash[:], VerificationCode: "LIFE-0003", DeadlineAt: time.Now().Add(24 * time.Hour),
 	})
@@ -229,5 +249,16 @@ func TestLifecycle_DenyAndCancel(t *testing.T) {
 	}
 	if afterCancel.Status != "canceled" {
 		t.Errorf("Status = %q, want canceled", afterCancel.Status)
+	}
+	// Regression: see the same assertion above for DenyRequest -- a
+	// canceled request's enrollment context must also be consumed (this
+	// is the exact bug a user hit: cancel, then submit a fresh manual
+	// request with a message, and land back on "Request canceled"
+	// because the browser's still-live pending cookie reused this same
+	// context and collided with this canceled row).
+	if _, stillLive, err := db.GetLiveEnrollmentContextByTokenHash(ctx, cancelHash[:]); err != nil {
+		t.Fatalf("GetLiveEnrollmentContextByTokenHash: %v", err)
+	} else if stillLive {
+		t.Error("expected the canceled request's enrollment context to be consumed, but it's still live")
 	}
 }

@@ -154,6 +154,17 @@ func (db *DB) ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID
 // section 5, step 5: "Cancel own pending/unclaimed request and revoke
 // any unclaimed grant"). Returns ErrConflict if the request is already
 // in a terminal state.
+//
+// It also consumes the enrollment context sharing this request's
+// pending_token_hash, the same cleanup Ack does on the happy path --
+// otherwise the browser's still-live pending cookie makes the *next*
+// visit to the request page reuse this same enrollment context (spec
+// section 5, step 1: "GET may create that context but does not create
+// an approval request" -- reuse is deliberate for a retry of the SAME
+// in-flight request), and a subsequent submission collides with this
+// now-canceled row's still-unique pending_token_hash instead of creating
+// a fresh request: the browser silently lands back on this canceled
+// request no matter what it just submitted.
 func (db *DB) CancelApprovalRequest(ctx context.Context, requestID uuid.UUID) error {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
@@ -163,7 +174,9 @@ func (db *DB) CancelApprovalRequest(ctx context.Context, requestID uuid.UUID) er
 
 	var status string
 	var applicationID uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT status, application_id FROM approval_requests WHERE id = $1 FOR UPDATE`, requestID).Scan(&status, &applicationID)
+	var pendingTokenHash []byte
+	err = tx.QueryRow(ctx, `SELECT status, application_id, pending_token_hash FROM approval_requests WHERE id = $1 FOR UPDATE`, requestID).
+		Scan(&status, &applicationID, &pendingTokenHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrConflict
 	}
@@ -176,6 +189,9 @@ func (db *DB) CancelApprovalRequest(ctx context.Context, requestID uuid.UUID) er
 
 	if _, err := tx.Exec(ctx, `UPDATE approval_requests SET status = 'canceled', version = version + 1 WHERE id = $1`, requestID); err != nil {
 		return fmt.Errorf("store: cancel: updating request: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE enrollment_contexts SET consumed_at = now() WHERE pending_token_hash = $1 AND consumed_at IS NULL`, pendingTokenHash); err != nil {
+		return fmt.Errorf("store: cancel: consuming enrollment context: %w", err)
 	}
 	if err := insertAuditEvent(ctx, tx, auditParams{
 		ActorType: "browser", Action: "request.canceled",

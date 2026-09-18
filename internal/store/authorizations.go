@@ -88,6 +88,11 @@ func (db *DB) ApproveRequest(ctx context.Context, requestID uuid.UUID, expectedV
 // recorded as the private note; publicMessage (optional) is the only
 // part ever shown to the browser (spec section 5: "never display
 // private admin notes").
+//
+// It also consumes the enrollment context sharing this request's
+// pending_token_hash -- see CancelApprovalRequest's doc comment for why
+// this is required for "you may request access again" to actually work
+// rather than silently landing back on this same denied request.
 func (db *DB) DenyRequest(ctx context.Context, requestID uuid.UUID, expectedVersion int32, reason, publicMessage, deniedBy string) error {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
@@ -98,7 +103,9 @@ func (db *DB) DenyRequest(ctx context.Context, requestID uuid.UUID, expectedVers
 	var status string
 	var version int32
 	var applicationID uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT status, version, application_id FROM approval_requests WHERE id = $1 FOR UPDATE`, requestID).Scan(&status, &version, &applicationID)
+	var pendingTokenHash []byte
+	err = tx.QueryRow(ctx, `SELECT status, version, application_id, pending_token_hash FROM approval_requests WHERE id = $1 FOR UPDATE`, requestID).
+		Scan(&status, &version, &applicationID, &pendingTokenHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrConflict
 	}
@@ -114,6 +121,9 @@ func (db *DB) DenyRequest(ctx context.Context, requestID uuid.UUID, expectedVers
 		SET status = 'denied', decided_at = now(), decided_by = $2, private_note = $3, public_decision_message = $4, version = version + 1
 		WHERE id = $1`, requestID, deniedBy, nullableText(reason), nullableText(publicMessage)); err != nil {
 		return fmt.Errorf("store: deny: updating request: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE enrollment_contexts SET consumed_at = now() WHERE pending_token_hash = $1 AND consumed_at IS NULL`, pendingTokenHash); err != nil {
+		return fmt.Errorf("store: deny: consuming enrollment context: %w", err)
 	}
 
 	if err := insertAuditEvent(ctx, tx, auditParams{

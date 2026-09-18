@@ -446,6 +446,61 @@ func TestCancel_RevokesUnclaimedAuthorization(t *testing.T) {
 	}
 }
 
+// TestBootstrap_AfterCancel_AllowsFreshRequest covers a real bug found
+// in manual testing: a browser cancels its pending request, then
+// submits a new manual request with a message -- and lands right back
+// on "Request canceled" instead of a fresh pending one. The browser's
+// pending cookie is still the same one throughout (Cancel never told it
+// otherwise), so unless Cancel also consumes the enrollment context,
+// Bootstrap keeps reusing the now-dead context and the new submission
+// collides with the canceled row's still-unique pending_token_hash.
+func TestBootstrap_AfterCancel_AllowsFreshRequest(t *testing.T) {
+	_, svc, hostname := setup(t)
+	ctx := context.Background()
+
+	boot1, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap #1: %v", err)
+	}
+	req1, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{PendingTokenRaw: boot1.RawPendingToken, CSRFToken: boot1.CSRFToken})
+	if err != nil {
+		t.Fatalf("SubmitRequest #1: %v", err)
+	}
+	if err := svc.Cancel(ctx, boot1.RawPendingToken, boot1.CSRFToken); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	// The browser still carries its old pending cookie on its next visit.
+	boot2, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname, ExistingPendingToken: boot1.RawPendingToken})
+	if err != nil {
+		t.Fatalf("Bootstrap #2: %v", err)
+	}
+	if boot2.RawPendingToken == "" || boot2.RawPendingToken == boot1.RawPendingToken {
+		t.Fatalf("expected a fresh pending token after cancel, got %q (reused the canceled context)", boot2.RawPendingToken)
+	}
+
+	req2, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{
+		PendingTokenRaw: boot2.RawPendingToken, CSRFToken: boot2.CSRFToken, Message: "please approve, this is the lobby TV",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest #2: %v", err)
+	}
+	if req2.RequestID == req1.RequestID {
+		t.Fatal("expected a new request after cancel + resubmit, got the same canceled request back")
+	}
+
+	status, err := svc.Status(ctx, boot2.RawPendingToken)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if status.State != "pending" {
+		t.Errorf("state = %q, want pending (the fresh request, not the canceled one)", status.State)
+	}
+	if status.VerificationCode != req2.VerificationCode {
+		t.Errorf("verification code = %q, want the new request's code %q", status.VerificationCode, req2.VerificationCode)
+	}
+}
+
 // hashForTest mirrors the package-private hashToken so this test can
 // look a request up by the same key the service computed internally --
 // duplicated rather than exported, since exporting it would widen the
