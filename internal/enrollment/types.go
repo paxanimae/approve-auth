@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 // Config is the subset of internal/config.Config this package needs.
@@ -49,7 +49,7 @@ type Store interface {
 	RevokeByCredentialHash(ctx context.Context, hostname string, tokenHash []byte, revokedBy string) error
 }
 
-// BootstrapInput/Result back GET /__manual-approval/request (spec
+// BootstrapInput/Result back GET /__approve-auth/request (spec
 // section 5, step 2).
 type BootstrapInput struct {
 	Hostname             string
@@ -67,7 +67,7 @@ type BootstrapResult struct {
 	CSRFToken       string
 }
 
-// SubmitRequestInput/Result back POST /__manual-approval/requests (spec
+// SubmitRequestInput/Result back POST /__approve-auth/requests (spec
 // section 5, step 3).
 type SubmitRequestInput struct {
 	PendingTokenRaw string
@@ -84,7 +84,7 @@ type SubmitRequestResult struct {
 	VerificationCode string `json:"verification_code"`
 }
 
-// StatusResult backs GET /__manual-approval/status (spec section 5,
+// StatusResult backs GET /__approve-auth/status (spec section 5,
 // step 4/5) -- deliberately no PII beyond the caller's own request. JSON
 // tags matter here specifically: the HTTP handler marshals this struct
 // directly rather than building a map (spec section 9: "JSON uses
@@ -105,7 +105,7 @@ type StatusResult struct {
 	CSRFToken string `json:"csrf_token,omitempty"`
 }
 
-// ClaimOutcome backs POST /__manual-approval/claim.
+// ClaimOutcome backs POST /__approve-auth/claim.
 type ClaimOutcome struct {
 	RawAccessToken string
 	ReturnTo       string

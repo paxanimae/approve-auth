@@ -23,12 +23,12 @@ problem, and bounded to at most a 10-minute impact window.
 
 1. Generate a new key: `openssl rand -base64 32`.
 2. Create it under a new secret name: `docker secret create claim_encryption_key_v2 -`.
-3. Update `deploy/stack.yml`'s `manual-approval` service to reference
+3. Update `deploy/stack.yml`'s `approve-auth` service to reference
    `claim_encryption_key_v2` (and bump `claim_encryption_key_id` in the
    nonsecret config if you version-tag envelopes by key ID -- see spec
    section 11 control 8: "Rotate encryption keys with key IDs").
-4. `docker stack deploy -c deploy/stack.yml manual-approval`. Once every
-   replica is on the new key (`docker stack ps manual-approval` shows no
+4. `docker stack deploy -c deploy/stack.yml approve-auth`. Once every
+   replica is on the new key (`docker stack ps approve-auth` shows no
    old-image/old-secret tasks), remove the old secret:
    `docker secret rm claim_encryption_key`.
 
@@ -47,14 +47,14 @@ Same three steps as `CLAIM_ENCRYPTION_KEY` above, with
 
 1. Create a new PostgreSQL role, grant it `app_runtime` membership:
    ```sql
-   CREATE ROLE manual_approval_app_v2 LOGIN PASSWORD '...';
-   GRANT app_runtime TO manual_approval_app_v2;
+   CREATE ROLE approve_auth_app_v2 LOGIN PASSWORD '...';
+   GRANT app_runtime TO approve_auth_app_v2;
    ```
 2. `docker secret create database_url_v2 -` with the new role's
    connection string.
 3. Update `deploy/stack.yml` to reference it, redeploy.
 4. Once the rollout finishes, revoke the old role's membership and drop
-   it: `REVOKE app_runtime FROM manual_approval_app; DROP ROLE manual_approval_app;`,
+   it: `REVOKE app_runtime FROM approve_auth_app; DROP ROLE approve_auth_app;`,
    then `docker secret rm database_url`.
 
 The maintenance-role credential (`cmd/admin purge-audit-log`'s
@@ -104,7 +104,7 @@ Never skip straight to a CA bundle containing *only* the new CA while
 any replica or Traefik is still presenting the old certificate -- that
 is exactly the "allow-all interval" spec section 14 says this rotation
 must avoid, just inverted into a "deny-all interval" instead. Verify
-with a real handshake (`openssl s_client -connect manual-approval:8443
+with a real handshake (`openssl s_client -connect approve-auth:8443
 -cert ... -key ... -CAfile ...` from a container on the same overlay)
 before removing the old trust, not just by reading the deploy succeeded.
 
@@ -115,11 +115,11 @@ one admin's access immediately (compromised account, offboarding)
 without waiting for their session to expire naturally:
 
 ```bash
-docker run --rm --network manual-approval_db \
-  -e CONFIG_FILE=/config/manual-approval.yaml \
+docker run --rm --network approve-auth_db \
+  -e CONFIG_FILE=/config/approve-auth.yaml \
   -e DATABASE_URL_FILE=/run/secrets/database_url \
   ... \
-  "$MANUAL_APPROVAL_IMAGE" \
+  "$APPROVE_AUTH_IMAGE" \
   admin revoke-admin-session -issuer https://login.example.com/ -subject <their-oidc-subject>
 ```
 

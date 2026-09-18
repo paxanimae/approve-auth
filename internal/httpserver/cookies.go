@@ -9,17 +9,17 @@ import (
 // section 4): a single __Host- prefixed name, so browsers enforce
 // Secure+Path=/+no-Domain on it themselves, and the server additionally
 // binds each credential to its own application (see internal/authz).
-const accessCookieName = "__Host-manual-proxy"
+const accessCookieName = "__Host-approve-auth"
 
 // pendingCookieName carries the enrollment pending proof (spec section
 // 4): same cookie attributes as accessCookieName, shorter lifetime.
-const pendingCookieName = "__Host-manual-request"
+const pendingCookieName = "__Host-approve-auth-request"
 
 // adminCookieName carries the admin console's own session, distinct from
 // both the enrollment cookies above and the per-application access
-// cookie (spec section 4: "Use separate ... and __Host-manual-admin
+// cookie (spec section 4: "Use separate ... and __Host-approve-auth-admin
 // cookies for pending proof and admin sessions").
-const adminCookieName = "__Host-manual-admin"
+const adminCookieName = "__Host-approve-auth-admin"
 
 func setCookie(w http.ResponseWriter, name, value string, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{

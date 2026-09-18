@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/authz"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 type fakeStore struct {

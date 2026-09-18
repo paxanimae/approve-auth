@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/worker"
+	"github.com/frid-iks/approve-auth/internal/worker"
 )
 
 // fakeLockRunner is an in-memory stand-in for store.DB.WithAdvisoryLock,

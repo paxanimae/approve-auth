@@ -32,8 +32,8 @@ Some tests (`internal/store`, `internal/audit`) need a real database and
 ```bash
 docker compose -f deploy/dev/docker-compose.yml up -d db
 
-export DEV_NETWORK=traefik-manual-proxy_dev
-export TEST_DATABASE_URL="postgres://postgres:devpassword@db:5432/manual_approval?sslmode=disable"
+export DEV_NETWORK=approve-auth_dev
+export TEST_DATABASE_URL="postgres://postgres:devpassword@db:5432/approve_auth?sslmode=disable"
 scripts/dev.sh test
 ```
 
@@ -41,7 +41,7 @@ scripts/dev.sh test
 Docker network as the `db` service so it can resolve the `db` hostname.
 `TEST_DATABASE_URL` here is a superuser-capable connection string --
 `internal/store`'s tests run migrations (including creating the
-`manual_approval_app` / `manual_approval_maintenance` login roles) and
+`approve_auth_app` / `approve_auth_maintenance` login roles) and
 then connect as those specific roles to exercise the audit-immutability
 grants from `migrations/000012_roles_and_grants.up.sql`.
 
@@ -54,7 +54,7 @@ package test binaries concurrently.
 
 Proves two independent HTTPS origins exist to build Milestone 2's
 cookie-isolation tests against. It does **not** run the actual
-`traefik-manual-proxy` service, and it never touches the Docker socket.
+`approve-auth` service, and it never touches the Docker socket.
 
 1. Generate self-signed dev certs (containerized, nothing installed or
    trusted on this machine):
@@ -117,20 +117,20 @@ tests can't verify real routing/cookie behavior (spec section 16).
 
 2. Bring up the stack (`--build` picks up any source change; `migrate`
    is one-shot and applies migrations with a privileged connection --
-   spec section 13 -- before `manual-approval` starts, which connects
+   spec section 13 -- before `approve-auth` starts, which connects
    with its own least-privilege runtime role):
 
    ```bash
    docker compose -f deploy/dev/docker-compose.yml up -d --build \
-     migrate manual-approval backend-protected traefik
+     migrate approve-auth backend-protected traefik
    ```
 
 3. Run the integration tests. Like the Postgres-backed tests, these
    `t.Skip` cleanly when unconfigured:
 
    ```bash
-   export DEV_NETWORK=traefik-manual-proxy_dev
-   export TEST_DATABASE_URL="postgres://postgres:devpassword@db:5432/manual_approval?sslmode=disable"
+   export DEV_NETWORK=approve-auth_dev
+   export TEST_DATABASE_URL="postgres://postgres:devpassword@db:5432/approve_auth?sslmode=disable"
    export TRAEFIK_ADDR="traefik:443"
    scripts/dev.sh test ./tests/integration/...
    ```
@@ -143,11 +143,11 @@ tests can't verify real routing/cookie behavior (spec section 16).
 
    Don't run `internal/store`'s tests (which drop and recreate the whole
    schema, e.g. plain `scripts/dev.sh test` with no package path) against
-   the same database while `manual-approval` is left running against it:
+   the same database while `approve-auth` is left running against it:
    its connection pool ends up with stale state from the schema churn and
    every query starts failing closed (503) until it's restarted --
    `docker compose -f deploy/dev/docker-compose.yml restart
-   manual-approval` fixes it. This can't happen in CI, where each job
+   approve-auth` fixes it. This can't happen in CI, where each job
    gets a fresh database and a freshly-started service with no such
    churn in between.
 
@@ -176,12 +176,12 @@ tests can't verify real routing/cookie behavior (spec section 16).
 
    ```bash
    docker compose -f deploy/dev/docker-compose.yml up -d --build \
-     migrate manual-approval mock-oidc backend-protected traefik
+     migrate approve-auth mock-oidc backend-protected traefik
    ```
 
    Then, from the host browser: `https://admin.localtest.me:18443/`,
    click "Log in" (accept the self-signed-cert warning, same as the
-   other `*.localtest.me` hosts). `deploy/dev/manual-approval-config.yaml`
+   other `*.localtest.me` hosts). `deploy/dev/approve-auth-config.yaml`
    already points `oidc_issuer`/`admin_origin` at this stack's addresses.
    If plain DNS resolution of `*.localtest.me` isn't available in your
    environment, use the same `curl --resolve` trick as step 4 above --
@@ -189,7 +189,7 @@ tests can't verify real routing/cookie behavior (spec section 16).
    `mock-oidc.localtest.me` for the redirect in between.
 
 Notes on what's dev-only in this stack, not something a real deployment
-does: `manual-approval`'s compose service overrides to `user: "0:0"`
+does: `approve-auth`'s compose service overrides to `user: "0:0"`
 because Docker Desktop's Windows bind-mount layer doesn't reliably
 preserve the permissions the image's nonroot user needs to read
 `/mtls/*` -- a Swarm deployment uses secrets/volumes instead of a host
@@ -211,4 +211,4 @@ hostname has no port, since Traefik only ever publishes 443.
 This one is unrelated to the real-Traefik stack above -- it predates
 ForwardAuth logic existing at all, and just proves two independent HTTPS
 origins exist to build cookie-isolation tests against. It does not run
-the actual `traefik-manual-proxy` service.
+the actual `approve-auth` service.

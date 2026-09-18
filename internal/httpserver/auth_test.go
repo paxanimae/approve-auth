@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
-	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
+	"github.com/frid-iks/approve-auth/internal/authz"
+	"github.com/frid-iks/approve-auth/internal/httpserver"
 )
 
 func newAuthRequest(t *testing.T, srvURL string) *http.Request {
@@ -25,7 +25,7 @@ func newAuthRequest(t *testing.T, srvURL string) *http.Request {
 	req.Header.Set("X-Forwarded-Uri", "/dashboard")
 	req.Header.Set("Sec-Fetch-Mode", "navigate")
 	req.Header.Set("Sec-Fetch-Dest", "document")
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-proxy", Value: "some-token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth", Value: "some-token"})
 	return req
 }
 
@@ -121,7 +121,7 @@ func TestAuthHandler_MissingCredential_Navigation_PreservesPortInRedirect(t *tes
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status = %d, want 303", resp.StatusCode)
 	}
-	want := "https://app.example.test:18443/__manual-approval/request?return_to=%2Fdashboard"
+	want := "https://app.example.test:18443/__approve-auth/request?return_to=%2Fdashboard"
 	if got := resp.Header.Get("Location"); got != want {
 		t.Errorf("Location = %q, want %q", got, want)
 	}
@@ -160,7 +160,7 @@ func TestAuthHandler_MissingCredential_Navigation_Redirects(t *testing.T) {
 		t.Fatalf("status = %d, want 303", resp.StatusCode)
 	}
 	location := resp.Header.Get("Location")
-	want := "https://app.example.test/__manual-approval/request?return_to=%2Fdashboard"
+	want := "https://app.example.test/__approve-auth/request?return_to=%2Fdashboard"
 	if location != want {
 		t.Errorf("Location = %q, want %q", location, want)
 	}
@@ -202,7 +202,7 @@ func TestAuthHandler_MalformedRequest_BadRequest(t *testing.T) {
 		{"relative X-Forwarded-Uri", func(r *http.Request) { r.Header.Set("X-Forwarded-Uri", "not-a-path") }},
 		{"host contains a slash", func(r *http.Request) { r.Header.Set("X-Forwarded-Host", "app.example.test/evil") }},
 		{"duplicate access cookie", func(r *http.Request) {
-			r.AddCookie(&http.Cookie{Name: "__Host-manual-proxy", Value: "second-value"})
+			r.AddCookie(&http.Cookie{Name: "__Host-approve-auth", Value: "second-value"})
 		}},
 	}
 

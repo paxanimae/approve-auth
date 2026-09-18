@@ -14,9 +14,9 @@ GO_IMAGE="golang:1.25.14"
 NODE_IMAGE="node:22.23.2"
 
 # DEV_NETWORK: set to the docker-compose network (default project name
-# yields "traefik-manual-proxy_dev") when a command needs to reach the
+# yields "approve-auth_dev") when a command needs to reach the
 # Postgres container started by deploy/dev/docker-compose.yml, e.g.:
-#   DEV_NETWORK=traefik-manual-proxy_dev TEST_DATABASE_URL=postgres://... scripts/dev.sh test
+#   DEV_NETWORK=approve-auth_dev TEST_DATABASE_URL=postgres://... scripts/dev.sh test
 go_run() {
   local net_args=()
   if [[ -n "${DEV_NETWORK:-}" ]]; then
@@ -24,7 +24,7 @@ go_run() {
   fi
   docker run --rm \
     -v "${ROOT}:/workspace" \
-    -v traefik-manual-proxy-gomod:/go/pkg/mod \
+    -v approve-auth-gomod:/go/pkg/mod \
     -w /workspace \
     -e GOCACHE=/workspace/.gocache \
     -e GOFLAGS=-mod=mod \

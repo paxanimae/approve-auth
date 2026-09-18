@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	webadmin "github.com/frid-iks/traefik-manual-proxy/web/admin"
-	webpublic "github.com/frid-iks/traefik-manual-proxy/web/public"
+	webadmin "github.com/frid-iks/approve-auth/web/admin"
+	webpublic "github.com/frid-iks/approve-auth/web/public"
 )
 
 type apiError struct {
@@ -85,16 +85,16 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 func NewPublicMux(enroller Enroller, decider Decider, requestTTL, credentialCookieMaxAge, decisionTimeout time.Duration) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /__manual-approval/request", requestPageHandler(enroller, requestTTL))
-	mux.HandleFunc("POST /__manual-approval/requests", submitRequestHandler(enroller))
-	mux.HandleFunc("GET /__manual-approval/waiting", waitingPageHandler(enroller))
-	mux.HandleFunc("GET /__manual-approval/status", statusHandler(enroller))
-	mux.HandleFunc("POST /__manual-approval/cancel", cancelHandler(enroller))
-	mux.HandleFunc("POST /__manual-approval/claim", claimHandler(enroller, credentialCookieMaxAge))
-	mux.HandleFunc("GET /__manual-approval/session", sessionHandler(decider, decisionTimeout))
-	mux.HandleFunc("POST /__manual-approval/ack", ackHandler(enroller))
-	mux.HandleFunc("POST /__manual-approval/logout", logoutHandler(enroller))
-	mux.Handle("GET /__manual-approval/assets/", http.StripPrefix("/__manual-approval/assets/", publicAssetsHandler()))
+	mux.HandleFunc("GET /__approve-auth/request", requestPageHandler(enroller, requestTTL))
+	mux.HandleFunc("POST /__approve-auth/requests", submitRequestHandler(enroller))
+	mux.HandleFunc("GET /__approve-auth/waiting", waitingPageHandler(enroller))
+	mux.HandleFunc("GET /__approve-auth/status", statusHandler(enroller))
+	mux.HandleFunc("POST /__approve-auth/cancel", cancelHandler(enroller))
+	mux.HandleFunc("POST /__approve-auth/claim", claimHandler(enroller, credentialCookieMaxAge))
+	mux.HandleFunc("GET /__approve-auth/session", sessionHandler(decider, decisionTimeout))
+	mux.HandleFunc("POST /__approve-auth/ack", ackHandler(enroller))
+	mux.HandleFunc("POST /__approve-auth/logout", logoutHandler(enroller))
+	mux.Handle("GET /__approve-auth/assets/", http.StripPrefix("/__approve-auth/assets/", publicAssetsHandler()))
 
 	wrapped := http.NewServeMux()
 	wrapped.Handle("/", securityHeaders(mux))

@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
+	"github.com/frid-iks/approve-auth/internal/metrics"
 )
 
 // Job is one scheduled retention/cleanup unit of work.

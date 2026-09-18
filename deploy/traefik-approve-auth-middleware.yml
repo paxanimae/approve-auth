@@ -4,8 +4,8 @@
 # manages it, not deployed by deploy/stack.yml.
 #
 # Every protected application then references this middleware by name
-# (`manual-approval@file`) in its own stack's `deploy.labels`, and adds a
-# second, higher-priority router for its reserved `/__manual-approval`
+# (`approve-auth@file`) in its own stack's `deploy.labels`, and adds a
+# second, higher-priority router for its reserved `/__approve-auth`
 # path pointing at this service's public listener -- see
 # docs/runbooks/rollout-rollback.md for the full per-application
 # onboarding checklist (spec section 6's router-topology requirement:
@@ -21,13 +21,13 @@
 
 http:
   middlewares:
-    manual-approval:
+    approve-auth:
       forwardAuth:
-        # "manual-approval" here is this service's Swarm service name --
+        # "approve-auth" here is this service's Swarm service name --
         # resolved via the overlay network deploy/stack.yml's
         # `control-plane` network shares with Traefik, backed by a
         # certificate whose SAN includes that name (spec section 13).
-        address: https://manual-approval:8443/auth
+        address: https://approve-auth:8443/auth
         trustForwardHeader: true
         preserveLocationHeader: true
         forwardBody: false
@@ -38,8 +38,8 @@ http:
           - Sec-Fetch-Mode
           - Sec-Fetch-Dest
         addAuthCookiesToResponse:
-          - __Host-manual-proxy
+          - __Host-approve-auth
         tls:
-          ca: /run/secrets/manual_approval_auth_ca
+          ca: /run/secrets/approve_auth_ca
           cert: /run/secrets/traefik_client_cert
           key: /run/secrets/traefik_client_key

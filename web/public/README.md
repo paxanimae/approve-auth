@@ -7,7 +7,7 @@ JavaScript disabled entirely (spec section 2/5): a reception TV browser is
 not guaranteed to run arbitrary modern JavaScript reliably.
 
 Milestone 1 wires up only the asset-serving mechanism (`GET
-/__manual-approval/assets/*`, embedded via `embed.go` and served by
+/__approve-auth/assets/*`, embedded via `embed.go` and served by
 `internal/httpserver`) and this placeholder template, to validate that
 path early. The actual request/waiting/claim pages render real content
 starting Milestone 2 -- see `docs/threat-model.md` and spec section 5 for

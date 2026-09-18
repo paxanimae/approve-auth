@@ -13,8 +13,8 @@ func TestRoles_AuditEventsInsertOnlyForRuntime(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
 
-	runtime := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	maintenance := connectAs(t, ctx, dbURL, "manual_approval_maintenance", "devpassword")
+	runtime := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	maintenance := connectAs(t, ctx, dbURL, "approve_auth_maintenance", "devpassword")
 
 	var eventID string
 	err := runtime.QueryRow(ctx, `
@@ -49,7 +49,7 @@ func TestRoles_AuditEventsInsertOnlyForRuntime(t *testing.T) {
 func TestRoles_MaintenanceCannotInsertAuditEvents(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	maintenance := connectAs(t, ctx, dbURL, "manual_approval_maintenance", "devpassword")
+	maintenance := connectAs(t, ctx, dbURL, "approve_auth_maintenance", "devpassword")
 
 	_, err := maintenance.Exec(ctx, `
 		INSERT INTO audit_events (actor_type, action, correlation_id, outcome)

@@ -12,7 +12,7 @@ import (
 func TestExpireTimedOutRequests(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-timeout.example.test")
@@ -68,7 +68,7 @@ func TestExpireTimedOutRequests(t *testing.T) {
 func TestExpireClaimWindows(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-claimwindow.example.test")
@@ -131,7 +131,7 @@ func TestExpireClaimWindows(t *testing.T) {
 func TestRecordExpiredAuthorizations_IsIdempotent(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-authexpiry.example.test")
@@ -169,7 +169,7 @@ func TestRecordExpiredAuthorizations_IsIdempotent(t *testing.T) {
 func TestRecordExpiredAuthorizations_IgnoresUnclaimedAndRevoked(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-authexpiry2.example.test")
@@ -196,7 +196,7 @@ func TestRecordExpiredAuthorizations_IgnoresUnclaimedAndRevoked(t *testing.T) {
 func TestPurgeExpiredClaimEnvelopes(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-envelope.example.test")
@@ -252,7 +252,7 @@ func TestPurgeExpiredClaimEnvelopes(t *testing.T) {
 func TestPurgeExpiredRateLimitBuckets(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	if _, err := db.Pool.Exec(ctx, `
 		INSERT INTO rate_limit_buckets (bucket_key, window_start, count, expires_at)
@@ -288,7 +288,7 @@ func TestPurgeExpiredRateLimitBuckets(t *testing.T) {
 func TestPurgeExpiredIdempotencyRecords(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	tokenHash := sha256.Sum256([]byte("tok-retention"))
@@ -330,7 +330,7 @@ func TestPurgeExpiredIdempotencyRecords(t *testing.T) {
 func TestRedactOldClientMetadata(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-redact.example.test")
@@ -388,7 +388,7 @@ func TestRedactOldClientMetadata(t *testing.T) {
 func TestRedactOldReturnPaths(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-returnpath.example.test")
@@ -434,7 +434,7 @@ func TestRedactOldReturnPaths(t *testing.T) {
 func TestPurgeResolvedRecords_NeverPurgesALiveAuthorization(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-live.example.test")
@@ -476,7 +476,7 @@ func TestPurgeResolvedRecords_NeverPurgesALiveAuthorization(t *testing.T) {
 func TestPurgeResolvedRecords_PurgesTerminalRecords(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "retention-resolved.example.test")
@@ -537,7 +537,7 @@ func TestPurgeOldAuditEvents(t *testing.T) {
 	// PurgeOldAuditEvents requires the app_maintenance role -- app_runtime
 	// deliberately has no DELETE on audit_events (spec section 11,
 	// control 10).
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_maintenance", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_maintenance", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	oldID := uuid.New()

@@ -14,7 +14,7 @@ import (
 	josejwt "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/oidc"
+	"github.com/frid-iks/approve-auth/internal/oidc"
 )
 
 // mockProvider is a minimal, real OIDC provider (discovery + JWKS + token

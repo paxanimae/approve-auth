@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/oidc"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/oidc"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 // Config is the subset of internal/config.Config this package needs.

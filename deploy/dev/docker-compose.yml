@@ -14,7 +14,7 @@
 #   migrate            - One-shot: applies migrations with a privileged
 #                        connection, then exits (spec section 13: "a
 #                        one-off, locked migration step").
-#   manual-approval    - The actual service, built from ../../Dockerfile,
+#   approve-auth    - The actual service, built from ../../Dockerfile,
 #                        connecting with its least-privilege runtime role.
 #   mock-oidc          - A real, minimal OIDC provider for the admin
 #                        console's login flow (see cmd/mock-oidc) --
@@ -28,7 +28,7 @@
 #                        stack -- see docs/dev-environment.md.
 #
 # Run scripts/gen-certs.sh and scripts/gen-mtls-certs.sh first.
-name: traefik-manual-proxy
+name: approve-auth
 
 services:
   db:
@@ -37,13 +37,13 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: devpassword
-      POSTGRES_DB: manual_approval
+      POSTGRES_DB: approve_auth
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d manual_approval"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d approve_auth"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -88,7 +88,7 @@ services:
     networks:
       - dev
 
-  manual-approval:
+  approve-auth:
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -102,13 +102,13 @@ services:
     # has no production equivalent -- see deploy/stack.yml (Milestone 5).
     user: "0:0"
     environment:
-      CONFIG_FILE: /config/manual-approval.yaml
+      CONFIG_FILE: /config/approve-auth.yaml
       DATABASE_URL_FILE: /secrets/database-url.txt
       OIDC_CLIENT_SECRET_FILE: /secrets/oidc-client-secret.txt
       CLAIM_ENCRYPTION_KEY_FILE: /secrets/claim-encryption-key.txt
       OIDC_STATE_ENCRYPTION_KEY_FILE: /secrets/oidc-state-key.txt
     volumes:
-      - ./manual-approval-config.yaml:/config/manual-approval.yaml:ro
+      - ./approve-auth-config.yaml:/config/approve-auth.yaml:ro
       - ./secrets:/secrets:ro
       - ./mtls:/mtls:ro
     depends_on:
@@ -163,14 +163,14 @@ services:
       - ./certs:/certs:ro
       - ./mtls:/mtls:ro
     depends_on:
-      - manual-approval
+      - approve-auth
       - backend-protected
     networks:
       - dev
 
 networks:
   dev:
-    name: traefik-manual-proxy_dev
+    name: approve-auth_dev
 
 volumes:
   db-data:

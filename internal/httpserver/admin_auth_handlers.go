@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/adminsession"
+	"github.com/frid-iks/approve-auth/internal/adminsession"
 )
 
 // --- GET /auth/login ---

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/admin"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/admin"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 var csrfTokenPattern = regexp.MustCompile(`name="csrf_token" value="([^"]*)"`)
@@ -110,7 +110,7 @@ func registerProtectedApplication(t *testing.T, ctx context.Context, dbURL strin
 // section 5 describes -- request, wait, (an admin approving, simulated
 // via internal/admin directly since the admin HTTP API isn't wired until
 // Milestone 4), claim, and ack -- through the actual running Traefik +
-// manual-approval + backend stack, ending with real protected content.
+// approve-auth + backend stack, ending with real protected content.
 // This is the real version of what tests/integration/traefik_test.go's
 // seededCredential shortcuts past.
 func TestRealTraefik_FullEnrollmentFlow(t *testing.T) {
@@ -122,7 +122,7 @@ func TestRealTraefik_FullEnrollmentFlow(t *testing.T) {
 	// Step 1: GET the request page. A real browser reads the CSRF token
 	// out of the rendered form; the pending-proof cookie lands in the
 	// jar automatically via Set-Cookie.
-	resp, err := client.Get(protectedURL("/__manual-approval/request?return_to=%2Fdashboard"))
+	resp, err := client.Get(protectedURL("/__approve-auth/request?return_to=%2Fdashboard"))
 	if err != nil {
 		t.Fatalf("GET /request: %v", err)
 	}
@@ -135,14 +135,14 @@ func TestRealTraefik_FullEnrollmentFlow(t *testing.T) {
 	// Step 2: submit the request as an HTML form would. The client
 	// follows the 303 to /waiting automatically.
 	form := "label=integration-test-tv&csrf_token=" + csrfToken + "&return_to=%2Fdashboard"
-	resp = postForm(t, client, protectedURL("/__manual-approval/requests"), form)
+	resp = postForm(t, client, protectedURL("/__approve-auth/requests"), form)
 	waitingBody := readBody(t, resp)
-	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/__manual-approval/waiting" {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/__approve-auth/waiting" {
 		t.Fatalf("POST /requests: status=%d finalPath=%s body:\n%s", resp.StatusCode, resp.Request.URL.Path, waitingBody)
 	}
 
 	// Step 3: poll status like the waiting page's own script would.
-	resp, err = client.Get(protectedURL("/__manual-approval/status"))
+	resp, err = client.Get(protectedURL("/__approve-auth/status"))
 	if err != nil {
 		t.Fatalf("GET /status: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestRealTraefik_FullEnrollmentFlow(t *testing.T) {
 
 	// Step 5: back on the waiting page, the state is now "approved" and
 	// offers a claim form with its own CSRF token.
-	resp, err = client.Get(protectedURL("/__manual-approval/waiting"))
+	resp, err = client.Get(protectedURL("/__approve-auth/waiting"))
 	if err != nil {
 		t.Fatalf("GET /waiting (after approve): %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRealTraefik_FullEnrollmentFlow(t *testing.T) {
 
 	// Step 6: claim. The client follows the 303 back to /waiting; the
 	// access cookie lands in the jar via Set-Cookie on that same response.
-	resp = postForm(t, client, protectedURL("/__manual-approval/claim"), "csrf_token="+claimCSRFToken)
+	resp = postForm(t, client, protectedURL("/__approve-auth/claim"), "csrf_token="+claimCSRFToken)
 	claimedWaitingBody := readBody(t, resp)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("POST /claim: status = %d, body:\n%s", resp.StatusCode, claimedWaitingBody)
@@ -197,12 +197,12 @@ func TestRealTraefik_FullEnrollmentFlow(t *testing.T) {
 		t.Fatalf("GET /dashboard: status = %d, body:\n%s", resp.StatusCode, dashboardBody)
 	}
 	if server := resp.Header.Get("Server"); server != "Caddy" {
-		t.Errorf("GET /dashboard: Server = %q, want Caddy (the real backend, not manual-approval)", server)
+		t.Errorf("GET /dashboard: Server = %q, want Caddy (the real backend, not approve-auth)", server)
 	}
 
 	// Step 8: ack, following the spec's step 8 -- it's ack that redirects
 	// to the original return_to, not claim.
-	resp = postForm(t, client, protectedURL("/__manual-approval/ack"), "")
+	resp = postForm(t, client, protectedURL("/__approve-auth/ack"), "")
 	ackBody := readBody(t, resp)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("POST /ack: status = %d, body:\n%s", resp.StatusCode, ackBody)

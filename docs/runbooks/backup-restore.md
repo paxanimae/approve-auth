@@ -49,7 +49,7 @@ once made.
 2. **Restore the full backup**, then **replay WAL** up to your target
    recovery point (or the latest available, for a "how current can we
    get" drill).
-3. **Bring up one `manual-approval` replica against the restored
+3. **Bring up one `approve-auth` replica against the restored
    database only**, with `admin migrate-up` run first if the backup
    predates a schema migration you've since applied going forward isn't
    possible without also restoring matching application code -- restore

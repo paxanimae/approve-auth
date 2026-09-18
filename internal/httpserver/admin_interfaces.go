@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/admin"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/admin"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 // AdminActions is the internal/admin.Service surface the admin API's

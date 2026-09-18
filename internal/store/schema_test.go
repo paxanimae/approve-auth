@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 func TestSchemaReady(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	ready, err := db.SchemaReady(ctx)
 	if err != nil {

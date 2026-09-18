@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/audit"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/audit"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 func testPool(t *testing.T) *pgxpool.Pool {
@@ -28,11 +28,11 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("parsing TEST_DATABASE_URL: %v", err)
 	}
-	u.User = url.UserPassword("manual_approval_app", "devpassword")
+	u.User = url.UserPassword("approve_auth_app", "devpassword")
 
 	pool, err := pgxpool.New(context.Background(), u.String())
 	if err != nil {
-		t.Fatalf("connecting as manual_approval_app: %v", err)
+		t.Fatalf("connecting as approve_auth_app: %v", err)
 	}
 	t.Cleanup(pool.Close)
 	return pool
@@ -47,11 +47,11 @@ func testMaintenancePool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("parsing TEST_DATABASE_URL: %v", err)
 	}
-	u.User = url.UserPassword("manual_approval_maintenance", "devpassword")
+	u.User = url.UserPassword("approve_auth_maintenance", "devpassword")
 
 	pool, err := pgxpool.New(context.Background(), u.String())
 	if err != nil {
-		t.Fatalf("connecting as manual_approval_maintenance: %v", err)
+		t.Fatalf("connecting as approve_auth_maintenance: %v", err)
 	}
 	t.Cleanup(pool.Close)
 	return pool

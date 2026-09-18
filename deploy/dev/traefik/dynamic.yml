@@ -12,9 +12,9 @@ tls:
 
 http:
   middlewares:
-    manual-approval:
+    approve-auth:
       forwardAuth:
-        address: https://manual-approval:8443/auth
+        address: https://approve-auth:8443/auth
         trustForwardHeader: true
         preserveLocationHeader: true
         forwardBody: false
@@ -25,7 +25,7 @@ http:
           - Sec-Fetch-Mode
           - Sec-Fetch-Dest
         addAuthCookiesToResponse:
-          - __Host-manual-proxy
+          - __Host-approve-auth
         tls:
           ca: /mtls/ca-cert.pem
           cert: /mtls/traefik-client-cert.pem
@@ -39,28 +39,28 @@ http:
       tls: {}
       priority: 100
       middlewares:
-        - manual-approval
+        - approve-auth
       service: backend-protected
 
-    # Higher priority, no manual-approval middleware, and no other
+    # Higher priority, no approve-auth middleware, and no other
     # service paths -- spec section 6's router topology requirement.
     protected-app-approval:
-      rule: "Host(`protected.localtest.me`) && (Path(`/__manual-approval`) || PathPrefix(`/__manual-approval/`))"
+      rule: "Host(`protected.localtest.me`) && (Path(`/__approve-auth`) || PathPrefix(`/__approve-auth/`))"
       entryPoints:
         - websecure
       tls: {}
       priority: 1000
-      service: manual-public
+      service: approve-auth-public
 
     # Dedicated admin hostname, dedicated listener (spec section 2/9) --
     # a separate router/service from the reserved-path one above, never
-    # the manual-approval ForwardAuth middleware.
-    manual-admin:
+    # the approve-auth ForwardAuth middleware.
+    approve-auth-admin:
       rule: "Host(`admin.localtest.me`)"
       entryPoints:
         - websecure
       tls: {}
-      service: manual-admin
+      service: approve-auth-admin
 
     # Only mock-oidc's /authorize needs to be browser-reachable at all
     # (discovery/jwks/token are called backend-to-backend, directly at
@@ -79,15 +79,15 @@ http:
         servers:
           - url: "http://backend-protected:80"
 
-    manual-public:
+    approve-auth-public:
       loadBalancer:
         servers:
-          - url: "http://manual-approval:8080"
+          - url: "http://approve-auth:8080"
 
-    manual-admin:
+    approve-auth-admin:
       loadBalancer:
         servers:
-          - url: "http://manual-approval:8081"
+          - url: "http://approve-auth:8081"
 
     mock-oidc:
       loadBalancer:

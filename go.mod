@@ -1,4 +1,4 @@
-module github.com/frid-iks/traefik-manual-proxy
+module github.com/frid-iks/approve-auth
 
 go 1.25.11
 

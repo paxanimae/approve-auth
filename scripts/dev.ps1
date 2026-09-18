@@ -21,7 +21,7 @@ function Invoke-Go {
     if ($env:DEV_NETWORK) { $netArgs = @("--network", $env:DEV_NETWORK) }
     docker run --rm `
         -v "${Root}:/workspace" `
-        -v traefik-manual-proxy-gomod:/go/pkg/mod `
+        -v approve-auth-gomod:/go/pkg/mod `
         -w /workspace `
         -e GOCACHE=/workspace/.gocache `
         -e GOFLAGS=-mod=mod `

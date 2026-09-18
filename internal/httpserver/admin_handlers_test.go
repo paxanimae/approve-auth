@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/admin"
-	"github.com/frid-iks/traefik-manual-proxy/internal/adminsession"
-	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/admin"
+	"github.com/frid-iks/approve-auth/internal/adminsession"
+	"github.com/frid-iks/approve-auth/internal/httpserver"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 const testAdminHost = "admin.example.test"
@@ -40,7 +40,7 @@ func adminRequest(t *testing.T, method, url, cookieValue, csrfToken string, body
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if cookieValue != "" {
-		req.AddCookie(&http.Cookie{Name: "__Host-manual-admin", Value: cookieValue})
+		req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-admin", Value: cookieValue})
 	}
 	if csrfToken != "" {
 		req.Header.Set("X-CSRF-Token", csrfToken)
@@ -194,9 +194,9 @@ func TestAdminCallback_SetsSessionCookieAndRedirects(t *testing.T) {
 	if got := resp.Header.Get("Location"); got != "/overview" {
 		t.Errorf("Location = %q, want /overview", got)
 	}
-	cookie := findCookie(resp, "__Host-manual-admin")
+	cookie := findCookie(resp, "__Host-approve-auth-admin")
 	if cookie == nil || cookie.Value != "raw-session-token" {
-		t.Errorf("expected __Host-manual-admin cookie set to raw-session-token, got %+v", cookie)
+		t.Errorf("expected __Host-approve-auth-admin cookie set to raw-session-token, got %+v", cookie)
 	}
 }
 
@@ -236,9 +236,9 @@ func TestAdminLogout_RequiresCSRFThenClearsCookie(t *testing.T) {
 	if goodResp.StatusCode != http.StatusOK {
 		t.Errorf("logout with CSRF: got status %d, want 200", goodResp.StatusCode)
 	}
-	cookie := findCookie(goodResp, "__Host-manual-admin")
+	cookie := findCookie(goodResp, "__Host-approve-auth-admin")
 	if cookie == nil || cookie.MaxAge >= 0 {
-		t.Errorf("expected __Host-manual-admin to be cleared, got %+v", cookie)
+		t.Errorf("expected __Host-approve-auth-admin to be cleared, got %+v", cookie)
 	}
 }
 

@@ -1,5 +1,5 @@
-DROP ROLE IF EXISTS manual_approval_maintenance;
-DROP ROLE IF EXISTS manual_approval_app;
+DROP ROLE IF EXISTS approve_auth_maintenance;
+DROP ROLE IF EXISTS approve_auth_app;
 
 REVOKE ALL PRIVILEGES ON
     applications,

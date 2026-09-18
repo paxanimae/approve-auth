@@ -5,18 +5,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Request access</title>
-  <link rel="stylesheet" href="/__manual-approval/assets/tokens.css" />
-  <script src="/__manual-approval/assets/app.js" defer></script>
+  <link rel="stylesheet" href="/__approve-auth/assets/tokens.css" />
+  <script src="/__approve-auth/assets/app.js" defer></script>
 </head>
 <body>
   <main>
     <div class="brand">
-      <img src="/__manual-approval/assets/logo.svg" alt="" />
+      <img src="/__approve-auth/assets/logo.svg" alt="" />
       <span>Approve</span>
     </div>
     <h1>Request access to {{.DisplayName}}</h1>
     <p class="hostname">{{.Hostname}}</p>
-    <form id="request-form" method="post" action="/__manual-approval/requests">
+    <form id="request-form" method="post" action="/__approve-auth/requests">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
       <input type="hidden" name="return_to" value="{{.ReturnTo}}" />
       <div class="field">

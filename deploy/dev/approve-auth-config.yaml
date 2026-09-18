@@ -1,4 +1,4 @@
-# Dev-only nonsecret config for the manual-approval service in the
+# Dev-only nonsecret config for the approve-auth service in the
 # real-Traefik integration compose stack. Not a production config
 # example -- see deploy/stack.yml (Milestone 5) for that.
 # :18443 because that's the nonstandard port this dev Traefik stack

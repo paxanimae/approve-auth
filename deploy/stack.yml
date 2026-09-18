@@ -1,20 +1,20 @@
 # Production Docker Swarm deployment for this service only (spec section
 # 13). Deploy with:
 #
-#   docker stack deploy -c deploy/stack.yml manual-approval
+#   docker stack deploy -c deploy/stack.yml approve-auth
 #
 # This stack does NOT bundle Traefik: spec section 6's own examples
 # assume Traefik already exists as shared cluster ingress that each
 # application attaches to via `deploy.labels`, not something every
 # service redeploys for itself. See docs/runbooks/rollout-rollback.md for
 # what the already-deployed Traefik still needs from this service
-# (deploy/traefik-manual-approval-middleware.yml, mounted into Traefik's
+# (deploy/traefik-approve-auth-middleware.yml, mounted into Traefik's
 # own file-provider directory) and what this stack's own `labels:` below
 # register directly (the admin listener's router).
 #
 # Prerequisites -- see docs/runbooks/rollout-rollback.md for the full
 # walkthrough:
-#   - Build and push the image, then export MANUAL_APPROVAL_IMAGE as a
+#   - Build and push the image, then export APPROVE_AUTH_IMAGE as a
 #     real, digest-pinned reference before running `docker stack deploy`
 #     (Swarm reads this from the invoking shell's environment, not a
 #     .env file, unless you export it yourself first).
@@ -23,11 +23,11 @@
 #     TRAEFIK_CERT_RESOLVER.
 #   - Create every secret listed under `secrets:` with `docker secret
 #     create` -- see the runbook for the full list and what each holds.
-#   - Copy deploy/manual-approval-config.example.yaml to a real config
+#   - Copy deploy/approve-auth-config.example.yaml to a real config
 #     file with real values and export CONFIG_PATH to point at it.
 #   - Label at least one storage-capable node
-#     `manual-approval-db-storage=true`
-#     (docker node update --label-add manual-approval-db-storage=true <node>).
+#     `approve-auth-db-storage=true`
+#     (docker node update --label-add approve-auth-db-storage=true <node>).
 #     The default `local` volume below does NOT survive node loss or
 #     follow rescheduling -- replace it with a real network/cloud volume
 #     driver for anything beyond a single pinned node (spec section 13
@@ -37,7 +37,7 @@
 # Running the admin listener with admin_auth_mode: anonymous (some
 # other mechanism -- a VPN, an upstream SSO reverse proxy, network
 # ACLs -- gates who reaches it instead of this service's own OIDC
-# login; see deploy/manual-approval-config.example.yaml): the
+# login; see deploy/approve-auth-config.example.yaml): the
 # oidc_client_secret and oidc_state_key secrets below are still
 # required to exist (Swarm refuses to deploy a service referencing a
 # secret that was never created), but their *values* are never read in
@@ -54,11 +54,11 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.labels.manual-approval-db-storage == true
+          - node.labels.approve-auth-db-storage == true
       restart_policy:
         condition: on-failure
     environment:
-      POSTGRES_DB: manual_approval
+      POSTGRES_DB: approve_auth
       POSTGRES_USER_FILE: /run/secrets/db_superuser_name
       POSTGRES_PASSWORD_FILE: /run/secrets/db_superuser_password
     secrets:
@@ -69,19 +69,19 @@ services:
     networks:
       - db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/db_superuser_name)\" -d manual_approval"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/db_superuser_name)\" -d approve_auth"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   # One-off, locked migration step (spec section 13) -- run to
-  # completion before manual-approval starts, never on every replica.
+  # completion before approve-auth starts, never on every replica.
   # `restart_policy: condition: none` means Swarm does not retry or keep
   # this task around after it exits; re-deploy the stack to run it again
   # (e.g. after a schema change), which is also how a rolling upgrade
   # that needs a new migration is expected to apply it.
   migrate:
-    image: ${MANUAL_APPROVAL_IMAGE:?set MANUAL_APPROVAL_IMAGE to a real, digest-pinned image reference}
+    image: ${APPROVE_AUTH_IMAGE:?set APPROVE_AUTH_IMAGE to a real, digest-pinned image reference}
     entrypoint: ["/usr/local/bin/admin", "migrate-up"]
     environment:
       DATABASE_URL_FILE: /run/secrets/database_url_superuser
@@ -94,8 +94,8 @@ services:
       restart_policy:
         condition: none
 
-  manual-approval:
-    image: ${MANUAL_APPROVAL_IMAGE:?set MANUAL_APPROVAL_IMAGE to a real, digest-pinned image reference}
+  approve-auth:
+    image: ${APPROVE_AUTH_IMAGE:?set APPROVE_AUTH_IMAGE to a real, digest-pinned image reference}
     # Hardening spec section 13 requires: nonroot (already the image's
     # default user, restated here for auditability), read-only root
     # filesystem with a writable tmpfs only where something needs it,
@@ -106,7 +106,7 @@ services:
     cap_drop:
       - ALL
     environment:
-      CONFIG_FILE: /config/manual-approval.yaml
+      CONFIG_FILE: /config/approve-auth.yaml
       DATABASE_URL_FILE: /run/secrets/database_url
       OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
       CLAIM_ENCRYPTION_KEY_FILE: /run/secrets/claim_encryption_key
@@ -120,8 +120,8 @@ services:
       - auth_tls_key
       - auth_client_ca
     configs:
-      - source: manual-approval-config
-        target: /config/manual-approval.yaml
+      - source: approve-auth-config
+        target: /config/approve-auth.yaml
     networks:
       - control-plane # Traefik reaches the admin listener and, over
                        # mTLS, calls /auth here (spec section 13's
@@ -162,16 +162,16 @@ services:
         # own example labels, scoped to the admin listener only.
         # Protected-application hostnames are registered by whichever
         # stack deploys that application, pointing its own
-        # `manual-approval@file` middleware reference at the file-
+        # `approve-auth@file` middleware reference at the file-
         # provider snippet below; this service's own labels never define
         # a protected-application router (it doesn't know their hostnames).
         - traefik.enable=true
-        - traefik.http.routers.manual-admin.rule=Host(`${ADMIN_HOSTNAME:?set ADMIN_HOSTNAME to the real admin console hostname}`)
-        - traefik.http.routers.manual-admin.entrypoints=websecure
-        - traefik.http.routers.manual-admin.tls=true
-        - traefik.http.routers.manual-admin.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-default}
-        - traefik.http.routers.manual-admin.service=manual-admin
-        - traefik.http.services.manual-admin.loadbalancer.server.port=8081
+        - traefik.http.routers.approve-auth-admin.rule=Host(`${ADMIN_HOSTNAME:?set ADMIN_HOSTNAME to the real admin console hostname}`)
+        - traefik.http.routers.approve-auth-admin.entrypoints=websecure
+        - traefik.http.routers.approve-auth-admin.tls=true
+        - traefik.http.routers.approve-auth-admin.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-default}
+        - traefik.http.routers.approve-auth-admin.service=approve-auth-admin
+        - traefik.http.services.approve-auth-admin.loadbalancer.server.port=8081
     # "Gracefully drain for up to 30 seconds" (spec section 13).
     stop_grace_period: 30s
 
@@ -195,8 +195,8 @@ volumes:
     driver: local
 
 configs:
-  manual-approval-config:
-    file: ${CONFIG_PATH:-./manual-approval-config.example.yaml}
+  approve-auth-config:
+    file: ${CONFIG_PATH:-./approve-auth-config.example.yaml}
 
 secrets:
   db_superuser_name:

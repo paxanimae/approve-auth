@@ -8,13 +8,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 func TestCreateAndGetApplication(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	created, err := db.CreateApplication(ctx, "Repo-Test.example.test", "Repo Test App", "created by applications_test.go", 30*24*time.Hour, 365*24*time.Hour)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestCreateAndGetApplication(t *testing.T) {
 func TestGetApplicationByHostname_NotFound(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	_, ok, err := db.GetApplicationByHostname(ctx, "does-not-exist.example.test")
 	if err != nil {
@@ -58,7 +58,7 @@ func TestGetApplicationByHostname_NotFound(t *testing.T) {
 func TestGetApplicationByID(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	created, err := db.CreateApplication(ctx, "by-id.example.test", "By ID App", "", 30*24*time.Hour, 365*24*time.Hour)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestGetApplicationByID(t *testing.T) {
 func TestListApplications(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	a, err := db.CreateApplication(ctx, "list-a.example.test", "List A", "", 30*24*time.Hour, 365*24*time.Hour)
 	if err != nil {
@@ -120,7 +120,7 @@ func TestListApplications(t *testing.T) {
 func TestUpdateApplication_AppliesPartialChangesAndDetectsConflict(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	created, err := db.CreateApplication(ctx, "update.example.test", "Original Name", "original description", 30*24*time.Hour, 365*24*time.Hour)
 	if err != nil {
@@ -153,7 +153,7 @@ func TestUpdateApplication_AppliesPartialChangesAndDetectsConflict(t *testing.T)
 func TestDisableApplication_CancelsPendingAndRevokesLiveAuthorizations(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "disable.example.test")
@@ -210,7 +210,7 @@ func TestDisableApplication_CancelsPendingAndRevokesLiveAuthorizations(t *testin
 func TestEnableApplication(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	created, err := db.CreateApplication(ctx, "enable.example.test", "Enable Test", "", 30*24*time.Hour, 365*24*time.Hour)
 	if err != nil {

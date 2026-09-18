@@ -17,16 +17,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/admin"
-	"github.com/frid-iks/traefik-manual-proxy/internal/adminsession"
-	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
-	"github.com/frid-iks/traefik-manual-proxy/internal/config"
-	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
-	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
-	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
-	"github.com/frid-iks/traefik-manual-proxy/internal/oidc"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
-	"github.com/frid-iks/traefik-manual-proxy/internal/worker"
+	"github.com/frid-iks/approve-auth/internal/admin"
+	"github.com/frid-iks/approve-auth/internal/adminsession"
+	"github.com/frid-iks/approve-auth/internal/authz"
+	"github.com/frid-iks/approve-auth/internal/config"
+	"github.com/frid-iks/approve-auth/internal/enrollment"
+	"github.com/frid-iks/approve-auth/internal/httpserver"
+	"github.com/frid-iks/approve-auth/internal/metrics"
+	"github.com/frid-iks/approve-auth/internal/oidc"
+	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/frid-iks/approve-auth/internal/worker"
 )
 
 const shutdownGrace = 30 * time.Second

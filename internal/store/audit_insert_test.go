@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 // TestMutationsWriteAuditEvents confirms spec section 12's "mutations
@@ -16,9 +16,9 @@ import (
 func TestMutationsWriteAuditEvents(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	maintenance := connectAs(t, ctx, dbURL, "manual_approval_maintenance", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	maintenance := connectAs(t, ctx, dbURL, "approve_auth_maintenance", "devpassword")
 
 	countActions := func(t *testing.T, requestID string) map[string]int {
 		t.Helper()

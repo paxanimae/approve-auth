@@ -15,7 +15,7 @@ func testTokenHash(seed string) []byte {
 func TestGetAccessSnapshot_UnknownHost(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	snap, err := db.GetAccessSnapshot(ctx, "unknown-host.example.test", testTokenHash(t.Name()))
 	if err != nil {
@@ -29,8 +29,8 @@ func TestGetAccessSnapshot_UnknownHost(t *testing.T) {
 func TestGetAccessSnapshot_KnownHostNoCredential(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "snapshot-no-cred.example.test")
 
@@ -52,8 +52,8 @@ func TestGetAccessSnapshot_KnownHostNoCredential(t *testing.T) {
 func TestGetAccessSnapshot_ValidCredential(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "snapshot-valid.example.test")
 	reqID := insertApprovalRequest(t, ctx, conn, appID, t.Name())
@@ -100,8 +100,8 @@ func TestGetAccessSnapshot_ValidCredential(t *testing.T) {
 func TestGetAccessSnapshot_CredentialForDifferentApplication(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appA := insertApplication(t, ctx, conn, "snapshot-app-a.example.test")
 	appB := insertApplication(t, ctx, conn, "snapshot-app-b.example.test")
@@ -143,8 +143,8 @@ func TestGetAccessSnapshot_CredentialForDifferentApplication(t *testing.T) {
 func TestTouchLastSeen_CoalescesWithinOneMinute(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "last-seen.example.test")
 	reqID := insertApprovalRequest(t, ctx, conn, appID, t.Name())

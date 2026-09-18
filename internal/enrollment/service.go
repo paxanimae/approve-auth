@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/metrics"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 var (

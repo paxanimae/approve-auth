@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/config"
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/config"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 func main() {
@@ -46,7 +46,7 @@ func run(args []string) error {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `manual-approval admin CLI (operator tool, connects to PostgreSQL directly)
+	fmt.Fprint(os.Stderr, `approve-auth admin CLI (operator tool, connects to PostgreSQL directly)
 
 Usage:
   admin <command> [flags]

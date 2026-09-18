@@ -1,16 +1,16 @@
-// Package integration_test exercises the actual Traefik + manual-approval
+// Package integration_test exercises the actual Traefik + approve-auth
 // + backend stack from deploy/dev/docker-compose.yml -- mock-only tests
 // are insufficient for cookie scope and routing (spec section 16).
 //
 // Requires (see docs/dev-environment.md):
 //
 //	docker compose -f deploy/dev/docker-compose.yml up -d --build \
-//	  migrate manual-approval backend-protected traefik
+//	  migrate approve-auth backend-protected traefik
 //
 // and TRAEFIK_ADDR + TEST_DATABASE_URL set, e.g.:
 //
 //	TRAEFIK_ADDR=127.0.0.1:18443 \
-//	TEST_DATABASE_URL=postgres://postgres:devpassword@localhost:5432/manual_approval?sslmode=disable \
+//	TEST_DATABASE_URL=postgres://postgres:devpassword@localhost:5432/approve_auth?sslmode=disable \
 //	go test ./tests/integration/...
 package integration_test
 
@@ -27,7 +27,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 const protectedHostname = "protected.localtest.me"
@@ -170,7 +170,7 @@ func TestRealTraefik_MissingCredential_Navigation_RedirectsToRequestPage(t *test
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status = %d, want 303", resp.StatusCode)
 	}
-	want := fmt.Sprintf("https://%s/__manual-approval/request?return_to=%%2Fdashboard", protectedHostname)
+	want := fmt.Sprintf("https://%s/__approve-auth/request?return_to=%%2Fdashboard", protectedHostname)
 	if got := resp.Header.Get("Location"); got != want {
 		t.Errorf("Location = %q, want %q", got, want)
 	}
@@ -182,14 +182,14 @@ func TestRealTraefik_ReservedPathBypassesForwardAuth(t *testing.T) {
 	_, _ = seededCredential(t, ctx, dbURL)
 
 	client := newTraefikClient(traefikAddr)
-	resp, err := client.Get(protectedURL("/__manual-approval/status"))
+	resp, err := client.Get(protectedURL("/__approve-auth/status"))
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// No cookie was presented and the request would otherwise be denied,
-	// but the reserved-path router has no manual-approval middleware and
+	// but the reserved-path router has no approve-auth middleware and
 	// goes straight to the Public listener (spec section 6's router
 	// topology) -- it must reach the real /status endpoint (200 JSON,
 	// "not_requested"), never the 401 the same-cookie-less request would
@@ -199,7 +199,7 @@ func TestRealTraefik_ReservedPathBypassesForwardAuth(t *testing.T) {
 		t.Errorf("status = %d, want 200 (the public listener's real /status, unauthenticated)", resp.StatusCode)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json (reached manual-approval, not the backend)", ct)
+		t.Errorf("Content-Type = %q, want application/json (reached approve-auth, not the backend)", ct)
 	}
 }
 
@@ -213,7 +213,7 @@ func TestRealTraefik_ValidCredential_ReachesBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("building request: %v", err)
 	}
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-proxy", Value: rawToken})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth", Value: rawToken})
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
@@ -224,7 +224,7 @@ func TestRealTraefik_ValidCredential_ReachesBackend(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 	if server := resp.Header.Get("Server"); server != "Caddy" {
-		t.Errorf("Server = %q, want Caddy (the actual backend, not manual-approval)", server)
+		t.Errorf("Server = %q, want Caddy (the actual backend, not approve-auth)", server)
 	}
 }
 
@@ -248,7 +248,7 @@ func TestRealTraefik_RevokedAuthorization_Denied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("building request: %v", err)
 	}
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-proxy", Value: rawToken})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth", Value: rawToken})
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
@@ -262,7 +262,7 @@ func TestRealTraefik_RevokedAuthorization_Denied(t *testing.T) {
 
 // Fail-closed on a total service outage (spec section 6: "Database
 // unavailable or decision timeout" -> no backend request) was verified
-// manually by stopping the manual-approval container mid-stack and
+// manually by stopping the approve-auth container mid-stack and
 // confirming Traefik returns 500 rather than proxying to the backend --
 // not automated here since it would disrupt this shared dev stack for
 // any other test running concurrently against it.

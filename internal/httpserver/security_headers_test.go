@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
+	"github.com/frid-iks/approve-auth/internal/httpserver"
 )
 
 // TestSecurityHeaders_PresentOnBothBrowserFacingListeners covers spec

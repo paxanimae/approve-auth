@@ -1,6 +1,7 @@
 # Approve
 
-**Approve** is a Traefik manual-approval authorization service: it lets an
+**Approve** (repo/service name: `approve-auth`) is a Traefik ForwardAuth
+authorization service: it lets an
 administrator manually approve a browser (e.g. a reception TV) for
 time-limited access to one Traefik-protected application hostname, via
 ForwardAuth. Traefik remains the sole reverse proxy; this service owns
@@ -44,7 +45,7 @@ Browser -> Traefik HTTPS application router
               |
               +-> application backend (Traefik proxies all content)
 
-Browser -> Traefik same-host /__manual-approval/* router -> Public listener
+Browser -> Traefik same-host /__approve-auth/* router -> Public listener
 Admin   -> Traefik dedicated admin hostname -> Admin listener -> OIDC provider
 Worker  -> PostgreSQL cleanup / audit expiry events (runs inside cmd/server)
 ```

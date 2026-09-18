@@ -1,6 +1,6 @@
 # Example nonsecret production config (spec section 14). Copy this to a
 # real file with real values, then point deploy/stack.yml's `configs:
-# manual-approval-config` at it (export CONFIG_PATH before `docker stack
+# approve-auth-config` at it (export CONFIG_PATH before `docker stack
 # deploy`, or edit the path directly).
 #
 # Everything security-sensitive is a *_FILE secret path instead (see
@@ -33,7 +33,7 @@ claim_encryption_key_id: primary
 auth_tls_cert_file: /run/secrets/auth_tls_cert
 auth_tls_key_file: /run/secrets/auth_tls_key
 auth_client_ca_file: /run/secrets/auth_client_ca
-auth_allowed_client_identities: ["manual-approval"] # Traefik's client-certificate SAN/CN
+auth_allowed_client_identities: ["approve-auth"] # Traefik's client-certificate SAN/CN
 
 # Real deployment network ranges only -- never leave this wide-open in
 # production the way the dev compose stack's "0.0.0.0/0" is (that's

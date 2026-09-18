@@ -6,8 +6,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/admin"
-	"github.com/frid-iks/traefik-manual-proxy/internal/adminsession"
+	"github.com/frid-iks/approve-auth/internal/admin"
+	"github.com/frid-iks/approve-auth/internal/adminsession"
 )
 
 // csrfHeaderName carries the admin API's synchronizer token (spec

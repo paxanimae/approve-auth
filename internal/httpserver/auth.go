@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
-	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
+	"github.com/frid-iks/approve-auth/internal/authz"
+	"github.com/frid-iks/approve-auth/internal/metrics"
 )
 
 // stripPort removes a ":port" suffix from a Host-style value, lowercasing
@@ -146,7 +146,7 @@ func clientAddr(r *http.Request) string {
 // A real deployment only ever runs on 443, where this makes no
 // difference either way.
 func requestPageRedirectLocation(host, uri string) string {
-	return fmt.Sprintf("https://%s/__manual-approval/request?return_to=%s", host, url.QueryEscape(uri))
+	return fmt.Sprintf("https://%s/__approve-auth/request?return_to=%s", host, url.QueryEscape(uri))
 }
 
 // NewAuthMux serves the ForwardAuth decision endpoint (spec section 6) on

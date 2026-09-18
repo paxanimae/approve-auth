@@ -8,7 +8,7 @@ import (
 func TestConstraints_DuplicateHostnameRejected(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	insertApplication(t, ctx, conn, "dup-hostname.example.test")
 
@@ -23,7 +23,7 @@ func TestConstraints_DuplicateHostnameRejected(t *testing.T) {
 func TestConstraints_UppercaseHostnameRejected(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	_, err := conn.Exec(ctx, `
 		INSERT INTO applications (hostname, display_name, default_duration_seconds, max_duration_seconds)
@@ -36,7 +36,7 @@ func TestConstraints_UppercaseHostnameRejected(t *testing.T) {
 func TestConstraints_HostnameImmutable(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	id := insertApplication(t, ctx, conn, "immutable.example.test")
 
@@ -49,7 +49,7 @@ func TestConstraints_HostnameImmutable(t *testing.T) {
 func TestConstraints_AuthorizationApplicationMismatchRejected(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appA := insertApplication(t, ctx, conn, "app-a.example.test")
 	appB := insertApplication(t, ctx, conn, "app-b.example.test")
@@ -78,7 +78,7 @@ func TestConstraints_AuthorizationApplicationMismatchRejected(t *testing.T) {
 func TestConstraints_CredentialAuthorizationMismatchRejected(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appA := insertApplication(t, ctx, conn, "cred-app-a.example.test")
 	appB := insertApplication(t, ctx, conn, "cred-app-b.example.test")
@@ -105,7 +105,7 @@ func TestConstraints_CredentialAuthorizationMismatchRejected(t *testing.T) {
 func TestConstraints_VerificationCodeUniqueAmongLiveRequests(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "verification-code.example.test")
 	insertApprovalRequest(t, ctx, conn, appID, "SHARED-CODE")

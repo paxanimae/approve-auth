@@ -685,7 +685,7 @@ components:
     adminSessionCookie:
       type: apiKey
       in: cookie
-      name: __Host-manual-admin
+      name: __Host-approve-auth-admin
 
   parameters:
     Id:

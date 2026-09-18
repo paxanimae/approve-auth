@@ -9,7 +9,7 @@ import (
 func TestGetOverviewCounts(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "overview.example.test")

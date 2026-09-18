@@ -1,7 +1,7 @@
 oidc_issuer: https://idp.example.test/
-oidc_client_id: manual-approval-admin
-oidc_admin_groups: ["grp-manual-approval-admins"]
-oidc_viewer_groups: ["grp-manual-approval-viewers"]
+oidc_client_id: approve-auth-admin
+oidc_admin_groups: ["grp-approve-auth-admins"]
+oidc_viewer_groups: ["grp-approve-auth-viewers"]
 
 claim_encryption_key_id: primary-2026-09
 

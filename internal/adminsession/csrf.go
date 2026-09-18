@@ -14,7 +14,7 @@ import (
 // otherwise unrelated).
 func csrfToken(secret []byte) string {
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte("manual-approval-admin-csrf"))
+	mac.Write([]byte("approve-auth-admin-csrf"))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 

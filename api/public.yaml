@@ -4,7 +4,7 @@ info:
   version: "0.5.0"
   description: >
     Same-host reserved-path endpoints (spec section 9), served on the
-    Public listener only, under Traefik's `/__manual-approval` reserved
+    Public listener only, under Traefik's `/__approve-auth` reserved
     router. Reflects the actual implementation as of Milestone 5
     (internal/httpserver's enrollment_handlers.go), not a draft.
 
@@ -14,7 +14,7 @@ info:
     instead) -- content negotiation is by the caller's own Content-Type/
     Accept headers, not a separate path.
 paths:
-  /__manual-approval/request:
+  /__approve-auth/request:
     get:
       operationId: getRequestPage
       summary: Enrollment request page (HTML form, CSRF bootstrap)
@@ -43,7 +43,7 @@ paths:
           description: This application is unknown or disabled
           $ref: "#/components/responses/Error"
 
-  /__manual-approval/requests:
+  /__approve-auth/requests:
     post:
       operationId: createRequest
       summary: Create or reuse a pending approval request
@@ -78,7 +78,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
-  /__manual-approval/waiting:
+  /__approve-auth/waiting:
     get:
       operationId: getWaitingPage
       summary: Waiting page for the current pending proof
@@ -93,7 +93,7 @@ paths:
           description: Duplicate pending-request cookie
           $ref: "#/components/responses/Error"
 
-  /__manual-approval/status:
+  /__approve-auth/status:
     get:
       operationId: getStatus
       summary: Poll the current pending request's status
@@ -110,7 +110,7 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
-  /__manual-approval/cancel:
+  /__approve-auth/cancel:
     post:
       operationId: cancelRequest
       summary: Cancel the caller's own pending/unclaimed request
@@ -146,7 +146,7 @@ paths:
           description: The request is no longer in a cancelable state
           $ref: "#/components/responses/Error"
 
-  /__manual-approval/claim:
+  /__approve-auth/claim:
     post:
       operationId: claimCredential
       summary: Claim the access credential for an approved request
@@ -192,7 +192,7 @@ paths:
           description: The request is not in a claimable state
           $ref: "#/components/responses/Error"
 
-  /__manual-approval/session:
+  /__approve-auth/session:
     get:
       operationId: getSession
       summary: Current access-cookie state and authorization expiry
@@ -217,7 +217,7 @@ paths:
           description: Decision temporarily unavailable (fail closed)
           $ref: "#/components/responses/Error"
 
-  /__manual-approval/ack:
+  /__approve-auth/ack:
     post:
       operationId: acknowledgeClaim
       summary: Acknowledge a claimed credential and consume the pending proof
@@ -248,7 +248,7 @@ paths:
           description: Bad Origin
           $ref: "#/components/responses/Error"
 
-  /__manual-approval/logout:
+  /__approve-auth/logout:
     post:
       operationId: logout
       summary: Revoke the caller's own authorization and clear its cookies
@@ -267,7 +267,7 @@ paths:
           description: Bad Origin
           $ref: "#/components/responses/Error"
 
-  /__manual-approval/assets/{file}:
+  /__approve-auth/assets/{file}:
     get:
       operationId: getAsset
       summary: Locally bundled public-page assets only

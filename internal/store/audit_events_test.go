@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 func TestListAuditEvents_FiltersByApplicationAndAction(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	app, err := db.CreateApplication(ctx, "audit-list.example.test", "Audit List App", "", 30*24*time.Hour, 365*24*time.Hour)
 	if err != nil {

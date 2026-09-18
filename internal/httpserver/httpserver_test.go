@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
-	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
-	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
+	"github.com/frid-iks/approve-auth/internal/authz"
+	"github.com/frid-iks/approve-auth/internal/enrollment"
+	"github.com/frid-iks/approve-auth/internal/httpserver"
 )
 
 // fakeDecider lets httpserver tests exercise the /auth response-mapping
@@ -83,16 +83,16 @@ func listeners() []listener {
 			name: "public",
 			mux:  httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Hour, time.Hour, time.Second),
 			routes: []route{
-				{"GET", "/__manual-approval/request"},
-				{"POST", "/__manual-approval/requests"},
-				{"GET", "/__manual-approval/waiting"},
-				{"GET", "/__manual-approval/status"},
-				{"POST", "/__manual-approval/cancel"},
-				{"POST", "/__manual-approval/claim"},
-				{"GET", "/__manual-approval/session"},
-				{"POST", "/__manual-approval/ack"},
-				{"POST", "/__manual-approval/logout"},
-				{"GET", "/__manual-approval/assets/app.js"},
+				{"GET", "/__approve-auth/request"},
+				{"POST", "/__approve-auth/requests"},
+				{"GET", "/__approve-auth/waiting"},
+				{"GET", "/__approve-auth/status"},
+				{"POST", "/__approve-auth/cancel"},
+				{"POST", "/__approve-auth/claim"},
+				{"GET", "/__approve-auth/session"},
+				{"POST", "/__approve-auth/ack"},
+				{"POST", "/__approve-auth/logout"},
+				{"GET", "/__approve-auth/assets/app.js"},
 			},
 		},
 		{
@@ -197,7 +197,7 @@ func TestPublicAssetsServeEmbeddedContent(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/__manual-approval/assets/tokens.css")
+	resp, err := http.Get(srv.URL + "/__approve-auth/assets/tokens.css")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestPublicAssetsServeEmbeddedContent(t *testing.T) {
 		t.Fatalf("got status %d, want 200", resp.StatusCode)
 	}
 
-	resp2, err := http.Get(srv.URL + "/__manual-approval/assets/does-not-exist.css")
+	resp2, err := http.Get(srv.URL + "/__approve-auth/assets/does-not-exist.css")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}

@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/store"
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 func TestLifecycle_EnrollmentContext(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "lifecycle-enrollment.example.test")
 	appUUID := mustParseUUID(t, appID)
@@ -48,8 +48,8 @@ func TestLifecycle_EnrollmentContext(t *testing.T) {
 func TestLifecycle_ApproveClaimRenewRevoke(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "lifecycle-approve.example.test")
 	appUUID := mustParseUUID(t, appID)
@@ -180,8 +180,8 @@ func TestLifecycle_ApproveClaimRenewRevoke(t *testing.T) {
 func TestLifecycle_DenyAndCancel(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
-	conn := connectAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	appID := insertApplication(t, ctx, conn, "lifecycle-deny.example.test")
 	appUUID := mustParseUUID(t, appID)

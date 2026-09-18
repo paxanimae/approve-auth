@@ -42,11 +42,11 @@ GRANT SELECT, DELETE ON approval_requests, authorizations TO app_maintenance;
 -- <prod_user>;` -- see docs/dev-environment.md.
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'manual_approval_app') THEN
-        CREATE ROLE manual_approval_app LOGIN PASSWORD 'devpassword' IN ROLE app_runtime;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'approve_auth_app') THEN
+        CREATE ROLE approve_auth_app LOGIN PASSWORD 'devpassword' IN ROLE app_runtime;
     END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'manual_approval_maintenance') THEN
-        CREATE ROLE manual_approval_maintenance LOGIN PASSWORD 'devpassword' IN ROLE app_maintenance;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'approve_auth_maintenance') THEN
+        CREATE ROLE approve_auth_maintenance LOGIN PASSWORD 'devpassword' IN ROLE app_maintenance;
     END IF;
 END
 $$;

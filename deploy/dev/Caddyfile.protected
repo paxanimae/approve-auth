@@ -1,4 +1,4 @@
-# The application backend behind Traefik + manual-approval in the
+# The application backend behind Traefik + approve-auth in the
 # real-Traefik integration test. Not published to the host directly --
 # spec section 6: "No host-published ports on ... application backends.
 # Traefik alone publishes public ingress."

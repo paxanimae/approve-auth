@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
-	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
-	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
+	"github.com/frid-iks/approve-auth/internal/authz"
+	"github.com/frid-iks/approve-auth/internal/enrollment"
+	"github.com/frid-iks/approve-auth/internal/httpserver"
 )
 
 // configurableEnroller lets each test control exactly what the
@@ -75,7 +75,7 @@ func TestRequestPage_SetsNewPendingCookie(t *testing.T) {
 		bootstrapResult: enrollment.BootstrapResult{ApplicationDisplayName: "Grafana", ApplicationHostname: "app.example.test", RawPendingToken: "new-raw-token", CSRFToken: "csrf-abc"},
 	}, fakeDecider{})
 
-	resp, err := http.Get(srv.URL + "/__manual-approval/request")
+	resp, err := http.Get(srv.URL + "/__approve-auth/request")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestRequestPage_SetsNewPendingCookie(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	cookie := findCookie(resp, "__Host-manual-request")
+	cookie := findCookie(resp, "__Host-approve-auth-request")
 	if cookie == nil || cookie.Value != "new-raw-token" {
 		t.Errorf("pending cookie = %+v, want value %q", cookie, "new-raw-token")
 	}
@@ -97,15 +97,15 @@ func TestRequestPage_DoesNotResetCookieOnReuse(t *testing.T) {
 		bootstrapResult: enrollment.BootstrapResult{ApplicationDisplayName: "Grafana", ApplicationHostname: "app.example.test", CSRFToken: "csrf-abc"},
 	}, fakeDecider{})
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/__manual-approval/request", nil)
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "existing-token"})
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/__approve-auth/request", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "existing-token"})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if findCookie(resp, "__Host-manual-request") != nil {
+	if findCookie(resp, "__Host-approve-auth-request") != nil {
 		t.Error("expected no Set-Cookie when reusing an existing live context")
 	}
 }
@@ -113,10 +113,10 @@ func TestRequestPage_DoesNotResetCookieOnReuse(t *testing.T) {
 func TestSubmitRequest_RejectsBadOrigin(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}, fakeDecider{})
 
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/requests", strings.NewReader("label=tv"))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/requests", strings.NewReader("label=tv"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "https://evil.example.test")
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -138,11 +138,11 @@ func TestSubmitRequest_NullOriginFallsBackToReferer(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}, fakeDecider{})
 	u, _ := url.Parse(srv.URL)
 
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/requests", strings.NewReader(`{"csrf_token":"x"}`))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/requests", strings.NewReader(`{"csrf_token":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "null")
-	req.Header.Set("Referer", "https://"+u.Host+"/__manual-approval/request")
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	req.Header.Set("Referer", "https://"+u.Host+"/__approve-auth/request")
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -157,10 +157,10 @@ func TestSubmitRequest_NullOriginFallsBackToReferer(t *testing.T) {
 func TestSubmitRequest_NullOriginWithNoRefererIsRejected(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}, fakeDecider{})
 
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/requests", strings.NewReader(`{"csrf_token":"x"}`))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/requests", strings.NewReader(`{"csrf_token":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "null")
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -176,10 +176,10 @@ func TestSubmitRequest_JSONResponseForJSONCaller(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}, fakeDecider{})
 
 	u, _ := url.Parse(srv.URL)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/requests", strings.NewReader(`{"csrf_token":"x"}`))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/requests", strings.NewReader(`{"csrf_token":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "https://"+u.Host)
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -196,10 +196,10 @@ func TestSubmitRequest_RedirectsToWaitingForFormCaller(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}, fakeDecider{})
 
 	u, _ := url.Parse(srv.URL)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/requests", strings.NewReader("csrf_token=x"))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/requests", strings.NewReader("csrf_token=x"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "https://"+u.Host)
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -210,8 +210,8 @@ func TestSubmitRequest_RedirectsToWaitingForFormCaller(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status = %d, want 303", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/__manual-approval/waiting" {
-		t.Errorf("Location = %q, want /__manual-approval/waiting", loc)
+	if loc := resp.Header.Get("Location"); loc != "/__approve-auth/waiting" {
+		t.Errorf("Location = %q, want /__approve-auth/waiting", loc)
 	}
 }
 
@@ -219,7 +219,7 @@ func TestSubmitRequest_MissingPendingCookie(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{}, fakeDecider{})
 
 	u, _ := url.Parse(srv.URL)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/requests", strings.NewReader("csrf_token=x"))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/requests", strings.NewReader("csrf_token=x"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "https://"+u.Host)
 	resp, err := http.DefaultClient.Do(req)
@@ -237,10 +237,10 @@ func TestClaim_SetsAccessCookieAndRedirectsToWaiting(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{claimResult: enrollment.ClaimOutcome{RawAccessToken: "access-token-123", ReturnTo: "/dashboard"}}, fakeDecider{})
 
 	u, _ := url.Parse(srv.URL)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/claim", strings.NewReader("csrf_token=x"))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/claim", strings.NewReader("csrf_token=x"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "https://"+u.Host)
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -251,10 +251,10 @@ func TestClaim_SetsAccessCookieAndRedirectsToWaiting(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status = %d, want 303", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/__manual-approval/waiting" {
-		t.Errorf("Location = %q, want /__manual-approval/waiting (not ReturnTo directly)", loc)
+	if loc := resp.Header.Get("Location"); loc != "/__approve-auth/waiting" {
+		t.Errorf("Location = %q, want /__approve-auth/waiting (not ReturnTo directly)", loc)
 	}
-	cookie := findCookie(resp, "__Host-manual-proxy")
+	cookie := findCookie(resp, "__Host-approve-auth")
 	if cookie == nil || cookie.Value != "access-token-123" {
 		t.Errorf("access cookie = %+v, want value %q", cookie, "access-token-123")
 	}
@@ -264,9 +264,9 @@ func TestAck_RequiresAccessCookie(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{ackReturnTo: "/dashboard"}, fakeDecider{})
 
 	u, _ := url.Parse(srv.URL)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/ack", nil)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/ack", nil)
 	req.Header.Set("Origin", "https://"+u.Host)
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
 	// deliberately no access cookie
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -283,10 +283,10 @@ func TestAck_RedirectsToReturnTo(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{ackReturnTo: "/dashboard?tab=1"}, fakeDecider{})
 
 	u, _ := url.Parse(srv.URL)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/ack", nil)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/ack", nil)
 	req.Header.Set("Origin", "https://"+u.Host)
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-proxy", Value: "access-token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth", Value: "access-token"})
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -306,7 +306,7 @@ func TestLogout_AlwaysClearsCookies(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{}, fakeDecider{})
 
 	u, _ := url.Parse(srv.URL)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__manual-approval/logout", nil)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__approve-auth/logout", nil)
 	req.Header.Set("Origin", "https://"+u.Host)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -317,8 +317,8 @@ func TestLogout_AlwaysClearsCookies(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	access := findCookie(resp, "__Host-manual-proxy")
-	pending := findCookie(resp, "__Host-manual-request")
+	access := findCookie(resp, "__Host-approve-auth")
+	pending := findCookie(resp, "__Host-approve-auth-request")
 	if access == nil || access.MaxAge >= 0 {
 		t.Errorf("access cookie clear = %+v, want MaxAge < 0", access)
 	}
@@ -329,8 +329,8 @@ func TestLogout_AlwaysClearsCookies(t *testing.T) {
 
 func TestSession_AllowAndDeny(t *testing.T) {
 	allowSrv := newPublicServer(t, configurableEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}})
-	req, _ := http.NewRequest(http.MethodGet, allowSrv.URL+"/__manual-approval/session", nil)
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-proxy", Value: "some-token"})
+	req, _ := http.NewRequest(http.MethodGet, allowSrv.URL+"/__approve-auth/session", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth", Value: "some-token"})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
@@ -341,8 +341,8 @@ func TestSession_AllowAndDeny(t *testing.T) {
 	}
 
 	denySrv := newPublicServer(t, configurableEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryMissingOrInvalidCredential}})
-	req2, _ := http.NewRequest(http.MethodGet, denySrv.URL+"/__manual-approval/session", nil)
-	req2.AddCookie(&http.Cookie{Name: "__Host-manual-proxy", Value: "some-token"})
+	req2, _ := http.NewRequest(http.MethodGet, denySrv.URL+"/__approve-auth/session", nil)
+	req2.AddCookie(&http.Cookie{Name: "__Host-approve-auth", Value: "some-token"})
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
@@ -355,7 +355,7 @@ func TestSession_AllowAndDeny(t *testing.T) {
 
 func TestSession_NoCookieIsUnauthorized(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}})
-	resp, err := http.Get(srv.URL + "/__manual-approval/session")
+	resp, err := http.Get(srv.URL + "/__approve-auth/session")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -368,8 +368,8 @@ func TestSession_NoCookieIsUnauthorized(t *testing.T) {
 func TestWaitingPage_RendersVerificationCodeWhenPending(t *testing.T) {
 	srv := newPublicServer(t, configurableEnroller{statusResult: enrollment.StatusResult{State: "pending", VerificationCode: "AB12-CD34"}}, fakeDecider{})
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/__manual-approval/waiting", nil)
-	req.AddCookie(&http.Cookie{Name: "__Host-manual-request", Value: "token"})
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/__approve-auth/waiting", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
@@ -383,7 +383,7 @@ func TestWaitingPage_RendersVerificationCodeWhenPending(t *testing.T) {
 	if !strings.Contains(body, "AB12-CD34") {
 		t.Errorf("waiting page body does not contain the verification code:\n%s", body)
 	}
-	if !strings.Contains(body, "/__manual-approval/cancel") {
+	if !strings.Contains(body, "/__approve-auth/cancel") {
 		t.Errorf("waiting page body does not contain a cancel form action:\n%s", body)
 	}
 }

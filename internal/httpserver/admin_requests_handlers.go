@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/admin"
+	"github.com/frid-iks/approve-auth/internal/admin"
 )
 
 // --- GET /api/v1/requests ---

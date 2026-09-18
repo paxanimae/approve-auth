@@ -10,7 +10,7 @@ import (
 func TestWithAdvisoryLock_MutualExclusion(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	var wg sync.WaitGroup
 	holding := make(chan struct{})
@@ -66,7 +66,7 @@ func TestWithAdvisoryLock_MutualExclusion(t *testing.T) {
 func TestWithAdvisoryLock_DifferentKeysDoNotContend(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()
-	db := openStoreAs(t, ctx, dbURL, "manual_approval_app", "devpassword")
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
 	holding := make(chan struct{})
 	release := make(chan struct{})

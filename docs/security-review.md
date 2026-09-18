@@ -27,9 +27,9 @@ docker run --rm -v "$(pwd):/workspace" -w /workspace golang:1.26 \
   sh -c 'go install golang.org/x/vuln/cmd/govulncheck@latest && /root/go/bin/govulncheck ./...'
 
 # Image (build the runtime target first, then scan it)
-docker build -t manual-approval:scan --target runtime .
-docker scout cves manual-approval:scan
-docker rmi manual-approval:scan
+docker build -t approve-auth:scan --target runtime .
+docker scout cves approve-auth:scan
+docker rmi approve-auth:scan
 ```
 
 before every release, and ideally on a schedule (a CI job on a cron

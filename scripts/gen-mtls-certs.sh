@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generates a dev-only CA plus a server cert (the manual-approval
+# Generates a dev-only CA plus a server cert (the approve-auth
 # service's Authorization listener identity) and a client cert (what
 # Traefik presents to it), entirely inside a container -- nothing
 # installed or trusted on this machine. Used by the real-Traefik
@@ -19,13 +19,13 @@ run_openssl() {
 }
 
 run_openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 -days 3650 \
-  -keyout ca-key.pem -out ca-cert.pem -subj "/CN=manual-approval-dev-ca"
+  -keyout ca-key.pem -out ca-cert.pem -subj "/CN=approve-auth-dev-ca"
 
 # Server identity for the Authorization listener. SAN matches the
 # service's Swarm DNS/VIP name (spec section 13).
 run_openssl req -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
-  -keyout server-key.pem -out server.csr -subj "/CN=manual-approval" \
-  -addext "subjectAltName=DNS:manual-approval"
+  -keyout server-key.pem -out server.csr -subj "/CN=approve-auth" \
+  -addext "subjectAltName=DNS:approve-auth"
 run_openssl x509 -req -in server.csr -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial \
   -out server-cert.pem -days 365 -copy_extensions copyall
 

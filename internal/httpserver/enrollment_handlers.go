@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
-	"github.com/frid-iks/traefik-manual-proxy/internal/enrollment"
-	"github.com/frid-iks/traefik-manual-proxy/internal/metrics"
-	webpublic "github.com/frid-iks/traefik-manual-proxy/web/public"
+	"github.com/frid-iks/approve-auth/internal/authz"
+	"github.com/frid-iks/approve-auth/internal/enrollment"
+	"github.com/frid-iks/approve-auth/internal/metrics"
+	webpublic "github.com/frid-iks/approve-auth/web/public"
 )
 
 // Enroller is the internal/enrollment.Service surface the public
@@ -137,7 +137,7 @@ func enrollmentErrorReason(err error) string {
 	}
 }
 
-// --- GET /__manual-approval/request ---
+// --- GET /__approve-auth/request ---
 
 type requestPageData struct {
 	DisplayName string
@@ -188,7 +188,7 @@ func validateQueryReturnTo(r *http.Request) string {
 	return v
 }
 
-// --- POST /__manual-approval/requests ---
+// --- POST /__approve-auth/requests ---
 
 func submitRequestHandler(enroller Enroller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +227,7 @@ func submitRequestHandler(enroller Enroller) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		http.Redirect(w, r, "/__manual-approval/waiting", http.StatusSeeOther)
+		http.Redirect(w, r, "/__approve-auth/waiting", http.StatusSeeOther)
 	}
 }
 
@@ -266,7 +266,7 @@ func formOrJSONCSRFToken(r *http.Request) (string, error) {
 	return r.PostForm.Get("csrf_token"), nil
 }
 
-// --- GET /__manual-approval/waiting ---
+// --- GET /__approve-auth/waiting ---
 
 type waitingPageData struct {
 	State            string
@@ -306,7 +306,7 @@ func waitingPageHandler(enroller Enroller) http.HandlerFunc {
 	}
 }
 
-// --- GET /__manual-approval/status ---
+// --- GET /__approve-auth/status ---
 
 func statusHandler(enroller Enroller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -329,7 +329,7 @@ func statusHandler(enroller Enroller) http.HandlerFunc {
 	}
 }
 
-// --- POST /__manual-approval/cancel ---
+// --- POST /__approve-auth/cancel ---
 
 func cancelHandler(enroller Enroller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -356,11 +356,11 @@ func cancelHandler(enroller Enroller) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		http.Redirect(w, r, "/__manual-approval/waiting", http.StatusSeeOther)
+		http.Redirect(w, r, "/__approve-auth/waiting", http.StatusSeeOther)
 	}
 }
 
-// --- POST /__manual-approval/claim ---
+// --- POST /__approve-auth/claim ---
 
 func claimHandler(enroller Enroller, credentialCookieMaxAge time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -397,11 +397,11 @@ func claimHandler(enroller Enroller, credentialCookieMaxAge time.Duration) http.
 		// detects the active cookie and offers the ack ("Open
 		// application") form -- it does not jump straight to ReturnTo.
 		w.Header().Set("Cache-Control", "no-store")
-		http.Redirect(w, r, "/__manual-approval/waiting", http.StatusSeeOther)
+		http.Redirect(w, r, "/__approve-auth/waiting", http.StatusSeeOther)
 	}
 }
 
-// --- GET /__manual-approval/session ---
+// --- GET /__approve-auth/session ---
 
 func sessionHandler(decider Decider, decisionTimeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -436,7 +436,7 @@ func sessionHandler(decider Decider, decisionTimeout time.Duration) http.Handler
 	}
 }
 
-// --- POST /__manual-approval/ack ---
+// --- POST /__approve-auth/ack ---
 
 func ackHandler(enroller Enroller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -470,7 +470,7 @@ func ackHandler(enroller Enroller) http.HandlerFunc {
 	}
 }
 
-// --- POST /__manual-approval/logout ---
+// --- POST /__approve-auth/logout ---
 
 func logoutHandler(enroller Enroller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

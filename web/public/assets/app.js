@@ -21,11 +21,11 @@
 (function () {
   "use strict";
 
-  var STATUS_URL = "/__manual-approval/status";
-  var CLAIM_URL = "/__manual-approval/claim";
-  var SESSION_URL = "/__manual-approval/session";
-  var ACK_URL = "/__manual-approval/ack";
-  var WAITING_URL = "/__manual-approval/waiting";
+  var STATUS_URL = "/__approve-auth/status";
+  var CLAIM_URL = "/__approve-auth/claim";
+  var SESSION_URL = "/__approve-auth/session";
+  var ACK_URL = "/__approve-auth/ack";
+  var WAITING_URL = "/__approve-auth/waiting";
   var TEN_MINUTES_MS = 10 * 60 * 1000;
   var AUTO_SUBMIT_DELAY_S = 6;
 

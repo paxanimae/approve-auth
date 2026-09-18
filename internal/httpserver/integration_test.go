@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/traefik-manual-proxy/internal/authz"
-	"github.com/frid-iks/traefik-manual-proxy/internal/httpserver"
+	"github.com/frid-iks/approve-auth/internal/authz"
+	"github.com/frid-iks/approve-auth/internal/httpserver"
 )
 
 // --- test PKI helpers: a small self-signed CA + leaf issuer, entirely
@@ -136,7 +136,7 @@ func writeCAFile(t *testing.T, certPEM []byte) string {
 // --- the actual integration test ---
 
 func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
-	serverCertFile, serverKeyFile := selfSignedServerCert(t, "auth.manual-approval.internal")
+	serverCertFile, serverKeyFile := selfSignedServerCert(t, "auth.approve-auth.internal")
 
 	trustedCA, trustedCAKey, trustedCAPEM := newSelfSignedCA(t, "test-trusted-ca")
 	trustedCAFile := writeCAFile(t, trustedCAPEM)
@@ -192,7 +192,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 		// cookie it reports "not_requested" at 200, which is enough here
 		// to prove the listener itself is up and routed -- the real
 		// behavior has its own tests.
-		resp, err := http.Get(fmt.Sprintf("http://%s/__manual-approval/status", publicLn.Addr()))
+		resp, err := http.Get(fmt.Sprintf("http://%s/__approve-auth/status", publicLn.Addr()))
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
@@ -303,7 +303,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 			InsecureSkipVerify: true,
 			Certificates:       []tls.Certificate{goodClientCert},
 		}}}
-		resp, err := client.Get(fmt.Sprintf("https://%s/__manual-approval/status", authLn.Addr()))
+		resp, err := client.Get(fmt.Sprintf("https://%s/__approve-auth/status", authLn.Addr()))
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
