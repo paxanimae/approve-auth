@@ -1,7 +1,13 @@
 # Example nonsecret production config (spec section 14). Copy this to a
-# real file with real values, then point deploy/stack.yml's `configs:
-# approve-auth-config` at it (export CONFIG_PATH before `docker stack
-# deploy`, or edit the path directly).
+# real file with real values, then load it as the approve-auth-config
+# Swarm config: `docker config create approve-auth-config <your-real-file>`
+# (or, via Portainer: Configs -> Add config, name it exactly
+# approve-auth-config, paste the contents) -- deploy/stack.yml and
+# deploy/stack.approve.yml both reference it as `external: true`,
+# deliberately not a `file:` path (see either stack file's `configs:`
+# section for why: it's resolved against whatever filesystem actually
+# runs `docker stack deploy`, which for a Portainer-managed deploy is
+# Portainer's own container, not the Swarm node's).
 #
 # Everything security-sensitive is a *_FILE secret path instead (see
 # deploy/stack.yml's `secrets:` and docs/runbooks/rollout-rollback.md) --

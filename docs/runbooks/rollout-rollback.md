@@ -67,15 +67,28 @@ not just written.
    `forwardedHeaders.insecure=false` plus explicit `trustedIPs` for the
    real upstream load balancer.
 
-5. **Write the real nonsecret config.** Copy
-   `deploy/approve-auth-config.example.yaml`, fill in real values,
-   and export `CONFIG_PATH` to point at it.
+5. **Write the real nonsecret config, and load it as a Swarm config.**
+   Copy `deploy/approve-auth-config.example.yaml`, fill in real values,
+   then:
+
+   ```bash
+   docker config create approve-auth-config /path/to/your/real-config.yaml
+   ```
+
+   (or, deploying via Portainer: Configs -> Add config, name it
+   exactly `approve-auth-config`, paste the file's contents). Not a
+   `file:` path in the stack itself -- that gets resolved against
+   whichever filesystem actually runs `docker stack deploy`, which for
+   a Portainer-managed deploy is Portainer's own container, not the
+   Swarm node's, and "cannot find file" even though it's right there on
+   the node is exactly that mismatch.
 
 6. **Deploy:**
 
    ```bash
    export ADMIN_HOSTNAME=approval-admin.example.com
    export TRAEFIK_CERT_RESOLVER=default   # or your resolver's real name
+   export TRAEFIK_NETWORK=approve-control-plane   # or your existing Traefik ingress network's real name
    docker stack deploy -c deploy/stack.yml approve-auth
    ```
 

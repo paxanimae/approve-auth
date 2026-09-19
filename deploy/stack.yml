@@ -34,7 +34,9 @@
 #   - Create every secret listed under `secrets:` with `docker secret
 #     create` -- see the runbook for the full list and what each holds.
 #   - Copy deploy/approve-auth-config.example.yaml to a real config
-#     file with real values and export CONFIG_PATH to point at it.
+#     file with real values, then load it as the approve-auth-config
+#     Swarm config (see the `configs:` section below for the exact
+#     command / Portainer steps).
 #   - Label at least one storage-capable node
 #     `approve-auth-db-storage=true`
 #     (docker node update --label-add approve-auth-db-storage=true <node>).
@@ -220,8 +222,21 @@ volumes:
     driver: local
 
 configs:
+  # external, not `file:` -- a `file:` path is resolved against
+  # whichever filesystem actually runs `docker stack deploy`, which for
+  # a Portainer-managed deploy is Portainer's OWN container, not the
+  # Swarm node's filesystem ("cannot find file" even though the file is
+  # right there on the node is exactly this mismatch). Create the
+  # config content once, from wherever you actually run the deploy
+  # from:
+  #   docker config create approve-auth-config /path/to/approve-auth-config.yaml
+  # or, if deploying via Portainer's UI: Configs -> Add config, name it
+  # exactly "approve-auth-config", paste the file's contents. Re-running
+  # either one to pick up a config change requires removing the old
+  # config and its name isn't reusable while any service still
+  # references it -- see docs/runbooks/rollout-rollback.md.
   approve-auth-config:
-    file: ${CONFIG_PATH:-./approve-auth-config.example.yaml}
+    external: true
 
 secrets:
   db_superuser_name:
