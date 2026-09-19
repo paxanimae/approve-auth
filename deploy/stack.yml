@@ -21,6 +21,16 @@
 #   - Export ADMIN_HOSTNAME (the real admin console hostname) and,
 #     if you're not using a resolver literally named "default",
 #     TRAEFIK_CERT_RESOLVER.
+#   - Make sure the shared ingress network Traefik itself is attached
+#     to actually exists (the `control-plane` network below is
+#     `external: true` -- this stack does not create it) and export
+#     TRAEFIK_NETWORK to its real name if it isn't
+#     "approve-control-plane":
+#       docker network create --driver overlay --attachable approve-control-plane
+#       docker service update --network-add approve-control-plane <your-traefik-service-name>
+#     (skip both if Traefik's own stack already defines and publishes
+#     this network under a name you can just point TRAEFIK_NETWORK at,
+#     e.g. the common "traefik_public" convention).
 #   - Create every secret listed under `secrets:` with `docker secret
 #     create` -- see the runbook for the full list and what each holds.
 #   - Copy deploy/approve-auth-config.example.yaml to a real config
@@ -166,6 +176,14 @@ services:
         # provider snippet below; this service's own labels never define
         # a protected-application router (it doesn't know their hostnames).
         - traefik.enable=true
+        # approve-auth is on three networks (control-plane, db, ops)
+        # and Traefik is only on control-plane -- without this,
+        # Traefik's Swarm provider has to guess which one to route
+        # through, and can pick wrong (or fail) the moment there's more
+        # than one candidate. traefik.docker.network was the label for
+        # this before Traefik v3.2.2; traefik.swarm.* is the
+        # non-deprecated one as of the v3.6.25 this project pins.
+        - traefik.swarm.network=${TRAEFIK_NETWORK:-approve-control-plane}
         - traefik.http.routers.approve-auth-admin.rule=Host(`${ADMIN_HOSTNAME:?set ADMIN_HOSTNAME to the real admin console hostname}`)
         - traefik.http.routers.approve-auth-admin.entrypoints=websecure
         - traefik.http.routers.approve-auth-admin.tls=true
@@ -176,11 +194,18 @@ services:
     stop_grace_period: 30s
 
 networks:
-  # Shared with Traefik -- attachable so an already-running Traefik
-  # stack can join it without this stack owning Traefik's own lifecycle.
+  # Shared with Traefik -- external, because this network is not this
+  # stack's to create: it must already exist (created by Traefik's own
+  # stack, or by hand: `docker network create --driver overlay
+  # --attachable approve-control-plane`) and Traefik's own service must
+  # already be attached to it, or routing never works regardless of the
+  # traefik.swarm.network label above. If your existing Traefik ingress
+  # network is called something else (e.g. the common "traefik_public"
+  # convention), export TRAEFIK_NETWORK to match it -- the label above
+  # reads the same variable, so they can't drift apart.
   control-plane:
-    driver: overlay
-    attachable: true
+    external: true
+    name: ${TRAEFIK_NETWORK:-approve-control-plane}
   db:
     driver: overlay
     internal: true

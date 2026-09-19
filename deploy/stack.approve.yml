@@ -1,0 +1,282 @@
+# Production Docker Swarm deployment of approve-auth for the "approve"
+# stack, backed by an external managed PostgreSQL (Azure Database for
+# PostgreSQL Flexible Server) instead of an in-stack `db` service --
+# see deploy/stack.yml for the self-hosted-Postgres variant this is
+# adapted from; that one stays the generic reference/template, this one
+# is the real deployment for approve.frid-iks.no. Deploy with:
+#
+#   docker stack deploy -c deploy/stack.approve.yml approve
+#
+# This stack does NOT bundle Traefik or PostgreSQL: Traefik is assumed
+# to already exist as shared cluster ingress (spec section 6), and
+# Postgres is Azure's managed service, not something this stack owns
+# the lifecycle of. See docs/runbooks/rollout-rollback.md for what the
+# already-deployed Traefik still needs from this service
+# (deploy/traefik-approve-auth-middleware.yml, mounted into Traefik's
+# own file-provider directory) and what this stack's own `labels:`
+# below register directly (the admin listener's router).
+#
+# Prerequisites, in order:
+#
+# 1. Azure-side: create the database once, as the Azure admin user
+#    (pg-swarm-prod.postgres.database.azure.com:5432, Flexible Server
+#    enforces SSL by default -- every connection string below uses
+#    sslmode=require):
+#
+#      psql "postgresql://<azure-admin>:<azure-admin-password>@pg-swarm-prod.postgres.database.azure.com:5432/postgres?sslmode=require" \
+#        -c "CREATE DATABASE approve_auth;"
+#
+#    Also add this Swarm cluster's egress IP(s) to the Azure server's
+#    firewall rules (or VNET-integrate it) -- outside anything this
+#    compose file can express, but nothing below works without it.
+#
+# 2. Create the migration secret (Azure admin credentials -- migration
+#    000012 runs CREATE ROLE/GRANT statements, so this needs more than
+#    plain read/write privilege, though it does not need to be the
+#    Postgres instance superuser Azure itself never hands out):
+#
+#      printf 'postgresql://<azure-admin>:<azure-admin-password>@pg-swarm-prod.postgres.database.azure.com:5432/approve_auth?sslmode=require' \
+#        | docker secret create database_url_superuser -
+#
+# 3. Run the migration once (a throwaway local run against Azure, not
+#    part of the stack -- the `migrate` service below does this on
+#    every deploy too, but doing it once by hand first lets you catch
+#    connectivity/firewall problems before the real deploy):
+#
+#      docker run --rm --entrypoint /usr/local/bin/admin \
+#        -e DATABASE_URL_FILE=/secret \
+#        -v /path/to/a/local/copy/of/the/connection/string:/secret:ro \
+#        ${APPROVE_AUTH_IMAGE:-registry.frid-iks.no/approve-auth:0.1.0} \
+#        migrate-up
+#
+# 4. IMPORTANT -- migration 000012 only ever creates a fixed
+#    dev/CI-convenience role (`approve_auth_app`, password literally
+#    'devpassword', by design -- see the migration's own comment). A
+#    real production deployment must NOT use that role. Create your
+#    own, with a real random password, granted the same NOLOGIN
+#    group role the dev one uses (this is the exact pattern
+#    docs/runbooks/key-rotation.md already uses for rotating this
+#    later -- you're just doing the "create a v2" half of it on day one):
+#
+#      psql "$SUPERUSER_URL_FROM_STEP_2" -c "
+#        CREATE ROLE approve_prod_runtime LOGIN PASSWORD '<a real random password>';
+#        GRANT app_runtime TO approve_prod_runtime;
+#      "
+#
+#    Then create the app's own database_url secret from THAT role, not
+#    approve_auth_app:
+#
+#      printf 'postgresql://approve_prod_runtime:<that password>@pg-swarm-prod.postgres.database.azure.com:5432/approve_auth?sslmode=require' \
+#        | docker secret create database_url -
+#
+#    (The audit-purge maintenance role follows the same pattern, but
+#    is deliberately not a secret in this stack at all -- spec section
+#    11: purging only ever runs as a distinct one-shot operator
+#    command, never inside the always-running service. Create it the
+#    same way when you actually need to run `admin purge-audit-log`,
+#    not ahead of time.)
+#
+# 5. Export APPROVE_AUTH_IMAGE if you want something other than the
+#    default below (a specific digest for a real rollout, per
+#    docs/runbooks/rollout-rollback.md, rather than a mutable tag).
+#
+# 6. Export TRAEFIK_CERT_RESOLVER if it isn't literally named "default".
+#
+# 6b. Make sure the shared ingress network Traefik itself is attached
+#     to actually exists and export TRAEFIK_NETWORK to its real name if
+#     it isn't "approve-control-plane" (the `control-plane` network
+#     below is `external: true` -- this stack does not create it):
+#
+#       docker network create --driver overlay --attachable approve-control-plane
+#       docker service update --network-add approve-control-plane <your-traefik-service-name>
+#
+#     (skip both if Traefik's own stack already defines and publishes
+#     this network under a name you can just point TRAEFIK_NETWORK at).
+#
+# 7. Create the remaining secrets (see docs/runbooks/rollout-rollback.md
+#    for the full walkthrough of what each one is):
+#
+#      docker secret create oidc_client_secret -   # your real IdP client secret
+#      openssl rand -base64 32 | docker secret create claim_encryption_key -
+#      openssl rand -base64 32 | docker secret create oidc_state_key -
+#      docker secret create auth_tls_cert <path>    # this service's own Authorization-listener server cert
+#      docker secret create auth_tls_key <path>
+#      docker secret create auth_client_ca <path>   # CA that issued Traefik's client cert
+#
+#    Running admin_auth_mode: anonymous instead of OIDC (see
+#    deploy/approve-auth-config.example.yaml): oidc_client_secret and
+#    oidc_state_key are still required to exist -- Swarm refuses to
+#    deploy a service referencing a secret that was never created --
+#    but their *values* are never read in that mode, so any
+#    placeholder works for oidc_client_secret; oidc_state_key still
+#    needs to decode as a real 32-byte key regardless.
+#
+# 8. Copy deploy/approve-auth-config.example.yaml to a real config file
+#    (admin_origin: https://approve.frid-iks.no, real oidc_issuer/
+#    oidc_client_id/oidc_admin_groups/oidc_viewer_groups,
+#    auth_allowed_client_identities matching your real Traefik client
+#    cert, trusted_traefik_cidrs scoped to your real cluster range --
+#    never the dev stack's 0.0.0.0/0) and export CONFIG_PATH to it.
+
+services:
+  # One-off, locked migration step (spec section 13) -- run to
+  # completion before approve-auth starts, never on every replica.
+  # `restart_policy: condition: none` means Swarm does not retry or
+  # keep this task around after it exits; re-deploy the stack to run
+  # it again (e.g. after a schema change), which is also how a rolling
+  # upgrade that needs a new migration is expected to apply it.
+  migrate:
+    image: ${APPROVE_AUTH_IMAGE:-registry.frid-iks.no/approve-auth:0.1.0}
+    entrypoint: ["/usr/local/bin/admin", "migrate-up"]
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url_superuser
+    secrets:
+      - database_url_superuser
+    networks:
+      - db-egress
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+
+  approve-auth:
+    image: ${APPROVE_AUTH_IMAGE:-registry.frid-iks.no/approve-auth:0.1.0}
+    # Hardening spec section 13 requires: nonroot (already the image's
+    # default user, restated here for auditability), read-only root
+    # filesystem with a writable tmpfs only where something needs it,
+    # and every Linux capability dropped.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    environment:
+      CONFIG_FILE: /config/approve-auth.yaml
+      DATABASE_URL_FILE: /run/secrets/database_url
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      CLAIM_ENCRYPTION_KEY_FILE: /run/secrets/claim_encryption_key
+      OIDC_STATE_ENCRYPTION_KEY_FILE: /run/secrets/oidc_state_key
+    secrets:
+      - database_url
+      - oidc_client_secret
+      - claim_encryption_key
+      - oidc_state_key
+      - auth_tls_cert
+      - auth_tls_key
+      - auth_client_ca
+    configs:
+      - source: approve-auth-config
+        target: /config/approve-auth.yaml
+    networks:
+      - control-plane # Traefik reaches the admin listener and, over
+                       # mTLS, calls /auth here (spec section 13's
+                       # "restricted overlay shared by Traefik and this
+                       # service")
+      - db-egress      # reaches Azure Database for PostgreSQL -- NOT
+                       # marked internal, unlike the self-hosted
+                       # variant's `db` network, since Azure is outside
+                       # this cluster and needs real egress
+      - ops             # a separately-deployed monitoring stack scrapes
+                       # GET /metrics (:9090) via this network
+    deploy:
+      # "Deploy two authorization-service replicas with separate-node
+      # placement where capacity allows" (spec section 13).
+      replicas: 2
+      placement:
+        max_replicas_per_node: 1
+      update_config:
+        order: start-first
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      rollback_config:
+        order: start-first
+        parallelism: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        # Spec section 15's load-testing baseline assumes "two app
+        # replicas provisioned at 2 vCPU/512 MiB each" -- these limits
+        # match that; adjust after your own load test, not before.
+        limits:
+          cpus: "2"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+      labels:
+        # Traefik's Swarm provider discovers this service because it's
+        # attached to the same control-plane overlay -- spec section
+        # 6's own example labels, scoped to the admin listener only.
+        # Protected-application hostnames are registered by whichever
+        # stack deploys that application, pointing its own
+        # `approve-auth@file` middleware reference at the file-
+        # provider snippet (deploy/traefik-approve-auth-middleware.yml)
+        # -- this service's own labels never define a
+        # protected-application router (it doesn't know their
+        # hostnames).
+        - traefik.enable=true
+        # approve-auth is on three networks (control-plane, db-egress,
+        # ops) and Traefik is only on control-plane -- without this,
+        # Traefik's Swarm provider has to guess which one to route
+        # through, and can pick wrong (or fail) the moment there's more
+        # than one candidate. traefik.docker.network was the label for
+        # this before Traefik v3.2.2; traefik.swarm.* is the
+        # non-deprecated one as of the v3.6.25 this project pins.
+        - traefik.swarm.network=${TRAEFIK_NETWORK:-approve-control-plane}
+        - traefik.http.routers.approve-auth-admin.rule=Host(`${ADMIN_HOSTNAME:-approve.frid-iks.no}`)
+        - traefik.http.routers.approve-auth-admin.entrypoints=websecure
+        - traefik.http.routers.approve-auth-admin.tls=true
+        - traefik.http.routers.approve-auth-admin.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-default}
+        - traefik.http.routers.approve-auth-admin.service=approve-auth-admin
+        - traefik.http.services.approve-auth-admin.loadbalancer.server.port=8081
+    # "Gracefully drain for up to 30 seconds" (spec section 13).
+    stop_grace_period: 30s
+
+networks:
+  # Shared with Traefik -- external, because this network is not this
+  # stack's to create: it must already exist (created by Traefik's own
+  # stack, or by hand: `docker network create --driver overlay
+  # --attachable approve-control-plane`) and Traefik's own service must
+  # already be attached to it, or routing never works regardless of the
+  # traefik.swarm.network label above. If your existing Traefik ingress
+  # network is called something else (e.g. the common "traefik_public"
+  # convention), export TRAEFIK_NETWORK to match it -- the label above
+  # reads the same variable, so they can't drift apart.
+  control-plane:
+    external: true
+    name: ${TRAEFIK_NETWORK:-approve-control-plane}
+  # Deliberately NOT internal: true (unlike deploy/stack.yml's `db`
+  # network for a self-hosted Postgres) -- migrate and approve-auth
+  # both need real outbound internet access to reach Azure's public
+  # endpoint. Azure's own firewall/VNET rules are the actual access
+  # control here, not this network's topology.
+  db-egress:
+    driver: overlay
+    attachable: false
+  ops:
+    driver: overlay
+    internal: true
+    attachable: true
+
+configs:
+  approve-auth-config:
+    file: ${CONFIG_PATH:-./approve-auth-config.example.yaml}
+
+secrets:
+  database_url_superuser:
+    external: true
+  database_url:
+    external: true
+  oidc_client_secret:
+    external: true
+  claim_encryption_key:
+    external: true
+  oidc_state_key:
+    external: true
+  auth_tls_cert:
+    external: true
+  auth_tls_key:
+    external: true
+  auth_client_ca:
+    external: true

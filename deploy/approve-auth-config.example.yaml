@@ -33,7 +33,7 @@ claim_encryption_key_id: primary
 auth_tls_cert_file: /run/secrets/auth_tls_cert
 auth_tls_key_file: /run/secrets/auth_tls_key
 auth_client_ca_file: /run/secrets/auth_client_ca
-auth_allowed_client_identities: ["approve-auth"] # Traefik's client-certificate SAN/CN
+auth_allowed_client_identities: ["traefik-client"] # Traefik's client-certificate SAN/CN -- replace with your real Traefik client cert's identity, this is only the dev-stack default
 
 # Real deployment network ranges only -- never leave this wide-open in
 # production the way the dev compose stack's "0.0.0.0/0" is (that's
