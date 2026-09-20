@@ -195,8 +195,10 @@ services:
       - oidc_client_secret
       - claim_encryption_key
       - oidc_state_key
-      - auth_tls_cert
-      - auth_tls_key
+      - source: auth_tls_cert_v2
+        target: auth_tls_cert
+      - source: auth_tls_key_v2
+        target: auth_tls_key
       - auth_client_ca
     configs:
       - source: approve-auth-config
@@ -332,9 +334,15 @@ secrets:
     external: true
   oidc_state_key:
     external: true
-  auth_tls_cert:
+  # Reissued to add approve_approve-auth (the full Swarm service name)
+  # to the SAN once the Traefik-side ForwardAuth address switched from
+  # the bare short name -- Swarm secrets are immutable, so this is a new
+  # name, not an in-place update of the original auth_tls_cert/_key.
+  # Remove the old auth_tls_cert/auth_tls_key secrets once this is
+  # confirmed working; they're no longer referenced below.
+  auth_tls_cert_v2:
     external: true
-  auth_tls_key:
+  auth_tls_key_v2:
     external: true
   auth_client_ca:
     external: true

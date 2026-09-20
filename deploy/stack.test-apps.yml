@@ -1,0 +1,85 @@
+# Two disposable, lightweight backends for exercising the full
+# approve-auth ForwardAuth flow end to end in staging -- not a real
+# application, just something to click through Traefik at.
+#
+# Written for pasting straight into Portainer's Stacks -> Add stack ->
+# Web editor: no shell env vars to export first, every value below is
+# the literal one your real deployment already uses (traefik_public,
+# certresolver "lab", *.internal hostnames) -- edit them directly in
+# this file if yours differ, since Portainer doesn't inherit a shell's
+# exported variables the way `docker stack deploy` from a terminal does.
+# Deploying from a terminal instead works exactly the same way:
+#
+#   docker stack deploy -c deploy/stack.test-apps.yml testapps
+#
+# traefik/whoami is a ~7MB purpose-built test image: it echoes back the
+# request it received (Host, headers, method), which is the easiest way
+# to see whether approve-auth's cookie/headers actually made it through
+# the ForwardAuth call rather than guessing from a blank page.
+#
+# Each app below only carries its OWN main router (Host + the
+# approve-auth@file middleware) as Swarm labels -- that's the only
+# per-application Traefik change spec section 6 needs. The second router
+# it also requires (a higher-priority, no-middleware router for the
+# reserved /__approve-auth/* path, pointed at approve-auth's public
+# listener) is shared across every protected application and already
+# lives in deploy/traefik-approve-auth-middleware.yml's own `routers:`
+# block (its rule matches the path with no Host() at all) -- nothing
+# app-specific to add for that part, as long as that file is already
+# mounted into your Traefik's file-provider config.
+#
+# Prerequisite: each hostname below registered against approve-auth's
+# own database, or /auth will correctly deny everything as
+# "unknown_host" no matter how well the routing is wired:
+#
+#   docker run --rm --network <approve-auth's db network> \
+#     -e DATABASE_URL_FILE=/secret \
+#     -v <path-to-a-copy-of-database_url>:/secret:ro \
+#     registry.frid-iks.no/approve-auth:0.1.0 \
+#     admin register-application -hostname app-a.internal -display-name "Test App A"
+#   (repeat for app-b.internal)
+
+services:
+  app-a:
+    image: traefik/whoami:latest
+    environment:
+      WHOAMI_NAME: app-a
+    networks:
+      - traefik_public
+    deploy:
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.swarm.network=traefik_public
+        - traefik.http.routers.app-a.rule=Host(`app-a.internal`)
+        - traefik.http.routers.app-a.entrypoints=websecure
+        - traefik.http.routers.app-a.tls=true
+        - traefik.http.routers.app-a.tls.certresolver=lab
+        - traefik.http.routers.app-a.middlewares=approve-auth@file
+        - traefik.http.services.app-a.loadbalancer.server.port=80
+
+  app-b:
+    image: traefik/whoami:latest
+    environment:
+      WHOAMI_NAME: app-b
+    networks:
+      - traefik_public
+    deploy:
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.swarm.network=traefik_public
+        - traefik.http.routers.app-b.rule=Host(`app-b.internal`)
+        - traefik.http.routers.app-b.entrypoints=websecure
+        - traefik.http.routers.app-b.tls=true
+        - traefik.http.routers.app-b.tls.certresolver=lab
+        - traefik.http.routers.app-b.middlewares=approve-auth@file
+        - traefik.http.services.app-b.loadbalancer.server.port=80
+
+networks:
+  traefik_public:
+    external: true
+
+# Nothing else to add per app -- confirm deploy/traefik-approve-auth-
+# middleware.yml (with its shared approve-auth-public router) is already
+# mounted into your Traefik's file-provider config and you're done.

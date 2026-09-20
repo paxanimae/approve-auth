@@ -3,14 +3,23 @@
 # Traefik's stack, so this file is copied/mounted there by whoever
 # manages it, not deployed by deploy/stack.yml.
 #
-# Every protected application then references this middleware by name
-# (`approve-auth@file`) in its own stack's `deploy.labels`, and adds a
-# second, higher-priority router for its reserved `/__approve-auth`
-# path pointing at this service's public listener -- see
-# docs/runbooks/rollout-rollback.md for the full per-application
-# onboarding checklist (spec section 6's router-topology requirement:
-# two routers per protected hostname, and the reserved-path router MUST
-# NOT apply this middleware).
+# Every protected application then references the `approve-auth`
+# middleware below by name (`approve-auth@file`) in its own stack's
+# `deploy.labels` -- that's the ONLY per-application Traefik change
+# needed. The second router spec section 6 requires (a higher-priority,
+# no-middleware router for the reserved `/__approve-auth/*` path) is
+# defined once, below, shared across every protected hostname: its rule
+# has no Host() match at all, just the path, so it's already in effect
+# for a newly onboarded application without adding anything for it here.
+# Traefik still forwards the browser's real Host header through
+# unchanged, so the credential cookie this flow sets still ends up
+# scoped to whichever application's hostname the browser is actually
+# on -- sharing this router changes nothing about per-application cookie
+# isolation, only how many times its definition has to be written down.
+# (The one accepted tradeoff: any application behind this same Traefik
+# that happens to use a path starting with `/__approve-auth/` for its
+# own unrelated purposes would collide with this router -- the prefix is
+# deliberately obscure specifically to make that vanishingly unlikely.)
 #
 # Traefik itself needs the three files below mounted into its own
 # container at the paths referenced here, and its entry points configured
@@ -23,11 +32,20 @@ http:
   middlewares:
     approve-auth:
       forwardAuth:
-        # "approve-auth" here is this service's Swarm service name --
-        # resolved via the overlay network deploy/stack.yml's
-        # `control-plane` network shares with Traefik, backed by a
-        # certificate whose SAN includes that name (spec section 13).
-        address: https://approve-auth:8443/auth
+        # "approve_approve-auth" is the full Swarm-assigned service name
+        # (<stack>_<service>), not the bare compose-file service key --
+        # that's the one Swarm reliably creates a DNS VIP for on any
+        # shared network regardless of who else is attached to it; the
+        # short form also often resolves via a network-scoped alias, but
+        # that's not the canonical, collision-safe name, so don't rely
+        # on it. Change the stack-name half if approve-auth is ever
+        # deployed under a stack name other than "approve" -- and the
+        # Authorization listener's own server certificate (auth_tls_cert)
+        # MUST have this exact name in its SAN, or the mTLS handshake
+        # fails with "certificate is valid for approve-auth, not
+        # approve_approve-auth" (the same class of error the dev mTLS
+        # certs hit during the project rename).
+        address: https://approve_approve-auth:8443/auth
         trustForwardHeader: true
         preserveLocationHeader: true
         forwardBody: false
@@ -43,3 +61,27 @@ http:
           ca: /run/secrets/approve_auth_ca
           cert: /run/secrets/traefik_client_cert
           key: /run/secrets/traefik_client_key
+
+  routers:
+    # Shared across every protected application (see the header comment
+    # above) -- never apply the approve-auth middleware to this router,
+    # or the enrollment flow would have to authenticate itself to reach
+    # the page that lets it authenticate.
+    approve-auth-public:
+      rule: "PathPrefix(`/__approve-auth/`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: lab # match whatever resolver your other routers use
+      priority: 1000 # must outrank every protected application's own Host-only router
+      service: approve-auth-public
+
+  services:
+    approve-auth-public:
+      loadBalancer:
+        servers:
+          # Same full Swarm service name as the middleware's address
+          # above, and the same caveat if the stack name ever changes --
+          # this one's plain HTTP though, so no certificate SAN to worry
+          # about (the public listener never uses TLS).
+          - url: "http://approve_approve-auth:8080"

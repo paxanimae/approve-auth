@@ -119,10 +119,17 @@ not just written.
    specific plumbing beyond a reachable `DATABASE_URL_FILE`.)
 
 8. **Onboard that application's own Traefik routing** (spec section 6):
-   add the reserved-path router and the `approve-auth@file`
-   middleware reference to *that application's own stack*, exactly as
-   shown in spec section 6's example -- this repo's stack only ever
-   configures its own admin listener's router.
+   add a `traefik.http.routers.<app>.middlewares=approve-auth@file`
+   label to *that application's own stack* -- this repo's stack only
+   ever configures its own admin listener's router. That's the only
+   per-application change needed: the second router spec section 6 also
+   requires (a higher-priority, no-middleware router for the reserved
+   `/__approve-auth/*` path) is shared across every protected
+   application already, defined once in
+   `deploy/traefik-approve-auth-middleware.yml`'s own `routers:` block
+   with no `Host()` match at all -- nothing to add there per
+   application, as long as that file is mounted into Traefik's
+   file-provider config (step 4).
 
 9. **Verify.** `curl` the admin origin's `/auth/login` and confirm it
    redirects to your real IdP; approve a test device end to end.
