@@ -2,9 +2,13 @@ package store_test
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 func TestWithAdvisoryLock_MutualExclusion(t *testing.T) {
@@ -97,5 +101,72 @@ func TestWithAdvisoryLock_DifferentKeysDoNotContend(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for the different-key lock -- it should not be blocked by the other key")
+	}
+}
+
+// TestWithAdvisoryLock_ManyConcurrentJobsDoNotStarveASmallPool reproduces
+// the incident that motivated pinning the lock's own connection outside
+// db.Pool (see advisory_lock.go's doc comment): internal/worker's
+// Scheduler starts every job's first run concurrently on startup, and
+// each job's fn needs its own connection from db.Pool for its real work,
+// on top of whichever connection is holding the advisory lock. Before
+// that fix, enough concurrent callers -- exactly matching the pool's
+// size, let alone exceeding it -- deadlocked every one of them: every
+// available connection went to a lock-holder, and every lock-holder's fn
+// then blocked forever waiting for a connection that would never free up.
+func TestWithAdvisoryLock_ManyConcurrentJobsDoNotStarveASmallPool(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+
+	base := connString(t, dbURL, "approve_auth_app", "devpassword")
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Fatalf("parsing connection string: %v", err)
+	}
+	q := u.Query()
+	q.Set("pool_max_conns", "4") // small enough that 9 concurrent callers used to deadlock it
+	u.RawQuery = q.Encode()
+
+	db, err := store.Open(ctx, u.String())
+	if err != nil {
+		t.Fatalf("opening store: %v", err)
+	}
+	t.Cleanup(db.Close)
+
+	const jobCount = 9 // matches internal/worker.Jobs' real job count
+	var wg sync.WaitGroup
+	errs := make(chan error, jobCount)
+	for i := 0; i < jobCount; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := db.WithAdvisoryLock(ctx, fmt.Sprintf("test-many-concurrent-%d", i), func(ctx context.Context) error {
+				// A real job's Run acquires its own connection from the
+				// same pool to do its work -- reproduce that here instead
+				// of using the lock-holding connection itself.
+				var one int
+				return db.Pool.QueryRow(ctx, "SELECT 1").Scan(&one)
+			})
+			errs <- err
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out: WithAdvisoryLock deadlocked a pool no larger than the number of concurrent callers")
+	}
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("WithAdvisoryLock: %v", err)
+		}
 	}
 }
