@@ -119,6 +119,33 @@
 #    never the dev stack's 0.0.0.0/0), then load it as the
 #    approve-auth-config Swarm config (see the `configs:` section
 #    below for the exact command / Portainer steps).
+#
+# 9. OPTIONAL -- only if oidc_issuer (or anything else this service
+#    calls out to over TLS) presents a certificate signed by a
+#    private/internal CA rather than a publicly-trusted one (a
+#    same-network Keycloak/IdP on internal PKI is the common case).
+#    Go's HTTP client trusts the OS's bundled public CAs by default;
+#    SSL_CERT_FILE REPLACES that default trust store rather than
+#    adding to it, so skip straight to a combined bundle (public CAs +
+#    your internal CA, concatenated) rather than pointing it at the
+#    internal CA alone -- otherwise every call this service makes to a
+#    publicly-signed TLS endpoint breaks the moment you fix the
+#    internal one:
+#
+#      docker run --rm --entrypoint cat \
+#        ${APPROVE_AUTH_IMAGE:-registry.frid-iks.no/approve-auth:0.1.0} \
+#        /etc/ssl/certs/ca-certificates.crt > mozilla-bundle.pem
+#      cat mozilla-bundle.pem /path/to/your-internal-ca.pem > combined-ca-bundle.pem
+#      docker config create approve-auth-ca-bundle combined-ca-bundle.pem
+#
+#    Then uncomment the three matching blocks below: the
+#    `approve-auth-ca-bundle` entry under the top-level `configs:`,
+#    its mount under the approve-auth service's own `configs:`, and
+#    the SSL_CERT_FILE line in that service's `environment:`. Rotating
+#    the internal CA later means regenerating combined-ca-bundle.pem
+#    and repeating the same docker config create dance as
+#    approve-auth-config (a new name, since Swarm configs are
+#    immutable).
 
 services:
   # One-off, locked migration step (spec section 13) -- run to
@@ -158,6 +185,11 @@ services:
       OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
       CLAIM_ENCRYPTION_KEY_FILE: /run/secrets/claim_encryption_key
       OIDC_STATE_ENCRYPTION_KEY_FILE: /run/secrets/oidc_state_key
+      # OPTIONAL -- see prerequisite step 9 above. Uncomment only after
+      # creating the approve-auth-ca-bundle config below; leaving this
+      # set while that config doesn't exist makes Swarm refuse to
+      # deploy the service at all.
+      # SSL_CERT_FILE: /certs/ca-bundle.pem
     secrets:
       - database_url
       - oidc_client_secret
@@ -169,6 +201,9 @@ services:
     configs:
       - source: approve-auth-config
         target: /config/approve-auth.yaml
+      # OPTIONAL -- see prerequisite step 9 above.
+      # - source: approve-auth-ca-bundle
+      #   target: /certs/ca-bundle.pem
     networks:
       - control-plane # Traefik reaches the admin listener and, over
                        # mTLS, calls /auth here (spec section 13's
@@ -277,6 +312,14 @@ configs:
   # references it -- see docs/runbooks/rollout-rollback.md.
   approve-auth-config:
     external: true
+  # OPTIONAL -- only if oidc_issuer chains to a private/internal CA;
+  # see prerequisite step 9 above. Uncomment together with the two
+  # matching blocks in the approve-auth service above. Swarm refuses
+  # to deploy any service that references a config which doesn't
+  # exist, so this must stay commented out until you've actually run
+  # `docker config create approve-auth-ca-bundle ...`.
+  # approve-auth-ca-bundle:
+  #   external: true
 
 secrets:
   database_url_superuser:

@@ -45,6 +45,13 @@
 #     driver for anything beyond a single pinned node (spec section 13
 #     is explicit that a single-node Postgres is a deliberate, documented
 #     single point of failure, not something to paper over here).
+#   - OPTIONAL: if oidc_issuer (or anything else this service calls out
+#     to over TLS) presents a certificate signed by a private/internal
+#     CA rather than a publicly-trusted one, build a combined CA bundle
+#     and load it as a Swarm config, then uncomment the three matching
+#     blocks below (the approve-auth-ca-bundle config, its mount, and
+#     SSL_CERT_FILE) -- see deploy/stack.approve.yml's prerequisite
+#     step 9 for the exact commands; the mechanism is identical here.
 #
 # Running the admin listener with admin_auth_mode: anonymous (some
 # other mechanism -- a VPN, an upstream SSO reverse proxy, network
@@ -123,6 +130,12 @@ services:
       OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
       CLAIM_ENCRYPTION_KEY_FILE: /run/secrets/claim_encryption_key
       OIDC_STATE_ENCRYPTION_KEY_FILE: /run/secrets/oidc_state_key
+      # OPTIONAL -- see the CA-bundle prerequisite note near the top
+      # of this file. Uncomment only after creating the
+      # approve-auth-ca-bundle config below; leaving this set while
+      # that config doesn't exist makes Swarm refuse to deploy the
+      # service at all.
+      # SSL_CERT_FILE: /certs/ca-bundle.pem
     secrets:
       - database_url
       - oidc_client_secret
@@ -134,6 +147,10 @@ services:
     configs:
       - source: approve-auth-config
         target: /config/approve-auth.yaml
+      # OPTIONAL -- see the CA-bundle prerequisite note near the top
+      # of this file.
+      # - source: approve-auth-ca-bundle
+      #   target: /certs/ca-bundle.pem
     networks:
       - control-plane # Traefik reaches the admin listener and, over
                        # mTLS, calls /auth here (spec section 13's
@@ -237,6 +254,15 @@ configs:
   # references it -- see docs/runbooks/rollout-rollback.md.
   approve-auth-config:
     external: true
+  # OPTIONAL -- only if oidc_issuer chains to a private/internal CA;
+  # see the CA-bundle prerequisite note near the top of this file.
+  # Uncomment together with the two matching blocks in the
+  # approve-auth service above. Swarm refuses to deploy any service
+  # that references a config which doesn't exist, so this must stay
+  # commented out until you've actually run
+  # `docker config create approve-auth-ca-bundle ...`.
+  # approve-auth-ca-bundle:
+  #   external: true
 
 secrets:
   db_superuser_name:
