@@ -21,7 +21,7 @@ const testAdminHost = "admin.example.test"
 
 func newAdminServer(t *testing.T, sessions httpserver.AdminSessions, actions httpserver.AdminActions, readStore httpserver.AdminReadStore) *httptest.Server {
 	t.Helper()
-	mux := httpserver.NewAdminMux(sessions, actions, readStore, testAdminHost, time.Hour, 7*24*time.Hour, 24*time.Hour, 30*24*time.Hour, 365*24*time.Hour)
+	mux := httpserver.NewAdminMux(sessions, actions, readStore, testAdminHost, time.Hour, 7*24*time.Hour, 24*time.Hour, 30*24*time.Hour, 365*24*time.Hour, time.Hour)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

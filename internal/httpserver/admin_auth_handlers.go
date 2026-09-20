@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -13,9 +14,15 @@ import (
 // adminLoginHandler starts the OIDC flow (spec section 9). No CSRF/Origin
 // check applies here: this is a top-level browser navigation, either the
 // console's own "log in" link or a bookmark, not a state-changing request.
-func adminLoginHandler(sessions AdminSessions) http.HandlerFunc {
+// decisionTimeout bounds BeginLogin's database write the same way
+// NewAuthMux bounds a ForwardAuth decision: a stuck query or a dead pooled
+// connection then fails fast with a 500 instead of hanging the request (and
+// the browser) indefinitely with no response at all.
+func adminLoginHandler(sessions AdminSessions, decisionTimeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		result, err := sessions.BeginLogin(r.Context(), r.URL.Query().Get("return_to"))
+		ctx, cancel := context.WithTimeout(r.Context(), decisionTimeout)
+		defer cancel()
+		result, err := sessions.BeginLogin(ctx, r.URL.Query().Get("return_to"))
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to start login")
 			return
@@ -30,7 +37,11 @@ func adminLoginHandler(sessions AdminSessions) http.HandlerFunc {
 // adminCallbackHandler completes the flow and sets the admin session
 // cookie. Protected by the OIDC state parameter itself, not a same-origin
 // check -- the redirect back here legitimately originates from the IdP.
-func adminCallbackHandler(sessions AdminSessions, sessionCookieMaxAge time.Duration) http.HandlerFunc {
+// decisionTimeout bounds HandleCallback the same way it bounds
+// adminLoginHandler above -- this also covers the code-exchange call to the
+// IdP itself, not just the database, since a hung upstream token endpoint
+// is exactly as capable of leaving this request permanently unanswered.
+func adminCallbackHandler(sessions AdminSessions, sessionCookieMaxAge, decisionTimeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		state := r.URL.Query().Get("state")
 		code := r.URL.Query().Get("code")
@@ -39,7 +50,9 @@ func adminCallbackHandler(sessions AdminSessions, sessionCookieMaxAge time.Durat
 			return
 		}
 
-		rawToken, returnPath, err := sessions.HandleCallback(r.Context(), state, code)
+		ctx, cancel := context.WithTimeout(r.Context(), decisionTimeout)
+		defer cancel()
+		rawToken, returnPath, err := sessions.HandleCallback(ctx, state, code)
 		if err != nil {
 			mapAdminSessionError(w, err)
 			return

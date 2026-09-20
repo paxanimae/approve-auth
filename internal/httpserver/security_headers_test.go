@@ -17,7 +17,7 @@ import (
 func TestSecurityHeaders_PresentOnBothBrowserFacingListeners(t *testing.T) {
 	muxes := map[string]*http.ServeMux{
 		"public": httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{}, time.Hour, time.Hour, time.Second),
-		"admin":  httpserver.NewAdminMux(fakeAdminSessions{}, fakeAdminActions{}, fakeAdminReadStore{}, "admin.example.test", time.Hour, time.Hour, time.Hour, time.Hour, time.Hour),
+		"admin":  httpserver.NewAdminMux(fakeAdminSessions{}, fakeAdminActions{}, fakeAdminReadStore{}, "admin.example.test", time.Hour, time.Hour, time.Hour, time.Hour, time.Hour, time.Hour),
 	}
 
 	for name, mux := range muxes {

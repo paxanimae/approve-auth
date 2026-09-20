@@ -180,7 +180,7 @@ func TestFourListeners_BindIndependentlyAndEnforceMTLS(t *testing.T) {
 	publicMux := httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Hour, time.Hour, time.Second)
 	go func() { _ = http.Serve(publicLn, publicMux) }()
 	go func() {
-		adminMux := httpserver.NewAdminMux(fakeAdminSessions{}, fakeAdminActions{}, fakeAdminReadStore{}, "admin.example.test", time.Hour, time.Hour, time.Hour, time.Hour, time.Hour)
+		adminMux := httpserver.NewAdminMux(fakeAdminSessions{}, fakeAdminActions{}, fakeAdminReadStore{}, "admin.example.test", time.Hour, time.Hour, time.Hour, time.Hour, time.Hour, time.Hour)
 		_ = http.Serve(adminLn, adminMux)
 	}()
 	go func() { _ = http.Serve(opsLn, httpserver.NewOpsMux(fakeReadyChecker{schemaReady: true})) }()
