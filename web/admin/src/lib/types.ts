@@ -122,6 +122,23 @@ export interface AuditEvent {
   outcome: string;
 }
 
+export interface GlobalSettings {
+  // Absent means unset -- there is no further fallback below this
+  // (unlike an application's own override, which falls back here).
+  contact_info?: string;
+  notify_email_from?: string;
+  notify_default_email?: string;
+  notify_default_webhook_url?: string;
+  // Always present -- unlike an application's own override, these
+  // NOT NULL columns (migration 000019) have no "unset" state.
+  revoke_policy_ip_changed: RevokePolicyAction;
+  revoke_policy_user_agent_changed: RevokePolicyAction;
+  revoke_policy_inactivity_exceeded: RevokePolicyAction;
+  revocation_inactivity_threshold_seconds: number;
+  updated_at: string;
+  version: number;
+}
+
 export interface ApiErrorBody {
   error: { code: string; message: string; request_id: string };
 }

@@ -5,6 +5,7 @@
   import { formatDateTime, formatRelative } from "./format";
   import DurationDialog from "./DurationDialog.svelte";
   import NotesDialog from "./NotesDialog.svelte";
+  import ReasonDialog from "./ReasonDialog.svelte";
 
   let { me }: { me: Me } = $props();
 
@@ -15,6 +16,9 @@
 
   let approveDialogOpen = $state(false);
   let approveTarget: ApprovalRequest | null = $state(null);
+
+  let denyDialogOpen = $state(false);
+  let denyTarget: ApprovalRequest | null = $state(null);
 
   let notesDialogOpen = $state(false);
   let notesTarget: ApprovalRequest | null = $state(null);
@@ -56,9 +60,14 @@
     }
   }
 
-  async function deny(r: ApprovalRequest) {
-    const reason = prompt("Reason for denial (recorded privately):");
-    if (reason === null || reason.trim() === "") return;
+  function openDeny(r: ApprovalRequest) {
+    denyTarget = r;
+    denyDialogOpen = true;
+  }
+
+  async function confirmDeny(reason: string) {
+    const r = denyTarget;
+    if (!r) return;
     busyId = r.id;
     try {
       await api.denyRequest(r.id, { version: r.version, reason });
@@ -145,7 +154,7 @@
               <td class="actions">
                 {#if r.status === "pending"}
                   <button class="btn btn-primary btn-sm" disabled={busyId === r.id} onclick={() => openApprove(r)}>Approve</button>
-                  <button class="btn btn-danger btn-sm" disabled={busyId === r.id} onclick={() => deny(r)}>Deny</button>
+                  <button class="btn btn-danger btn-sm" disabled={busyId === r.id} onclick={() => openDeny(r)}>Deny</button>
                 {/if}
                 <button class="btn btn-sm" onclick={() => openNotes(r)}>Notes</button>
               </td>
@@ -165,6 +174,15 @@
   initialDays={Math.max(1, Math.round(me.default_authorization_duration_seconds / 86400))}
   maxDays={Math.max(1, Math.round(me.max_authorization_duration_seconds / 86400))}
   onConfirm={confirmApprove}
+/>
+
+<ReasonDialog
+  bind:open={denyDialogOpen}
+  title="Deny request"
+  description="Recorded privately, not shown to the requester."
+  confirmLabel="Deny"
+  danger
+  onConfirm={confirmDeny}
 />
 
 <NotesDialog

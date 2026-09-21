@@ -3,6 +3,11 @@
   import { api } from "./api";
   import type { Application, RevokePolicyAction } from "./types";
   import { formatDateTime } from "./format";
+  import TextFieldDialog from "./TextFieldDialog.svelte";
+  import NotificationsDialog from "./NotificationsDialog.svelte";
+  import RevocationPolicyDialog from "./RevocationPolicyDialog.svelte";
+  import OwnersDialog from "./OwnersDialog.svelte";
+  import ReasonDialog from "./ReasonDialog.svelte";
 
   let applications: Application[] = $state([]);
   let error: string | null = $state(null);
@@ -13,6 +18,13 @@
   let newContactInfo = $state("");
   let creating = $state(false);
   let createError: string | null = $state(null);
+
+  let contactInfoDialogOpen = $state(false);
+  let notificationsDialogOpen = $state(false);
+  let revocationPolicyDialogOpen = $state(false);
+  let ownersDialogOpen = $state(false);
+  let disableDialogOpen = $state(false);
+  let dialogTarget: Application | null = $state(null);
 
   async function load() {
     error = null;
@@ -51,16 +63,17 @@
     }
   }
 
-  async function editContactInfo(a: Application) {
-    const current = a.contact_info ?? "";
-    const next = prompt(
-      `Contact info shown on ${a.hostname}'s request page.\nLeave blank to use the global default instead of an override.`,
-      current,
-    );
-    if (next === null || next === current) return;
+  function openContactInfo(a: Application) {
+    dialogTarget = a;
+    contactInfoDialogOpen = true;
+  }
+
+  async function confirmContactInfo(value: string) {
+    const a = dialogTarget;
+    if (!a || value === (a.contact_info ?? "")) return;
     busyId = a.id;
     try {
-      await api.updateApplication(a.id, { version: a.version, contact_info: next });
+      await api.updateApplication(a.id, { version: a.version, contact_info: value });
       await load();
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
@@ -69,29 +82,18 @@
     }
   }
 
-  // editNotifications edits both notify_email and notify_webhook_url as
-  // two sequential prompts (matching this component's existing single-
-  // field prompt() convention, just applied twice) since a browser
-  // prompt() can only collect one value at a time.
-  async function editNotifications(a: Application) {
-    const currentEmail = a.notify_email ?? "";
-    const nextEmail = prompt(
-      `Notification email for ${a.hostname} (sent when a new request needs approval).\nLeave blank to use the global default instead of an override.`,
-      currentEmail,
-    );
-    if (nextEmail === null) return;
+  function openNotifications(a: Application) {
+    dialogTarget = a;
+    notificationsDialogOpen = true;
+  }
 
-    const currentWebhook = a.notify_webhook_url ?? "";
-    const nextWebhook = prompt(
-      `Notification webhook URL for ${a.hostname}.\nMust be an absolute http(s) URL. Leave blank to use the global default instead of an override.`,
-      currentWebhook,
-    );
-    if (nextWebhook === null) return;
-
-    if (nextEmail === currentEmail && nextWebhook === currentWebhook) return;
+  async function confirmNotifications({ email, webhookURL }: { email: string; webhookURL: string }) {
+    const a = dialogTarget;
+    if (!a) return;
+    if (email === (a.notify_email ?? "") && webhookURL === (a.notify_webhook_url ?? "")) return;
     busyId = a.id;
     try {
-      await api.updateApplication(a.id, { version: a.version, notify_email: nextEmail, notify_webhook_url: nextWebhook });
+      await api.updateApplication(a.id, { version: a.version, notify_email: email, notify_webhook_url: webhookURL });
       await load();
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
@@ -100,36 +102,22 @@
     }
   }
 
-  // editRevocationPolicy edits all three revocation-policy overrides
-  // (internal/revokepolicy) as three sequential prompts, matching
-  // editNotifications' own multi-prompt convention. Each prompt
-  // accepts one of off/warn/flag_for_review/revoke, or blank to
-  // inherit the deployment-wide default.
-  const revokePolicyChoices = "off, warn, flag_for_review, or revoke";
-
-  const validRevokePolicyActions: RevokePolicyAction[] = ["off", "warn", "flag_for_review", "revoke"];
-
-  async function promptRevokePolicy(label: string, current: string): Promise<RevokePolicyAction | "" | null> {
-    while (true) {
-      const next = prompt(`${label} (${revokePolicyChoices}; leave blank to inherit the deployment-wide default):`, current);
-      if (next === null || next === "") {
-        return next;
-      }
-      if ((validRevokePolicyActions as string[]).includes(next)) {
-        return next as RevokePolicyAction;
-      }
-      alert(`"${next}" is not a valid choice -- must be one of ${revokePolicyChoices}, or blank.`);
-    }
+  function openRevocationPolicy(a: Application) {
+    dialogTarget = a;
+    revocationPolicyDialogOpen = true;
   }
 
-  async function editRevocationPolicy(a: Application) {
-    const ipChanged = await promptRevokePolicy(`IP-changed policy for ${a.hostname}`, a.revoke_policy_ip_changed ?? "");
-    if (ipChanged === null) return;
-    const userAgentChanged = await promptRevokePolicy(`User-Agent-changed policy for ${a.hostname}`, a.revoke_policy_user_agent_changed ?? "");
-    if (userAgentChanged === null) return;
-    const inactivityExceeded = await promptRevokePolicy(`Inactivity-exceeded policy for ${a.hostname}`, a.revoke_policy_inactivity_exceeded ?? "");
-    if (inactivityExceeded === null) return;
-
+  async function confirmRevocationPolicy({
+    ipChanged,
+    userAgentChanged,
+    inactivityExceeded,
+  }: {
+    ipChanged: RevokePolicyAction | "";
+    userAgentChanged: RevokePolicyAction | "";
+    inactivityExceeded: RevokePolicyAction | "";
+  }) {
+    const a = dialogTarget;
+    if (!a) return;
     if (
       ipChanged === (a.revoke_policy_ip_changed ?? "") &&
       userAgentChanged === (a.revoke_policy_user_agent_changed ?? "") &&
@@ -137,7 +125,6 @@
     ) {
       return;
     }
-
     busyId = a.id;
     try {
       await api.updateApplication(a.id, {
@@ -154,9 +141,14 @@
     }
   }
 
-  async function disable(a: Application) {
-    const reason = prompt(`Reason for disabling ${a.hostname} (this cancels its pending requests and revokes all active sessions):`);
-    if (reason === null || reason.trim() === "") return;
+  function openDisable(a: Application) {
+    dialogTarget = a;
+    disableDialogOpen = true;
+  }
+
+  async function confirmDisable(reason: string) {
+    const a = dialogTarget;
+    if (!a) return;
     busyId = a.id;
     try {
       const result = await api.disableApplication(a.id, { version: a.version, reason });
@@ -181,46 +173,9 @@
     }
   }
 
-  // manageOwners edits the ApplicationOwner grant set for one
-  // application as a single comma-separated list (matching this
-  // component's existing prompt()-based editing convention), diffing
-  // against the current set to grant/revoke only what actually changed
-  // rather than replacing the whole set server-side.
-  async function manageOwners(a: Application) {
-    busyId = a.id;
-    let current: string[];
-    try {
-      current = (await api.listApplicationOwners(a.id)).owners;
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-      busyId = null;
-      return;
-    }
-    busyId = null;
-
-    const next = prompt(
-      `ApplicationOwner subjects for ${a.hostname} (comma-separated OIDC subjects, e.g. email addresses).\n` +
-        `An ApplicationOwner can approve/deny requests and revoke sessions for this application only.`,
-      current.join(", "),
-    );
-    if (next === null) return;
-    const nextSet = next
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s !== "");
-    const toGrant = nextSet.filter((s) => !current.includes(s));
-    const toRevoke = current.filter((s) => !nextSet.includes(s));
-    if (toGrant.length === 0 && toRevoke.length === 0) return;
-
-    busyId = a.id;
-    try {
-      for (const subject of toGrant) await api.grantApplicationOwner(a.id, subject);
-      for (const subject of toRevoke) await api.revokeApplicationOwner(a.id, subject);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      busyId = null;
-    }
+  function openOwners(a: Application) {
+    dialogTarget = a;
+    ownersDialogOpen = true;
   }
 </script>
 
@@ -253,14 +208,14 @@
             <td class="contact-info-cell">{a.contact_info ?? "(global default)"}</td>
             <td class="actions">
               {#if a.enabled}
-                <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => disable(a)}>Disable</button>
+                <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => openDisable(a)}>Disable</button>
               {:else}
                 <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => enable(a)}>Enable</button>
               {/if}
-              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editContactInfo(a)}>Edit contact info</button>
-              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editNotifications(a)}>Notifications</button>
-              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editRevocationPolicy(a)}>Revocation policy</button>
-              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => manageOwners(a)}>Owners</button>
+              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => openContactInfo(a)}>Edit contact info</button>
+              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => openNotifications(a)}>Notifications</button>
+              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => openRevocationPolicy(a)}>Revocation policy</button>
+              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => openOwners(a)}>Owners</button>
             </td>
           </tr>
         {/each}
@@ -290,6 +245,51 @@
     {/if}
   </div>
 </section>
+
+<TextFieldDialog
+  bind:open={contactInfoDialogOpen}
+  title="Edit contact info"
+  description={dialogTarget ? `Shown on ${dialogTarget.hostname}'s request page. Leave blank to use the deployment-wide default instead of an override.` : undefined}
+  fieldLabel="Contact info"
+  initialValue={dialogTarget?.contact_info ?? ""}
+  maxLength={500}
+  onConfirm={confirmContactInfo}
+/>
+
+<NotificationsDialog
+  bind:open={notificationsDialogOpen}
+  title="Notifications"
+  description={dialogTarget ? `Overrides for ${dialogTarget.hostname}. Leave a field blank to use the deployment-wide default instead.` : undefined}
+  initialEmail={dialogTarget?.notify_email ?? ""}
+  initialWebhookURL={dialogTarget?.notify_webhook_url ?? ""}
+  onConfirm={confirmNotifications}
+/>
+
+<RevocationPolicyDialog
+  bind:open={revocationPolicyDialogOpen}
+  title={dialogTarget ? `Revocation policy for ${dialogTarget.hostname}` : "Revocation policy"}
+  initialIPChanged={dialogTarget?.revoke_policy_ip_changed ?? ""}
+  initialUserAgentChanged={dialogTarget?.revoke_policy_user_agent_changed ?? ""}
+  initialInactivityExceeded={dialogTarget?.revoke_policy_inactivity_exceeded ?? ""}
+  onConfirm={confirmRevocationPolicy}
+/>
+
+<OwnersDialog
+  bind:open={ownersDialogOpen}
+  title={dialogTarget ? `Owners of ${dialogTarget.hostname}` : "Owners"}
+  loadOwners={() => api.listApplicationOwners(dialogTarget!.id).then((r) => r.owners)}
+  onGrant={(subject) => api.grantApplicationOwner(dialogTarget!.id, subject).then(() => {})}
+  onRevoke={(subject) => api.revokeApplicationOwner(dialogTarget!.id, subject).then(() => {})}
+/>
+
+<ReasonDialog
+  bind:open={disableDialogOpen}
+  title="Disable application"
+  description={dialogTarget ? `Disabling ${dialogTarget.hostname} cancels its pending requests and revokes all active sessions.` : undefined}
+  confirmLabel="Disable"
+  danger
+  onConfirm={confirmDisable}
+/>
 
 <style>
   h2 {

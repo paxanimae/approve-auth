@@ -5,6 +5,7 @@
   import { formatDateTime, formatRelative } from "./format";
   import DurationDialog from "./DurationDialog.svelte";
   import NotesDialog from "./NotesDialog.svelte";
+  import ReasonDialog from "./ReasonDialog.svelte";
 
   let { me }: { me: Me } = $props();
 
@@ -16,6 +17,9 @@
 
   let renewDialogOpen = $state(false);
   let renewTarget: Authorization | null = $state(null);
+
+  let revokeDialogOpen = $state(false);
+  let revokeTarget: Authorization | null = $state(null);
 
   let notesDialogOpen = $state(false);
   let notesTarget: Authorization | null = $state(null);
@@ -78,10 +82,14 @@
     }
   }
 
-  async function revoke(a: Authorization) {
-    const reason = prompt("Reason for revocation (recorded in the audit log):");
-    if (reason === null || reason.trim() === "") return;
-    if (!confirm(`Revoke access for "${a.label ?? a.id}"? New requests will be denied. This does not close any already-open connection.`)) return;
+  function openRevoke(a: Authorization) {
+    revokeTarget = a;
+    revokeDialogOpen = true;
+  }
+
+  async function confirmRevoke(reason: string) {
+    const a = revokeTarget;
+    if (!a) return;
     busyId = a.id;
     try {
       await api.revokeAuthorization(a.id, { version: a.version, reason });
@@ -166,7 +174,7 @@
               <td class="actions">
                 {#if !a.revoked_at}
                   <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => openRenew(a)}>Renew</button>
-                  <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => revoke(a)}>Revoke</button>
+                  <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => openRevoke(a)}>Revoke</button>
                 {/if}
                 {#if a.flagged_at}
                   <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => clearFlag(a)}>Clear flag</button>
@@ -190,6 +198,15 @@
   initialDays={Math.max(1, Math.round(me.default_authorization_duration_seconds / 86400))}
   maxDays={Math.max(1, Math.round(me.max_authorization_duration_seconds / 86400))}
   onConfirm={confirmRenew}
+/>
+
+<ReasonDialog
+  bind:open={revokeDialogOpen}
+  title="Revoke access"
+  description={revokeTarget ? `Revoke access for "${revokeTarget.label ?? revokeTarget.id}"? New requests will be denied. This does not close any already-open connection.` : undefined}
+  confirmLabel="Revoke"
+  danger
+  onConfirm={confirmRevoke}
 />
 
 <NotesDialog

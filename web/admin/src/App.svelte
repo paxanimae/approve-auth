@@ -9,14 +9,16 @@
   import Sessions from "./lib/Sessions.svelte";
   import Applications from "./lib/Applications.svelte";
   import AuditLog from "./lib/AuditLog.svelte";
+  import Settings from "./lib/Settings.svelte";
 
-  type ViewName = "overview" | "requests" | "sessions" | "applications" | "audit";
+  type ViewName = "overview" | "requests" | "sessions" | "applications" | "audit" | "settings";
   const allViews: { id: ViewName; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "requests", label: "Requests" },
     { id: "sessions", label: "Sessions" },
     { id: "applications", label: "Applications" },
     { id: "audit", label: "Audit log" },
+    { id: "settings", label: "Settings" },
   ];
   // An ApplicationOwner "cannot control anything else" beyond their own
   // application's requests/sessions (spec) -- overview, applications
@@ -134,7 +136,7 @@
 
       <div class="content">
         {#if view === "overview"}
-          <Overview />
+          <Overview onNavigate={selectView} />
         {:else if view === "requests"}
           <Requests {me} />
         {:else if view === "sessions"}
@@ -143,6 +145,8 @@
           <Applications />
         {:else if view === "audit"}
           <AuditLog />
+        {:else if view === "settings"}
+          <Settings {me} />
         {/if}
       </div>
     </div>

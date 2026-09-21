@@ -4,6 +4,7 @@ import type {
   ApprovalRequest,
   AuditEvent,
   Authorization,
+  GlobalSettings,
   Me,
   Note,
   Overview,
@@ -139,4 +140,17 @@ export const api = {
     request<{ results: BulkItemResult[] }>("POST", "/api/v1/authorizations/bulk-revoke", body),
 
   listAuditEvents: () => request<{ audit_events: AuditEvent[] }>("GET", "/api/v1/audit-events"),
+
+  getSettings: () => request<GlobalSettings>("GET", "/api/v1/settings"),
+  updateSettings: (body: {
+    version: number;
+    contact_info?: string;
+    notify_email_from?: string;
+    notify_default_email?: string;
+    notify_default_webhook_url?: string;
+    revoke_policy_ip_changed?: RevokePolicyAction;
+    revoke_policy_user_agent_changed?: RevokePolicyAction;
+    revoke_policy_inactivity_exceeded?: RevokePolicyAction;
+    revocation_inactivity_threshold_seconds?: number;
+  }) => request<GlobalSettings>("PATCH", "/api/v1/settings", body),
 };
