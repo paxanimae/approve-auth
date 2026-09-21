@@ -18,10 +18,12 @@ import (
 )
 
 const testAdminHost = "admin.example.test"
+const testVersion = "test-version"
+const testInstanceName = "test-instance"
 
 func newAdminServer(t *testing.T, sessions httpserver.AdminSessions, actions httpserver.AdminActions, readStore httpserver.AdminReadStore) *httptest.Server {
 	t.Helper()
-	mux := httpserver.NewAdminMux(sessions, actions, readStore, testAdminHost, time.Hour, 7*24*time.Hour, 24*time.Hour, 30*24*time.Hour, 365*24*time.Hour, time.Hour)
+	mux := httpserver.NewAdminMux(sessions, actions, readStore, testAdminHost, time.Hour, 7*24*time.Hour, 24*time.Hour, 30*24*time.Hour, 365*24*time.Hour, time.Hour, testVersion, testInstanceName)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -105,6 +107,12 @@ func TestAdminMe_ReturnsIdentity(t *testing.T) {
 	}
 	if body["max_authorization_duration_seconds"] != float64(365*24*time.Hour/time.Second) {
 		t.Errorf("max_authorization_duration_seconds = %v, want %v", body["max_authorization_duration_seconds"], 365*24*time.Hour/time.Second)
+	}
+	if body["version"] != testVersion {
+		t.Errorf("version = %v, want %v", body["version"], testVersion)
+	}
+	if body["instance_name"] != testInstanceName {
+		t.Errorf("instance_name = %v, want %v", body["instance_name"], testInstanceName)
 	}
 }
 

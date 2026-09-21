@@ -15,6 +15,13 @@
 
 admin_origin: https://approval-admin.example.com
 
+# Purely informational label shown in the admin console's own chrome
+# (alongside the build version) -- tells one deployment apart from
+# another (e.g. which cluster/environment this is) when you're managing
+# more than one. Never used in any decision. Leave unset for a single-
+# deployment setup.
+# instance_name: prod-eu-west
+
 # admin_auth_mode: "oidc" (default, shown here) or "anonymous".
 # Anonymous mode skips this service's own login entirely -- every
 # caller is treated as one fixed identity, for a deployment that

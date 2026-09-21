@@ -7,6 +7,8 @@ export interface Me {
   csrf_token: string;
   default_authorization_duration_seconds: number;
   max_authorization_duration_seconds: number;
+  version: string;
+  instance_name: string;
 }
 
 export interface Overview {

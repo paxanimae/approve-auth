@@ -95,7 +95,11 @@ func adminLogoutHandler(sessions AdminSessions) http.HandlerFunc {
 // approve/renew forms can offer a "permanent" option that means
 // something real (the longest duration Approve/Renew will actually
 // accept) instead of a client-side guess that might get rejected.
-func adminMeHandler(defaultAuthorizationDuration, maxAuthorizationDuration time.Duration) http.HandlerFunc {
+// version and instanceName are purely informational, shown in the
+// console's own chrome -- version is build-time-injected (see
+// internal/version), instanceName is an operator-set config value
+// (empty is valid, e.g. for a single-deployment setup).
+func adminMeHandler(defaultAuthorizationDuration, maxAuthorizationDuration time.Duration, version, instanceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		info, ok := adminIdentityFromContext(r.Context())
 		if !ok {
@@ -109,6 +113,8 @@ func adminMeHandler(defaultAuthorizationDuration, maxAuthorizationDuration time.
 			"csrf_token":                             info.CSRFToken,
 			"default_authorization_duration_seconds": int64(defaultAuthorizationDuration.Seconds()),
 			"max_authorization_duration_seconds":     int64(maxAuthorizationDuration.Seconds()),
+			"version":                                version,
+			"instance_name":                          instanceName,
 		})
 	}
 }

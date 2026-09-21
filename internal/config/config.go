@@ -32,6 +32,12 @@ type Retention struct {
 type Config struct {
 	AdminOrigin string `yaml:"admin_origin"`
 
+	// InstanceName is a free-text label an operator sets to tell one
+	// deployment apart from another in the admin console (e.g. which
+	// cluster/environment this is) -- purely informational, never used
+	// in any decision. Empty by default; unset is valid.
+	InstanceName string `yaml:"instance_name"`
+
 	// AdminAuthMode is "oidc" (default) or "anonymous". Anonymous mode
 	// skips this service's own login entirely -- every request to the
 	// admin listener is treated as the fixed identity described by the

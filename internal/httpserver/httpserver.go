@@ -120,8 +120,10 @@ func publicAssetsHandler() http.Handler {
 // cookie never outlives the session it names; expiringSoonWindow and
 // recentWindow back GET /overview's counts. decisionTimeout bounds the
 // OIDC login/callback database and IdP calls the same way NewAuthMux
-// bounds a ForwardAuth decision (both handlers document why).
-func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminReadStore, adminHost string, sessionCookieMaxAge, expiringSoonWindow, recentWindow, defaultAuthorizationDuration, maxAuthorizationDuration, decisionTimeout time.Duration) *http.ServeMux {
+// bounds a ForwardAuth decision (both handlers document why). version
+// and instanceName are purely informational, surfaced via GET /api/v1/me
+// for the console's own chrome.
+func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminReadStore, adminHost string, sessionCookieMaxAge, expiringSoonWindow, recentWindow, defaultAuthorizationDuration, maxAuthorizationDuration, decisionTimeout time.Duration, version, instanceName string) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Every route below checks the admin Host first (spec section 9).
@@ -144,7 +146,7 @@ func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminRe
 	mux.HandleFunc("GET /auth/login", withHost(adminLoginHandler(sessions, decisionTimeout)))
 	mux.HandleFunc("GET /auth/callback", withHost(adminCallbackHandler(sessions, sessionCookieMaxAge, decisionTimeout)))
 	mux.HandleFunc("POST /auth/logout", csrfProtected(adminLogoutHandler(sessions)))
-	mux.HandleFunc("GET /api/v1/me", authed(adminMeHandler(defaultAuthorizationDuration, maxAuthorizationDuration)))
+	mux.HandleFunc("GET /api/v1/me", authed(adminMeHandler(defaultAuthorizationDuration, maxAuthorizationDuration, version, instanceName)))
 
 	mux.HandleFunc("GET /api/v1/overview", authed(overviewHandler(readStore, expiringSoonWindow, recentWindow)))
 

@@ -109,6 +109,9 @@
           <div class="identity-role muted">{me.role}</div>
         </div>
         <button class="btn btn-ghost btn-sm" onclick={logout}>Log out</button>
+        <div class="build-info muted">
+          {#if me.instance_name}{me.instance_name} &middot; {/if}v{me.version}
+        </div>
       </div>
     </aside>
 
@@ -278,6 +281,11 @@
   .identity-role {
     font-size: var(--font-size-xs);
     text-transform: capitalize;
+  }
+
+  .build-info {
+    font-size: var(--font-size-xs);
+    text-align: center;
   }
 
   .main {

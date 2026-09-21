@@ -15,7 +15,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/admin/dist ./web/admin/dist
-RUN CGO_ENABLED=0 go build -trimpath -o /out/server ./cmd/server
+# VERSION should be the same string used for this image's own tag (e.g.
+# --build-arg VERSION=0.1.0 alongside -t .../approve-auth:0.1.0), so the
+# running binary's self-reported version can never drift from the tag
+# it shipped under. Left as "dev" for an untagged/local build -- see
+# internal/version's own doc comment for why this must stay a var, not
+# a const.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/frid-iks/approve-auth/internal/version.Version=${VERSION}" -o /out/server ./cmd/server
 RUN CGO_ENABLED=0 go build -trimpath -o /out/admin ./cmd/admin
 RUN CGO_ENABLED=0 go build -trimpath -o /out/mock-oidc ./cmd/mock-oidc
 

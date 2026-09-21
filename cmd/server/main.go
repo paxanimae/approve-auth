@@ -26,6 +26,7 @@ import (
 	"github.com/frid-iks/approve-auth/internal/metrics"
 	"github.com/frid-iks/approve-auth/internal/oidc"
 	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/frid-iks/approve-auth/internal/version"
 	"github.com/frid-iks/approve-auth/internal/worker"
 )
 
@@ -148,7 +149,7 @@ func run() error {
 
 	servers := []*http.Server{
 		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux(enrollmentService, authzService, cfg.RequestTTL.Std(), cfg.CredentialMaxAge.Std(), cfg.AuthDecisionTimeout.Std())},
-		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux(adminSessions, adminActions, db, adminHost, cfg.AdminAbsoluteTTL.Std(), cfg.ExpiringSoonWindow.Std(), overviewRecentWindow, cfg.DefaultAuthorizationDuration.Std(), cfg.MaxAuthorizationDuration.Std(), cfg.AuthDecisionTimeout.Std())},
+		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux(adminSessions, adminActions, db, adminHost, cfg.AdminAbsoluteTTL.Std(), cfg.ExpiringSoonWindow.Std(), overviewRecentWindow, cfg.DefaultAuthorizationDuration.Std(), cfg.MaxAuthorizationDuration.Std(), cfg.AuthDecisionTimeout.Std(), version.Version, cfg.InstanceName)},
 		{Addr: cfg.AuthAddr, Handler: httpserver.NewAuthMux(authzService, cfg.AuthDecisionTimeout.Std()), TLSConfig: authTLSConfig},
 		{Addr: cfg.OpsAddr, Handler: httpserver.NewOpsMux(db)},
 	}
