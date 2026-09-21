@@ -126,6 +126,50 @@ func revokeAuthorizationHandler(actions AdminActions) http.HandlerFunc {
 	}
 }
 
+// --- GET /api/v1/authorizations/{id}/notes ---
+
+func listAuthorizationNotesHandler(readStore AdminReadStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDPathParam(w, r)
+		if !ok {
+			return
+		}
+		notes, err := readStore.ListAuthorizationNotes(r.Context(), id)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list notes")
+			return
+		}
+		dtos := make([]noteDTO, len(notes))
+		for i, n := range notes {
+			dtos[i] = newAuthorizationNoteDTO(n)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"notes": dtos})
+	}
+}
+
+// --- POST /api/v1/authorizations/{id}/notes ---
+
+func addAuthorizationNoteHandler(actions AdminActions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDPathParam(w, r)
+		if !ok {
+			return
+		}
+		var body addNoteBody
+		if !decodeJSONBody(w, r, &body) {
+			return
+		}
+		note, err := actions.AddAuthorizationNote(r.Context(), admin.AddAuthorizationNoteInput{
+			AuthorizationID: id.String(), Body: body.Body, AuthorBy: actorSubject(r),
+		})
+		if err != nil {
+			mapAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, newAuthorizationNoteDTO(note))
+	}
+}
+
 // bulkItemInput is one entry of the explicit ID+version list spec
 // section 9 requires for both bulk endpoints (maximum 100).
 type bulkItemInput struct {

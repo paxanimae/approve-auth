@@ -68,6 +68,11 @@ type fakeAdminActions struct {
 	disableApplicationErr    error
 	enableApplicationResult  store.Application
 	enableApplicationErr     error
+
+	addRequestNoteResult       store.RequestNote
+	addRequestNoteErr          error
+	addAuthorizationNoteResult store.AuthorizationNote
+	addAuthorizationNoteErr    error
 }
 
 func (f fakeAdminActions) Approve(context.Context, admin.ApproveInput) (admin.ApproveResult, error) {
@@ -91,6 +96,12 @@ func (f fakeAdminActions) DisableApplication(context.Context, admin.DisableAppli
 }
 func (f fakeAdminActions) EnableApplication(context.Context, admin.EnableApplicationInput) (store.Application, error) {
 	return f.enableApplicationResult, f.enableApplicationErr
+}
+func (f fakeAdminActions) AddRequestNote(context.Context, admin.AddRequestNoteInput) (store.RequestNote, error) {
+	return f.addRequestNoteResult, f.addRequestNoteErr
+}
+func (f fakeAdminActions) AddAuthorizationNote(context.Context, admin.AddAuthorizationNoteInput) (store.AuthorizationNote, error) {
+	return f.addAuthorizationNoteResult, f.addAuthorizationNoteErr
 }
 
 // fakeAdminReadStore is a minimal, configurable stand-in for
@@ -119,6 +130,11 @@ type fakeAdminReadStore struct {
 
 	overviewCounts store.OverviewCounts
 	overviewErr    error
+
+	requestNotes          []store.RequestNote
+	requestNotesErr       error
+	authorizationNotes    []store.AuthorizationNote
+	authorizationNotesErr error
 }
 
 func (f fakeAdminReadStore) GetApplicationByID(context.Context, uuid.UUID) (store.Application, bool, error) {
@@ -150,4 +166,10 @@ func (f fakeAdminReadStore) RecordAuditEvent(context.Context, string, string, st
 }
 func (f fakeAdminReadStore) GetOverviewCounts(context.Context, time.Duration, time.Duration) (store.OverviewCounts, error) {
 	return f.overviewCounts, f.overviewErr
+}
+func (f fakeAdminReadStore) ListRequestNotes(context.Context, uuid.UUID) ([]store.RequestNote, error) {
+	return f.requestNotes, f.requestNotesErr
+}
+func (f fakeAdminReadStore) ListAuthorizationNotes(context.Context, uuid.UUID) ([]store.AuthorizationNote, error) {
+	return f.authorizationNotes, f.authorizationNotesErr
 }

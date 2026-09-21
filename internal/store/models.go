@@ -89,6 +89,22 @@ type Authorization struct {
 	ApplicationDisplayName string
 }
 
+type RequestNote struct {
+	ID            uuid.UUID
+	RequestID     uuid.UUID
+	AuthorSubject string
+	Body          string
+	CreatedAt     time.Time
+}
+
+type AuthorizationNote struct {
+	ID              uuid.UUID
+	AuthorizationID uuid.UUID
+	AuthorSubject   string
+	Body            string
+	CreatedAt       time.Time
+}
+
 type Credential struct {
 	ID                uuid.UUID
 	AuthorizationID   uuid.UUID

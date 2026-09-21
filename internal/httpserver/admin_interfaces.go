@@ -21,6 +21,8 @@ type AdminActions interface {
 	UpdateApplication(ctx context.Context, in admin.UpdateApplicationInput) (store.Application, error)
 	DisableApplication(ctx context.Context, in admin.DisableApplicationInput) (admin.DisableApplicationResult, error)
 	EnableApplication(ctx context.Context, in admin.EnableApplicationInput) (store.Application, error)
+	AddRequestNote(ctx context.Context, in admin.AddRequestNoteInput) (store.RequestNote, error)
+	AddAuthorizationNote(ctx context.Context, in admin.AddAuthorizationNoteInput) (store.AuthorizationNote, error)
 }
 
 // AdminReadStore is the read-only listing/detail surface the admin API's
@@ -36,4 +38,6 @@ type AdminReadStore interface {
 	ListAuditEvents(ctx context.Context, p store.ListAuditEventsParams) ([]store.AuditEvent, error)
 	RecordAuditEvent(ctx context.Context, actorType, actorSubject, action, reason string) error
 	GetOverviewCounts(ctx context.Context, expiringSoonWindow, recentWindow time.Duration) (store.OverviewCounts, error)
+	ListRequestNotes(ctx context.Context, requestID uuid.UUID) ([]store.RequestNote, error)
+	ListAuthorizationNotes(ctx context.Context, authorizationID uuid.UUID) ([]store.AuthorizationNote, error)
 }

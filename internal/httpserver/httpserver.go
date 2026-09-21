@@ -161,11 +161,15 @@ func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminRe
 	mux.HandleFunc("GET /api/v1/requests/{id}", authed(getRequestHandler(readStore)))
 	mux.HandleFunc("POST /api/v1/requests/{id}/approve", mutating(approveRequestHandler(actions)))
 	mux.HandleFunc("POST /api/v1/requests/{id}/deny", mutating(denyRequestHandler(actions)))
+	mux.HandleFunc("GET /api/v1/requests/{id}/notes", authed(listRequestNotesHandler(readStore)))
+	mux.HandleFunc("POST /api/v1/requests/{id}/notes", mutating(addRequestNoteHandler(actions)))
 
 	mux.HandleFunc("GET /api/v1/authorizations", authed(listAuthorizationsHandler(readStore)))
 	mux.HandleFunc("GET /api/v1/authorizations/{id}", authed(getAuthorizationHandler(readStore)))
 	mux.HandleFunc("POST /api/v1/authorizations/{id}/renew", mutating(renewAuthorizationHandler(actions)))
 	mux.HandleFunc("POST /api/v1/authorizations/{id}/revoke", mutating(revokeAuthorizationHandler(actions)))
+	mux.HandleFunc("GET /api/v1/authorizations/{id}/notes", authed(listAuthorizationNotesHandler(readStore)))
+	mux.HandleFunc("POST /api/v1/authorizations/{id}/notes", mutating(addAuthorizationNoteHandler(actions)))
 	mux.HandleFunc("POST /api/v1/authorizations/bulk-renew", mutating(bulkRenewHandler(actions, readStore)))
 	mux.HandleFunc("POST /api/v1/authorizations/bulk-revoke", mutating(bulkRevokeHandler(actions)))
 

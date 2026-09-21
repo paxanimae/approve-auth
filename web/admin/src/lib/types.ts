@@ -73,6 +73,13 @@ export interface Authorization {
   version: number;
 }
 
+export interface Note {
+  id: string;
+  author_subject: string;
+  body: string;
+  created_at: string;
+}
+
 export interface AuditEvent {
   id: string;
   occurred_at: string;

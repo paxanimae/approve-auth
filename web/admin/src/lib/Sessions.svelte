@@ -4,6 +4,7 @@
   import type { Authorization, Me } from "./types";
   import { formatDateTime, formatRelative } from "./format";
   import DurationDialog from "./DurationDialog.svelte";
+  import NotesDialog from "./NotesDialog.svelte";
 
   let { me }: { me: Me } = $props();
 
@@ -15,6 +16,14 @@
 
   let renewDialogOpen = $state(false);
   let renewTarget: Authorization | null = $state(null);
+
+  let notesDialogOpen = $state(false);
+  let notesTarget: Authorization | null = $state(null);
+
+  function openNotes(a: Authorization) {
+    notesTarget = a;
+    notesDialogOpen = true;
+  }
 
   async function load() {
     error = null;
@@ -138,6 +147,7 @@
                   <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => openRenew(a)}>Renew</button>
                   <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => revoke(a)}>Revoke</button>
                 {/if}
+                <button class="btn btn-sm" onclick={() => openNotes(a)}>Notes</button>
               </td>
             </tr>
           {/each}
@@ -156,6 +166,14 @@
   initialDays={Math.max(1, Math.round(me.default_authorization_duration_seconds / 86400))}
   maxDays={Math.max(1, Math.round(me.max_authorization_duration_seconds / 86400))}
   onConfirm={confirmRenew}
+/>
+
+<NotesDialog
+  bind:open={notesDialogOpen}
+  title="Notes"
+  readOnly={me.role !== "administrator"}
+  loadNotes={() => api.listAuthorizationNotes(notesTarget!.id).then((r) => r.notes)}
+  onAddNote={(body) => api.addAuthorizationNote(notesTarget!.id, { body }).then(() => {})}
 />
 
 <style>

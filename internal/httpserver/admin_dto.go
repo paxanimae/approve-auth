@@ -109,6 +109,24 @@ func newAuthorizationDTO(a store.Authorization) authorizationDTO {
 	}
 }
 
+// noteDTO is the shared shape for both request_notes and
+// authorization_notes rows -- distinct source tables, identical fields,
+// so one DTO covers both rather than two structurally-duplicate ones.
+type noteDTO struct {
+	ID            string    `json:"id"`
+	AuthorSubject string    `json:"author_subject"`
+	Body          string    `json:"body"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+func newRequestNoteDTO(n store.RequestNote) noteDTO {
+	return noteDTO{ID: n.ID.String(), AuthorSubject: n.AuthorSubject, Body: n.Body, CreatedAt: n.CreatedAt}
+}
+
+func newAuthorizationNoteDTO(n store.AuthorizationNote) noteDTO {
+	return noteDTO{ID: n.ID.String(), AuthorSubject: n.AuthorSubject, Body: n.Body, CreatedAt: n.CreatedAt}
+}
+
 type auditEventDTO struct {
 	ID              string    `json:"id"`
 	OccurredAt      time.Time `json:"occurred_at"`

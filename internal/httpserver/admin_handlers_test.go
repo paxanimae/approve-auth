@@ -344,6 +344,107 @@ func TestListAuthorizations_MineFilterResolvesToCallersOwnSubject(t *testing.T) 
 	}
 }
 
+func TestAddRequestNote_Success(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	created := store.RequestNote{ID: uuid.New(), AuthorSubject: "user-1", Body: "a note"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{addRequestNoteResult: created}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"body":"a note"}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/requests/"+uuid.New().String()+"/notes", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("got status %d, want 201", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if out["body"] != "a note" || out["author_subject"] != "user-1" {
+		t.Errorf("unexpected note body: %+v", out)
+	}
+}
+
+func TestAddRequestNote_NotFoundMapsTo404(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{addRequestNoteErr: admin.ErrNotFound}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"body":"a note"}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/requests/"+uuid.New().String()+"/notes", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got status %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestAddRequestNote_ViewerRoleForbidden(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"body":"a note"}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/requests/"+uuid.New().String()+"/notes", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want 403 (notes are administrator-only, matching every other mutation)", resp.StatusCode)
+	}
+}
+
+func TestListRequestNotes_ReturnsConfiguredNotes(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	notes := []store.RequestNote{{ID: uuid.New(), Body: "first"}, {ID: uuid.New(), Body: "second"}}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{requestNotes: notes})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/requests/"+uuid.New().String()+"/notes", "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var body struct {
+		Notes []struct{ Body string } `json:"notes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(body.Notes) != 2 || body.Notes[0].Body != "first" || body.Notes[1].Body != "second" {
+		t.Errorf("unexpected notes: %+v", body.Notes)
+	}
+}
+
+func TestAddAuthorizationNote_Success(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	created := store.AuthorizationNote{ID: uuid.New(), AuthorSubject: "user-1", Body: "a session note"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{addAuthorizationNoteResult: created}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"body":"a session note"}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/authorizations/"+uuid.New().String()+"/notes", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("got status %d, want 201", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if out["body"] != "a session note" {
+		t.Errorf("unexpected note body: %+v", out)
+	}
+}
+
 func TestApproveRequest_Success(t *testing.T) {
 	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)

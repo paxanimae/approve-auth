@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,17 @@ var ErrDuplicateHostname = errors.New("admin: an application with this hostname 
 // section 8's applications_duration_positive/applications_duration_order
 // constraints: both must be positive and default must not exceed max.
 var ErrInvalidDuration = errors.New("admin: default_duration and max_duration must be positive, with default_duration <= max_duration")
+
+// ErrNotFound means the request/authorization a note was aimed at
+// doesn't exist -- distinct from ErrConflict, which specifically means
+// a version/state mismatch on a row that does exist.
+var ErrNotFound = errors.New("admin: no such record")
+
+// ErrInvalidNote means a note's body was empty or exceeded migration
+// 000013's request_notes_body_length/authorization_notes_body_length
+// bound (2000 characters) -- checked here too so the caller gets a
+// clean 422 instead of a raw constraint-violation error.
+var ErrInvalidNote = errors.New("admin: note body must be between 1 and 2000 characters")
 
 type Service struct {
 	store Store
@@ -229,6 +241,57 @@ func (s *Service) EnableApplication(ctx context.Context, in EnableApplicationInp
 		return store.Application{}, fmt.Errorf("admin: enable application: %w", err)
 	}
 	return app, nil
+}
+
+// AddRequestNote implements POST /api/v1/requests/{id}/notes. Notes are
+// append-only (spec-adjacent to the audit trail's own immutability --
+// see migration 000013): there is deliberately no edit or delete.
+func (s *Service) AddRequestNote(ctx context.Context, in AddRequestNoteInput) (store.RequestNote, error) {
+	requestID, err := uuid.Parse(in.RequestID)
+	if err != nil {
+		return store.RequestNote{}, fmt.Errorf("admin: add request note: invalid request id: %w", err)
+	}
+	body := strings.TrimSpace(in.Body)
+	if body == "" || len(body) > 2000 {
+		return store.RequestNote{}, ErrInvalidNote
+	}
+
+	note, err := s.store.CreateRequestNote(ctx, requestID, in.AuthorBy, body)
+	if err != nil {
+		switch pgConstraintName(err) {
+		case "request_notes_request_id_fkey":
+			return store.RequestNote{}, ErrNotFound
+		case "request_notes_body_length":
+			return store.RequestNote{}, ErrInvalidNote
+		}
+		return store.RequestNote{}, fmt.Errorf("admin: add request note: %w", err)
+	}
+	return note, nil
+}
+
+// AddAuthorizationNote is AddRequestNote's exact counterpart for an
+// authorization (session) instead of a request.
+func (s *Service) AddAuthorizationNote(ctx context.Context, in AddAuthorizationNoteInput) (store.AuthorizationNote, error) {
+	authorizationID, err := uuid.Parse(in.AuthorizationID)
+	if err != nil {
+		return store.AuthorizationNote{}, fmt.Errorf("admin: add authorization note: invalid authorization id: %w", err)
+	}
+	body := strings.TrimSpace(in.Body)
+	if body == "" || len(body) > 2000 {
+		return store.AuthorizationNote{}, ErrInvalidNote
+	}
+
+	note, err := s.store.CreateAuthorizationNote(ctx, authorizationID, in.AuthorBy, body)
+	if err != nil {
+		switch pgConstraintName(err) {
+		case "authorization_notes_authorization_id_fkey":
+			return store.AuthorizationNote{}, ErrNotFound
+		case "authorization_notes_body_length":
+			return store.AuthorizationNote{}, ErrInvalidNote
+		}
+		return store.AuthorizationNote{}, fmt.Errorf("admin: add authorization note: %w", err)
+	}
+	return note, nil
 }
 
 // pgConstraintName mirrors internal/enrollment's own helper of the same

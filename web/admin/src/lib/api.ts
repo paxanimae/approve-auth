@@ -5,6 +5,7 @@ import type {
   AuditEvent,
   Authorization,
   Me,
+  Note,
   Overview,
 } from "./types";
 
@@ -101,6 +102,8 @@ export const api = {
     request<{ authorization_id: string; expires_at: string }>("POST", `/api/v1/requests/${id}/approve`, body),
   denyRequest: (id: string, body: { version: number; reason: string; public_message?: string }) =>
     request<{ denied: boolean }>("POST", `/api/v1/requests/${id}/deny`, body),
+  listRequestNotes: (id: string) => request<{ notes: Note[] }>("GET", `/api/v1/requests/${id}/notes`),
+  addRequestNote: (id: string, body: { body: string }) => request<Note>("POST", `/api/v1/requests/${id}/notes`, body),
 
   listAuthorizations: (activeOnly = true, mine = false) =>
     request<{ authorizations: Authorization[] }>("GET", `/api/v1/authorizations?active_only=${activeOnly}&mine=${mine}`),
@@ -108,6 +111,8 @@ export const api = {
     request<{ renewed: boolean }>("POST", `/api/v1/authorizations/${id}/renew`, body),
   revokeAuthorization: (id: string, body: { version: number; reason: string }) =>
     request<{ revoked: boolean }>("POST", `/api/v1/authorizations/${id}/revoke`, body),
+  listAuthorizationNotes: (id: string) => request<{ notes: Note[] }>("GET", `/api/v1/authorizations/${id}/notes`),
+  addAuthorizationNote: (id: string, body: { body: string }) => request<Note>("POST", `/api/v1/authorizations/${id}/notes`, body),
   bulkRevokeAuthorizations: (body: { items: { id: string; version: number }[]; reason: string }) =>
     request<{ results: BulkItemResult[] }>("POST", "/api/v1/authorizations/bulk-revoke", body),
 

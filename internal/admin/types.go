@@ -30,6 +30,9 @@ type Store interface {
 	UpdateApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, p store.UpdateApplicationParams, updatedBy string) (store.Application, error)
 	DisableApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, reason, disabledBy string) (store.Application, int, int, error)
 	EnableApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, enabledBy string) (store.Application, error)
+
+	CreateRequestNote(ctx context.Context, requestID uuid.UUID, authorSubject, body string) (store.RequestNote, error)
+	CreateAuthorizationNote(ctx context.Context, authorizationID uuid.UUID, authorSubject, body string) (store.AuthorizationNote, error)
 }
 
 // ApproveInput backs POST /api/v1/requests/{id}/approve (spec section 9).
@@ -115,4 +118,18 @@ type EnableApplicationInput struct {
 	ApplicationID   string
 	ExpectedVersion int32
 	EnabledBy       string
+}
+
+// AddRequestNoteInput backs POST /api/v1/requests/{id}/notes.
+type AddRequestNoteInput struct {
+	RequestID string
+	Body      string
+	AuthorBy  string
+}
+
+// AddAuthorizationNoteInput backs POST /api/v1/authorizations/{id}/notes.
+type AddAuthorizationNoteInput struct {
+	AuthorizationID string
+	Body            string
+	AuthorBy        string
 }

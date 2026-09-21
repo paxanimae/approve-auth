@@ -55,6 +55,10 @@ func adminErrorDetails(err error) (status int, code, message string) {
 		return http.StatusConflict, "duplicate_hostname", "an application with this hostname is already registered"
 	case errors.Is(err, admin.ErrInvalidDuration):
 		return http.StatusUnprocessableEntity, "invalid_duration", "default_duration and max_duration must be positive, with default_duration <= max_duration"
+	case errors.Is(err, admin.ErrNotFound):
+		return http.StatusNotFound, "not_found", "no such record"
+	case errors.Is(err, admin.ErrInvalidNote):
+		return http.StatusUnprocessableEntity, "invalid_note", "note body must be between 1 and 2000 characters"
 	default:
 		return http.StatusInternalServerError, "internal_error", "the request could not be completed"
 	}

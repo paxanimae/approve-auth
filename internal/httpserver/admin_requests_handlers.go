@@ -122,6 +122,54 @@ func denyRequestHandler(actions AdminActions) http.HandlerFunc {
 	}
 }
 
+// --- GET /api/v1/requests/{id}/notes ---
+
+func listRequestNotesHandler(readStore AdminReadStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDPathParam(w, r)
+		if !ok {
+			return
+		}
+		notes, err := readStore.ListRequestNotes(r.Context(), id)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list notes")
+			return
+		}
+		dtos := make([]noteDTO, len(notes))
+		for i, n := range notes {
+			dtos[i] = newRequestNoteDTO(n)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"notes": dtos})
+	}
+}
+
+// --- POST /api/v1/requests/{id}/notes ---
+
+type addNoteBody struct {
+	Body string `json:"body"`
+}
+
+func addRequestNoteHandler(actions AdminActions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDPathParam(w, r)
+		if !ok {
+			return
+		}
+		var body addNoteBody
+		if !decodeJSONBody(w, r, &body) {
+			return
+		}
+		note, err := actions.AddRequestNote(r.Context(), admin.AddRequestNoteInput{
+			RequestID: id.String(), Body: body.Body, AuthorBy: actorSubject(r),
+		})
+		if err != nil {
+			mapAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, newRequestNoteDTO(note))
+	}
+}
+
 // parseOptionalApplicationIDQuery is shared by the requests and
 // authorizations list handlers.
 func parseOptionalApplicationIDQuery(w http.ResponseWriter, r *http.Request) (*uuid.UUID, bool) {

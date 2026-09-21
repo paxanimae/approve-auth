@@ -415,6 +415,56 @@ paths:
           description: reason is required
           $ref: "#/components/responses/Error"
 
+  /api/v1/requests/{id}/notes:
+    get:
+      operationId: listRequestNotes
+      summary: List a request's notes, oldest first (append-only)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Note"
+                required: [notes]
+    post:
+      operationId: addRequestNote
+      summary: Append a note to a request (never editable or deletable afterward)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+              required: [body]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          description: body must be between 1 and 2000 characters
+          $ref: "#/components/responses/Error"
+
   /api/v1/authorizations:
     get:
       operationId: listAuthorizations
@@ -542,6 +592,56 @@ paths:
           $ref: "#/components/responses/Error"
         "422":
           description: reason is required
+          $ref: "#/components/responses/Error"
+
+  /api/v1/authorizations/{id}/notes:
+    get:
+      operationId: listAuthorizationNotes
+      summary: List an authorization's notes, oldest first (append-only)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Note"
+                required: [notes]
+    post:
+      operationId: addAuthorizationNote
+      summary: Append a note to an authorization (never editable or deletable afterward)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+              required: [body]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          description: body must be between 1 and 2000 characters
           $ref: "#/components/responses/Error"
 
   /api/v1/authorizations/bulk-renew:
@@ -932,6 +1032,26 @@ components:
         version:
           type: integer
       required: [id, application_id, application_hostname, application_display_name, request_id, approved_by, approved_at, expires_at, version]
+      additionalProperties: false
+
+    Note:
+      type: object
+      description: >-
+        Shared shape for both a request's and an authorization's notes
+        -- distinct source tables, identical fields. Append-only: no
+        edit or delete operation exists for either.
+      properties:
+        id:
+          type: string
+          format: uuid
+        author_subject:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, author_subject, body, created_at]
       additionalProperties: false
 
     RenewAuthorizationInput:
