@@ -23,6 +23,13 @@ type Config struct {
 	PendingRequestsPerHourPerAppIP int
 	BootstrapPerMinutePerIP        int
 	StatusPerMinutePerPendingProof int
+	// GlobalEnrollmentPerHour bounds new-request submissions across every
+	// application and IP combined (endpoint-review.md F2: previously
+	// configured but never consumed anywhere). A rotating-IP or
+	// distributed-source flood defeats PendingRequestsPerHourPerAppIP
+	// (a per-bucket limit) without ever exceeding this deployment-wide
+	// ceiling.
+	GlobalEnrollmentPerHour int
 }
 
 // Store is the persistence surface this package needs. Defined here

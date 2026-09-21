@@ -97,6 +97,20 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Every rate limit here is a fail-closed abuse control (spec section
+	// 11) whose own check code treats a non-positive value as "disabled"
+	// (endpoint-review.md F2: "checks are conditional on positive
+	// configured values; non-positive values disable them ...
+	// explicit configuration validation should prevent accidental
+	// disabling"). There is no supported deployment scenario where any
+	// of these should be off -- a misconfigured 0 must fail startup
+	// loudly, not silently remove a limit.
+	errs = append(errs, positiveInt("rate_limits.pending_requests_per_hour_per_app_ip", c.RateLimits.PendingRequestsPerHourPerAppIP))
+	errs = append(errs, positiveInt("rate_limits.bootstrap_per_minute_per_ip", c.RateLimits.BootstrapPerMinutePerIP))
+	errs = append(errs, positiveInt("rate_limits.status_per_minute_per_pending_proof", c.RateLimits.StatusPerMinutePerPendingProof))
+	errs = append(errs, positiveInt("rate_limits.admin_writes_per_minute_per_admin", c.RateLimits.AdminWritesPerMinutePerAdmin))
+	errs = append(errs, positiveInt("rate_limits.global_enrollment_per_hour", c.RateLimits.GlobalEnrollmentPerHour))
+
 	errs = append(errs, distinctListenerAddrs(c))
 
 	return errors.Join(errs...)
@@ -149,6 +163,13 @@ func requireReadableFile(field, path string) error {
 func positiveDuration(field string, d Duration) error {
 	if d.Std() <= 0 {
 		return fmt.Errorf("%s: must be positive, got %s", field, d.Std())
+	}
+	return nil
+}
+
+func positiveInt(field string, v int) error {
+	if v <= 0 {
+		return fmt.Errorf("%s: must be positive, got %d", field, v)
 	}
 	return nil
 }

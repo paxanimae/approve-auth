@@ -44,6 +44,23 @@ const oidcTransactionTTL = 10 * time.Minute
 // count (spec section 9 names the count but not its exact window).
 const overviewRecentWindow = 24 * time.Hour
 
+// Listener timeout defaults (endpoint-review.md F1: "none of the four
+// http.Server{} structs ... set ReadTimeout/ReadHeaderTimeout/
+// IdleTimeout"). Not operator-tunable settings -- like
+// oidcTransactionTTL, nothing in the product spec calls for tuning
+// these; they exist purely so a slow-header or slow-body caller can't
+// hold a connection (and its goroutine) open indefinitely regardless of
+// what any reverse proxy in front of a listener does or doesn't
+// enforce. writeTimeout is generous enough to cover the slowest normal
+// response this service ever produces (an admin audit-log CSV export)
+// without meaningfully bounding a genuinely slow client.
+const (
+	readHeaderTimeout = 5 * time.Second
+	readTimeout       = 10 * time.Second
+	writeTimeout      = 30 * time.Second
+	idleTimeout       = 120 * time.Second
+)
+
 // workerTickInterval governs how often each retention/cleanup job runs
 // (internal/worker). Not one of spec section 14's operator-tunable
 // settings, only "bounded batches" is specified -- five minutes keeps
@@ -127,6 +144,7 @@ func run() error {
 		PendingRequestsPerHourPerAppIP: cfg.RateLimits.PendingRequestsPerHourPerAppIP,
 		BootstrapPerMinutePerIP:        cfg.RateLimits.BootstrapPerMinutePerIP,
 		StatusPerMinutePerPendingProof: cfg.RateLimits.StatusPerMinutePerPendingProof,
+		GlobalEnrollmentPerHour:        cfg.RateLimits.GlobalEnrollmentPerHour,
 	})
 
 	adminHost, err := adminOriginHost(cfg.AdminOrigin)
@@ -205,10 +223,16 @@ func run() error {
 	go reportOverviewGauges(ctx, db, cfg.ExpiringSoonWindow.Std())
 
 	servers := []*http.Server{
-		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux(enrollmentService, authzService, cfg.RequestTTL.Std(), cfg.CredentialMaxAge.Std(), cfg.AuthDecisionTimeout.Std())},
+		{Addr: cfg.PublicAddr, Handler: httpserver.NewPublicMux(enrollmentService, authzService, cfg.RequestTTL.Std(), cfg.CredentialMaxAge.Std(), cfg.AuthDecisionTimeout.Std(), cfg.TrustedTraefikCIDRs)},
 		{Addr: cfg.AdminAddr, Handler: httpserver.NewAdminMux(adminSessions, adminActions, db, adminHost, cfg.AdminAbsoluteTTL.Std(), cfg.ExpiringSoonWindow.Std(), overviewRecentWindow, cfg.DefaultAuthorizationDuration.Std(), cfg.MaxAuthorizationDuration.Std(), cfg.AuthDecisionTimeout.Std(), version.Version, cfg.InstanceName)},
 		{Addr: cfg.AuthAddr, Handler: httpserver.NewAuthMux(authzService, cfg.AuthDecisionTimeout.Std()), TLSConfig: authTLSConfig},
 		{Addr: cfg.OpsAddr, Handler: httpserver.NewOpsMux(db)},
+	}
+	for _, srv := range servers {
+		srv.ReadHeaderTimeout = readHeaderTimeout
+		srv.ReadTimeout = readTimeout
+		srv.WriteTimeout = writeTimeout
+		srv.IdleTimeout = idleTimeout
 	}
 
 	errCh := make(chan error, len(servers))

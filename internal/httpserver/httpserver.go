@@ -81,17 +81,23 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 // browser lifetime (spec section 4: 365 days, bounded separately by the
 // credential's own absolute_expires_at, which internal/authz enforces);
 // decisionTimeout bounds the /session check the same way it bounds
-// /auth on the Authorization listener.
-func NewPublicMux(enroller Enroller, decider Decider, requestTTL, credentialCookieMaxAge, decisionTimeout time.Duration) *http.ServeMux {
+// /auth on the Authorization listener. trustedTraefikCIDRs is
+// config.Config.TrustedTraefikCIDRs (endpoint-review.md F2): only a
+// caller whose immediate TCP peer falls inside one of these blocks has
+// its X-Forwarded-For trusted for rate-limiting/audit purposes; every
+// other caller's own TCP-layer address is used instead, regardless of
+// what forwarded headers it sends.
+func NewPublicMux(enroller Enroller, decider Decider, requestTTL, credentialCookieMaxAge, decisionTimeout time.Duration, trustedTraefikCIDRs []string) *http.ServeMux {
 	mux := http.NewServeMux()
+	trustedCIDRs := parseTrustedCIDRs(trustedTraefikCIDRs)
 
-	mux.HandleFunc("GET /__approve-auth/request", requestPageHandler(enroller, requestTTL))
-	mux.HandleFunc("POST /__approve-auth/requests", submitRequestHandler(enroller))
+	mux.HandleFunc("GET /__approve-auth/request", requestPageHandler(enroller, requestTTL, trustedCIDRs))
+	mux.HandleFunc("POST /__approve-auth/requests", submitRequestHandler(enroller, trustedCIDRs))
 	mux.HandleFunc("GET /__approve-auth/waiting", waitingPageHandler(enroller))
 	mux.HandleFunc("GET /__approve-auth/status", statusHandler(enroller))
 	mux.HandleFunc("POST /__approve-auth/cancel", cancelHandler(enroller))
 	mux.HandleFunc("POST /__approve-auth/claim", claimHandler(enroller, credentialCookieMaxAge))
-	mux.HandleFunc("GET /__approve-auth/session", sessionHandler(decider, decisionTimeout))
+	mux.HandleFunc("GET /__approve-auth/session", sessionHandler(decider, decisionTimeout, trustedCIDRs))
 	mux.HandleFunc("POST /__approve-auth/ack", ackHandler(enroller))
 	mux.HandleFunc("POST /__approve-auth/logout", logoutHandler(enroller))
 	mux.Handle("GET /__approve-auth/assets/", http.StripPrefix("/__approve-auth/assets/", publicAssetsHandler()))

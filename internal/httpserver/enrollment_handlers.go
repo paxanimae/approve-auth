@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"io"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,6 +18,87 @@ import (
 	"github.com/frid-iks/approve-auth/internal/metrics"
 	webpublic "github.com/frid-iks/approve-auth/web/public"
 )
+
+// maxSubmitBodyBytes bounds every JSON/form body the public,
+// unauthenticated enrollment endpoints accept (endpoint-review.md F1):
+// none of label (100 runes), message (500 runes), return_to, or a CSRF
+// token legitimately need anywhere near this, even accounting for
+// multi-byte UTF-8 and URL-encoding overhead.
+const maxSubmitBodyBytes = 16 * 1024
+
+// errPayloadTooLarge and errUnsupportedMediaType are sentinels
+// parseSubmitForm/formOrJSONCSRFToken return so their callers can map
+// them to 413/415 specifically, instead of the generic 400
+// malformed_request every other parse failure gets.
+var (
+	errPayloadTooLarge      = errors.New("httpserver: request body exceeds the accepted size limit")
+	errUnsupportedMediaType = errors.New("httpserver: unsupported content type")
+	errTrailingJSONData     = errors.New("httpserver: unexpected trailing data after JSON body")
+)
+
+// classifyContentType accepts only the two content types this endpoint
+// family ever legitimately receives (endpoint-review.md F1: "accept
+// only the intended content types; reject unsupported types
+// explicitly") -- an absent or unrecognized Content-Type is rejected,
+// not guessed at, since every real caller (a same-origin form post or
+// this service's own JS) always sets one.
+func classifyContentType(r *http.Request) (isJSON, ok bool) {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		return false, false
+	}
+	switch mediaType {
+	case "application/json":
+		return true, true
+	case "application/x-www-form-urlencoded":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// decodeJSONStrict caps the body at maxSubmitBodyBytes via
+// http.MaxBytesReader and rejects any trailing data after the single
+// expected JSON value (endpoint-review.md F1: "validate the complete
+// JSON document, including trailing data"). A body that hits the byte
+// cap during either the initial decode or the trailing-data check
+// surfaces as errPayloadTooLarge.
+func decodeJSONStrict(w http.ResponseWriter, r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxSubmitBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(v); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return errPayloadTooLarge
+		}
+		return err
+	}
+	if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return errPayloadTooLarge
+		}
+		if err == nil {
+			return errTrailingJSONData
+		}
+		return err
+	}
+	return nil
+}
+
+// writeParseError maps parseSubmitForm/formOrJSONCSRFToken's error into
+// the right response: a small, explicit set of statuses rather than
+// folding every parse failure into 400.
+func writeParseError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errPayloadTooLarge):
+		writeAPIError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "request body exceeds the accepted size limit")
+	case errors.Is(err, errUnsupportedMediaType):
+		writeAPIError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "content type must be application/json or application/x-www-form-urlencoded")
+	default:
+		writeAPIError(w, http.StatusBadRequest, "malformed_request", "could not parse request body")
+	}
+}
 
 // Enroller is the internal/enrollment.Service surface the public
 // listener's handlers need.
@@ -75,8 +159,11 @@ func checkOrigin(r *http.Request) bool {
 	return u.Scheme == "https" && u.Host == r.Host
 }
 
-func clientIP(r *http.Request) string {
-	return clientAddr(r)
+// clientIP resolves the caller's IP for the Public listener's handlers
+// -- see publicClientIP's own comment (endpoint-review.md F2) for why
+// this differs from the mTLS Authorization listener's clientAddr.
+func clientIP(r *http.Request, trustedCIDRs []*net.IPNet) string {
+	return publicClientIP(r, trustedCIDRs)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -147,7 +234,7 @@ type requestPageData struct {
 	ReturnTo    string
 }
 
-func requestPageHandler(enroller Enroller, requestTTL time.Duration) http.HandlerFunc {
+func requestPageHandler(enroller Enroller, requestTTL time.Duration, trustedCIDRs []*net.IPNet) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		existingPending, ok := singleCookieValue(r, pendingCookieName)
 		if !ok {
@@ -158,7 +245,7 @@ func requestPageHandler(enroller Enroller, requestTTL time.Duration) http.Handle
 		result, err := enroller.Bootstrap(r.Context(), enrollment.BootstrapInput{
 			Hostname:             requestHostname(r),
 			ExistingPendingToken: existingPending,
-			ClientIP:             clientIP(r),
+			ClientIP:             clientIP(r, trustedCIDRs),
 		})
 		if err != nil {
 			mapEnrollmentError(w, err)
@@ -192,7 +279,7 @@ func validateQueryReturnTo(r *http.Request) string {
 
 // --- POST /__approve-auth/requests ---
 
-func submitRequestHandler(enroller Enroller) http.HandlerFunc {
+func submitRequestHandler(enroller Enroller, trustedCIDRs []*net.IPNet) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !checkOrigin(r) {
 			writeAPIError(w, http.StatusForbidden, "bad_origin", "request did not originate from this host")
@@ -208,16 +295,16 @@ func submitRequestHandler(enroller Enroller) http.HandlerFunc {
 			return
 		}
 
-		label, message, returnTo, csrfToken, err := parseSubmitForm(r)
+		label, message, returnTo, csrfToken, err := parseSubmitForm(w, r)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "malformed_request", "could not parse request body")
+			writeParseError(w, err)
 			return
 		}
 
 		result, err := enroller.SubmitRequest(r.Context(), enrollment.SubmitRequestInput{
 			PendingTokenRaw: pendingToken, CSRFToken: csrfToken,
 			Label: label, Message: message, ReturnTo: returnTo,
-			ClientIP: clientIP(r), UserAgent: r.Header.Get("User-Agent"),
+			ClientIP: clientIP(r, trustedCIDRs), UserAgent: r.Header.Get("User-Agent"),
 		})
 		if err != nil {
 			mapEnrollmentError(w, err)
@@ -233,36 +320,54 @@ func submitRequestHandler(enroller Enroller) http.HandlerFunc {
 	}
 }
 
-func parseSubmitForm(r *http.Request) (label, message, returnTo, csrfToken string, err error) {
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+func parseSubmitForm(w http.ResponseWriter, r *http.Request) (label, message, returnTo, csrfToken string, err error) {
+	isJSON, ok := classifyContentType(r)
+	if !ok {
+		return "", "", "", "", errUnsupportedMediaType
+	}
+	if isJSON {
 		var body struct {
 			Label     string `json:"label"`
 			Message   string `json:"message"`
 			ReturnTo  string `json:"return_to"`
 			CSRFToken string `json:"csrf_token"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := decodeJSONStrict(w, r, &body); err != nil {
 			return "", "", "", "", err
 		}
 		return body.Label, body.Message, body.ReturnTo, body.CSRFToken, nil
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxSubmitBodyBytes)
 	if err := r.ParseForm(); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return "", "", "", "", errPayloadTooLarge
+		}
 		return "", "", "", "", err
 	}
 	return r.PostForm.Get("label"), r.PostForm.Get("message"), r.PostForm.Get("return_to"), r.PostForm.Get("csrf_token"), nil
 }
 
-func formOrJSONCSRFToken(r *http.Request) (string, error) {
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+func formOrJSONCSRFToken(w http.ResponseWriter, r *http.Request) (string, error) {
+	isJSON, ok := classifyContentType(r)
+	if !ok {
+		return "", errUnsupportedMediaType
+	}
+	if isJSON {
 		var body struct {
 			CSRFToken string `json:"csrf_token"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := decodeJSONStrict(w, r, &body); err != nil {
 			return "", err
 		}
 		return body.CSRFToken, nil
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxSubmitBodyBytes)
 	if err := r.ParseForm(); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return "", errPayloadTooLarge
+		}
 		return "", err
 	}
 	return r.PostForm.Get("csrf_token"), nil
@@ -344,9 +449,9 @@ func cancelHandler(enroller Enroller) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "invalid_pending_proof", "no pending request cookie")
 			return
 		}
-		csrfToken, err := formOrJSONCSRFToken(r)
+		csrfToken, err := formOrJSONCSRFToken(w, r)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "malformed_request", "could not parse request body")
+			writeParseError(w, err)
 			return
 		}
 		if err := enroller.Cancel(r.Context(), pendingToken, csrfToken); err != nil {
@@ -375,9 +480,9 @@ func claimHandler(enroller Enroller, credentialCookieMaxAge time.Duration) http.
 			writeAPIError(w, http.StatusBadRequest, "invalid_pending_proof", "no pending request cookie")
 			return
 		}
-		csrfToken, err := formOrJSONCSRFToken(r)
+		csrfToken, err := formOrJSONCSRFToken(w, r)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "malformed_request", "could not parse request body")
+			writeParseError(w, err)
 			return
 		}
 
@@ -405,7 +510,7 @@ func claimHandler(enroller Enroller, credentialCookieMaxAge time.Duration) http.
 
 // --- GET /__approve-auth/session ---
 
-func sessionHandler(decider Decider, decisionTimeout time.Duration) http.HandlerFunc {
+func sessionHandler(decider Decider, decisionTimeout time.Duration, trustedCIDRs []*net.IPNet) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accessToken, ok := singleCookieValue(r, accessCookieName)
 		if !ok {
@@ -423,7 +528,7 @@ func sessionHandler(decider Decider, decisionTimeout time.Duration) http.Handler
 			Host:        requestHostname(r),
 			Method:      http.MethodGet,
 			CookieValue: accessToken,
-			ClientAddr:  clientIP(r),
+			ClientAddr:  clientIP(r, trustedCIDRs),
 			UserAgent:   r.Header.Get("User-Agent"),
 		})
 		if err != nil {

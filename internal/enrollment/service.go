@@ -169,6 +169,23 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 		}
 	}
 
+	// GlobalEnrollmentPerHour (endpoint-review.md F2): a deployment-wide
+	// ceiling across every application and source IP combined, checked
+	// in addition to the per-app/IP bucket above -- a rotating-address
+	// or distributed flood never exceeds any single per-app/IP bucket,
+	// but still hits this one shared bucket.
+	if s.cfg.GlobalEnrollmentPerHour > 0 {
+		windowStart := time.Now().Truncate(time.Hour)
+		count, err := s.store.IncrementRateLimit(ctx, "requests:global", windowStart, time.Hour)
+		if err != nil {
+			return SubmitRequestResult{}, fmt.Errorf("enrollment: submit: global rate limit: %w", err)
+		}
+		if count > s.cfg.GlobalEnrollmentPerHour {
+			metrics.RateLimitRejections.WithLabelValues("global_enrollment_per_hour").Inc()
+			return SubmitRequestResult{}, ErrRateLimited
+		}
+	}
+
 	label := truncateRunes(in.Label, 100)
 	message := truncateRunes(in.Message, 500)
 	returnPath := validateReturnPath(in.ReturnTo)

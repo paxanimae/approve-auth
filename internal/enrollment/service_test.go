@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -360,6 +361,36 @@ func TestSubmitRequest_RateLimited(t *testing.T) {
 	}
 	if !errors.Is(lastErr, enrollment.ErrRateLimited) {
 		t.Errorf("6th submission from the same IP: got %v, want ErrRateLimited", lastErr)
+	}
+}
+
+// TestSubmitRequest_GlobalRateLimited covers endpoint-review.md F2:
+// GlobalEnrollmentPerHour was configured but never consumed. Each
+// iteration uses a distinct client IP so the per-app/IP bucket (raised
+// well above the loop count here) never trips -- only the shared global
+// bucket should.
+func TestSubmitRequest_GlobalRateLimited(t *testing.T) {
+	db, _, hostname := setup(t)
+	ctx := context.Background()
+
+	cfg := testConfig()
+	cfg.PendingRequestsPerHourPerAppIP = 1000
+	cfg.GlobalEnrollmentPerHour = 2
+	svc := enrollment.New(db, geoip.Noop{}, cfg)
+
+	var lastErr error
+	for i := 0; i < 5; i++ {
+		boot, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+		if err != nil {
+			t.Fatalf("Bootstrap: %v", err)
+		}
+		_, lastErr = svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{
+			PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken,
+			ClientIP: fmt.Sprintf("203.0.113.%d", 150+i),
+		})
+	}
+	if !errors.Is(lastErr, enrollment.ErrRateLimited) {
+		t.Errorf("submissions across distinct IPs: got %v, want ErrRateLimited from the global bucket", lastErr)
 	}
 }
 

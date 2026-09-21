@@ -123,16 +123,71 @@ func isNavigation(r *http.Request, method string) bool {
 // clientAddr takes the last hop of X-Forwarded-For when present. Traefik
 // always adds this on the Authorization listener regardless of
 // authRequestHeaders (it's Traefik-generated metadata, not a copied
-// original header) -- full multi-hop CIDR-chain validation belongs to the
-// Public/Admin listeners' own rate-limiting logic (Milestone 3), where
-// TRUSTED_TRAEFIK_CIDRS is actually consulted; here Traefik itself is
-// already the sole, mTLS-verified caller.
+// original header) -- full multi-hop CIDR-chain validation isn't needed
+// here: this listener requires mTLS (see AuthTLSConfig), so Traefik
+// itself is already the sole, cryptographically-verified caller, unlike
+// the Public listener (see publicClientIP below, endpoint-review.md F2).
 func clientAddr(r *http.Request) string {
 	if xff := headerValue(r, "X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
 		return strings.TrimSpace(parts[len(parts)-1])
 	}
 	return r.RemoteAddr
+}
+
+// parseTrustedCIDRs parses config-validated CIDR strings into *net.IPNet.
+// config.Config.Validate already guarantees every configured entry
+// parses; a bad entry here (e.g. an empty/malformed value reaching this
+// code some other way, such as a test) is simply skipped rather than
+// panicking -- an unparseable "trusted" CIDR trusts nothing, which is
+// the fail-closed direction.
+func parseTrustedCIDRs(cidrs []string) []*net.IPNet {
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, raw := range cidrs {
+		if _, ipnet, err := net.ParseCIDR(raw); err == nil {
+			out = append(out, ipnet)
+		}
+	}
+	return out
+}
+
+// peerIsTrusted reports whether remoteAddr's host (a Go net/http
+// RemoteAddr, "host:port") falls inside one of trusted's CIDR blocks.
+func peerIsTrusted(remoteAddr string, trusted []*net.IPNet) bool {
+	host := remoteAddr
+	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range trusted {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// publicClientIP resolves the caller's IP for the Public listener's own
+// rate-limiting and audit purposes (endpoint-review.md F2). Unlike
+// clientAddr above, the Public listener can be reached directly by
+// anyone, not only via Traefik -- X-Forwarded-For is trusted only when
+// the immediate TCP peer (r.RemoteAddr) is itself inside
+// TrustedTraefikCIDRs; otherwise it's ignored entirely and the real TCP
+// peer address is used, so a caller reaching this listener directly
+// cannot forge whatever rate-limit/audit identity it likes by sending
+// its own X-Forwarded-For header.
+func publicClientIP(r *http.Request, trusted []*net.IPNet) string {
+	if peerIsTrusted(r.RemoteAddr, trusted) {
+		return clientAddr(r)
+	}
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		host = h
+	}
+	return host
 }
 
 // requestPageRedirectLocation builds the same-host reserved-path
