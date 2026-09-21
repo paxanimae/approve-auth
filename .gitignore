@@ -17,6 +17,10 @@ deploy/dev/certs/
 deploy/dev/secrets/
 deploy/dev/mtls/
 
+# Downloaded GeoIP database -- fetched by scripts/fetch-geoip.sh, never
+# bundled/shipped by this repo (see that script's own header comment).
+deploy/dev/geoip/
+
 # Editors / OS
 .vscode/
 .idea/

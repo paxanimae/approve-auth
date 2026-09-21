@@ -28,6 +28,9 @@
 #                        stack -- see docs/dev-environment.md.
 #
 # Run scripts/gen-certs.sh and scripts/gen-mtls-certs.sh first.
+# scripts/fetch-geoip.sh is a separate, optional step (see the
+# approve-auth service's GEOIP_DATABASE_PATH below) -- unlike the certs,
+# skipping it does not stop this stack from starting.
 name: approve-auth
 
 services:
@@ -107,10 +110,18 @@ services:
       OIDC_CLIENT_SECRET_FILE: /secrets/oidc-client-secret.txt
       CLAIM_ENCRYPTION_KEY_FILE: /secrets/claim-encryption-key.txt
       OIDC_STATE_ENCRYPTION_KEY_FILE: /secrets/oidc-state-key.txt
+      # Uncomment after running scripts/fetch-geoip.sh -- a configured
+      # path that doesn't exist is a fatal startup error (cmd/server
+      # treats a bad GeoIP path as a misconfiguration to fail loudly on,
+      # not a silent no-op), so this stays commented out by default and
+      # the ./geoip mount below stays harmless (an empty directory) until
+      # you've actually fetched the database.
+      # GEOIP_DATABASE_PATH: /geoip/GeoLite2-City.mmdb
     volumes:
       - ./approve-auth-config.yaml:/config/approve-auth.yaml:ro
       - ./secrets:/secrets:ro
       - ./mtls:/mtls:ro
+      - ./geoip:/geoip:ro
     depends_on:
       db:
         condition: service_healthy

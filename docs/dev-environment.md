@@ -218,8 +218,31 @@ the actual `approve-auth` service.
 Setting `geoip_database_path` (nonsecret config) enables best-effort
 country/city enrichment of each new request's `source_ip`, shown in the
 admin console's Requests view (`internal/geoip`). This repo cannot
-bundle the database file itself -- MaxMind's license requires each user
-to register their own account, even for the free tier:
+bundle the database file itself either way -- leave it unset entirely
+to skip this: every lookup then reports "unresolved" (`geoip.Noop`) and
+no request is ever blocked or slowed down by its absence.
+
+**Recommended: the automated fetch script.**
+[P3TERX/GeoLite.mmdb](https://github.com/P3TERX/GeoLite.mmdb) is a
+community mirror that re-publishes MaxMind's free GeoLite2 databases
+without requiring a MaxMind account:
+
+1. Run `scripts/fetch-geoip.sh` (or `.ps1` on Windows without Git Bash)
+   -- downloads the current `GeoLite2-City.mmdb` into
+   `deploy/dev/geoip/` (gitignored, entirely inside a container, nothing
+   installed on this machine).
+2. Uncomment the `GEOIP_DATABASE_PATH` line in
+   `deploy/dev/docker-compose.yml`'s `approve-auth` service (it's
+   commented out by default so a fresh clone's first `docker compose up`
+   doesn't fail on a database file that doesn't exist yet).
+3. `docker compose -f deploy/dev/docker-compose.yml up -d approve-auth`
+   to pick it up.
+4. Re-run the script any time to refresh to the mirror's current
+   release -- it always resolves to the latest, no version to track.
+
+**Alternative: MaxMind's own account-gated download.** Useful if you
+want commercial GeoIP2 data, or specifically MaxMind's own
+distribution rather than a third-party mirror:
 
 1. Create a free account at
    [maxmind.com/en/geolite2/signup](https://www.maxmind.com/en/geolite2/signup).
@@ -239,9 +262,6 @@ to register their own account, even for the free tier:
    ```yaml
    geoip_database_path: /geoip/GeoLite2-City.mmdb
    ```
-4. Leave it unset entirely to skip this -- every lookup then reports
-   "unresolved" (`geoip.Noop`) and no request is ever blocked or slowed
-   down by its absence.
 
 ## Optional: approval-flow notifications
 

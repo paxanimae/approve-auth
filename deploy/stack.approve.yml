@@ -190,14 +190,28 @@ services:
       # set while that config doesn't exist makes Swarm refuse to
       # deploy the service at all.
       # SSL_CERT_FILE: /certs/ca-bundle.pem
-      # OPTIONAL -- approval-flow notifications (email/webhook, see
-      # approve-auth-config.example.yaml's notify_* keys). Only needed
-      # if notify_smtp_username / a webhook signing secret are actually
-      # used; uncomment together with the matching entries under
-      # secrets: below and `docker secret create notify_smtp_password
-      # ...` / `docker secret create notify_webhook_secret ...`.
+      # OPTIONAL -- approval-flow notifications (email/webhook). This
+      # is transport/credentials only: notify_smtp_host/port/username
+      # are nonsecret config (approve-auth-config.example.yaml), and
+      # the from-address/default destinations/revocation policy are
+      # all live-editable from the admin console's Settings page
+      # (migration 000019's global_settings), not set here. Only
+      # needed if notify_smtp_username / a webhook signing secret are
+      # actually used; uncomment together with the matching entries
+      # under secrets: below and `docker secret create
+      # notify_smtp_password ...` / `docker secret create
+      # notify_webhook_secret ...`.
       # NOTIFY_SMTP_PASSWORD_FILE: /run/secrets/notify_smtp_password
       # NOTIFY_WEBHOOK_SECRET_FILE: /run/secrets/notify_webhook_secret
+      # OPTIONAL -- best-effort GeoIP enrichment of a request's
+      # source_ip (internal/geoip). Uncomment together with the
+      # matching bind mount under volumes: below -- point it at a real
+      # GeoLite2-City.mmdb on the Swarm node (scripts/fetch-geoip.sh
+      # can fetch one; see docs/dev-environment.md's "Optional: GeoIP
+      # enrichment"). A configured path that doesn't exist is a fatal
+      # startup error, so leave both lines commented out until the
+      # file is actually there.
+      # GEOIP_DATABASE_PATH: /geoip/GeoLite2-City.mmdb
     secrets:
       - database_url
       - oidc_client_secret
@@ -217,6 +231,13 @@ services:
       # OPTIONAL -- see prerequisite step 9 above.
       # - source: approve-auth-ca-bundle
       #   target: /certs/ca-bundle.pem
+    # volumes:
+    #   # OPTIONAL -- see GEOIP_DATABASE_PATH above. A host path on
+    #   # whichever Swarm node this service lands on -- pin it to one
+    #   # node (deploy.placement.constraints) if you rely on this, since
+    #   # the file isn't distributed across the cluster the way a
+    #   # Swarm config/secret is.
+    #   - /path/to/GeoLite2-City.mmdb:/geoip/GeoLite2-City.mmdb:ro
     networks:
       - control-plane # Traefik reaches the admin listener and, over
                        # mTLS, calls /auth here (spec section 13's
