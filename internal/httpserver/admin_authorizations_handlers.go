@@ -18,7 +18,16 @@ func listAuthorizationsHandler(readStore AdminReadStore) http.HandlerFunc {
 			return
 		}
 		activeOnly := r.URL.Query().Get("active_only") != "false"
-		auths, err := readStore.ListAuthorizations(r.Context(), appID, activeOnly, parseLimitQuery(r))
+		// mine=true is "My Approvals" -- resolved server-side to the
+		// caller's own stable subject, never a client-supplied identity,
+		// so it can't be used to probe for who else approved something
+		// beyond what the unfiltered list already shows.
+		var approvedBy *string
+		if r.URL.Query().Get("mine") == "true" {
+			subject := actorSubject(r)
+			approvedBy = &subject
+		}
+		auths, err := readStore.ListAuthorizations(r.Context(), appID, approvedBy, activeOnly, parseLimitQuery(r))
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list authorizations")
 			return

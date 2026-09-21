@@ -32,7 +32,7 @@ type AdminReadStore interface {
 	GetApprovalRequestByID(ctx context.Context, id uuid.UUID) (store.ApprovalRequest, bool, error)
 	ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID, status string, limit int) ([]store.ApprovalRequest, error)
 	GetAuthorizationByID(ctx context.Context, id uuid.UUID) (store.Authorization, bool, error)
-	ListAuthorizations(ctx context.Context, applicationID *uuid.UUID, activeOnly bool, limit int) ([]store.Authorization, error)
+	ListAuthorizations(ctx context.Context, applicationID *uuid.UUID, approvedBy *string, activeOnly bool, limit int) ([]store.Authorization, error)
 	ListAuditEvents(ctx context.Context, p store.ListAuditEventsParams) ([]store.AuditEvent, error)
 	RecordAuditEvent(ctx context.Context, actorType, actorSubject, action, reason string) error
 	GetOverviewCounts(ctx context.Context, expiringSoonWindow, recentWindow time.Duration) (store.OverviewCounts, error)

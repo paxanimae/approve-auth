@@ -11,6 +11,7 @@
   let error: string | null = $state(null);
   let busyId: string | null = $state(null);
   let activeOnly: boolean = $state(true);
+  let mineOnly: boolean = $state(false);
 
   let renewDialogOpen = $state(false);
   let renewTarget: Authorization | null = $state(null);
@@ -18,7 +19,7 @@
   async function load() {
     error = null;
     try {
-      const result = await api.listAuthorizations(activeOnly);
+      const result = await api.listAuthorizations(activeOnly, mineOnly);
       authorizations = result.authorizations;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -94,6 +95,10 @@
       <label class="checkbox-row">
         <input type="checkbox" bind:checked={activeOnly} onchange={load} />
         Active only
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" bind:checked={mineOnly} onchange={load} />
+        My approvals
       </label>
       <button class="btn" onclick={load}>Refresh</button>
     </div>

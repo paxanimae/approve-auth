@@ -108,6 +108,7 @@ type fakeAdminReadStore struct {
 	requestErr   error
 
 	authorizations     []store.Authorization
+	authorizationsMine []store.Authorization // returned instead of authorizations when ListAuthorizations receives a non-nil approvedBy, so tests can distinguish the two
 	authorization      store.Authorization
 	authorizationFound bool
 	authorizationErr   error
@@ -135,7 +136,10 @@ func (f fakeAdminReadStore) ListApprovalRequests(context.Context, *uuid.UUID, st
 func (f fakeAdminReadStore) GetAuthorizationByID(context.Context, uuid.UUID) (store.Authorization, bool, error) {
 	return f.authorization, f.authorizationFound, f.authorizationErr
 }
-func (f fakeAdminReadStore) ListAuthorizations(context.Context, *uuid.UUID, bool, int) ([]store.Authorization, error) {
+func (f fakeAdminReadStore) ListAuthorizations(_ context.Context, _ *uuid.UUID, approvedBy *string, _ bool, _ int) ([]store.Authorization, error) {
+	if approvedBy != nil {
+		return f.authorizationsMine, f.authorizationErr
+	}
 	return f.authorizations, f.authorizationErr
 }
 func (f fakeAdminReadStore) ListAuditEvents(context.Context, store.ListAuditEventsParams) ([]store.AuditEvent, error) {

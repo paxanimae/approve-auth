@@ -306,6 +306,44 @@ func TestGetAuthorization_IncludesRequestingApplication(t *testing.T) {
 	}
 }
 
+func TestListAuthorizations_MineFilterResolvesToCallersOwnSubject(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	all := []store.Authorization{{ID: uuid.New()}, {ID: uuid.New()}}
+	mine := []store.Authorization{{ID: uuid.New()}}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{authorizations: all, authorizationsMine: mine})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/authorizations?mine=true", "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var body struct {
+		Authorizations []struct{ ID string } `json:"authorizations"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(body.Authorizations) != len(mine) {
+		t.Errorf("got %d authorizations, want %d (the \"mine\"-filtered set, not the unfiltered %d)", len(body.Authorizations), len(mine), len(all))
+	}
+
+	// Without mine=true, the unfiltered set comes back instead.
+	resp2, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/authorizations", "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+	var body2 struct {
+		Authorizations []struct{ ID string } `json:"authorizations"`
+	}
+	if err := json.NewDecoder(resp2.Body).Decode(&body2); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(body2.Authorizations) != len(all) {
+		t.Errorf("got %d authorizations without mine=true, want %d (the unfiltered set)", len(body2.Authorizations), len(all))
+	}
+}
+
 func TestApproveRequest_Success(t *testing.T) {
 	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)

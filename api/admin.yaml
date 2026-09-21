@@ -433,6 +433,16 @@ paths:
           schema:
             type: boolean
             default: true
+        - name: mine
+          in: query
+          required: false
+          description: >-
+            "My Approvals" -- restricts to authorizations the calling
+            admin approved, resolved server-side from the caller's own
+            session (never a client-supplied identity).
+          schema:
+            type: boolean
+            default: false
         - $ref: "#/components/parameters/Limit"
       responses:
         "200":
@@ -818,6 +828,10 @@ components:
         application_id:
           type: string
           format: uuid
+        application_hostname:
+          type: string
+        application_display_name:
+          type: string
         verification_code:
           type: string
         label:
@@ -854,7 +868,7 @@ components:
           type: [string, "null"]
         version:
           type: integer
-      required: [id, application_id, verification_code, status, requested_at, deadline_at, version]
+      required: [id, application_id, application_hostname, application_display_name, verification_code, status, requested_at, deadline_at, version]
       additionalProperties: false
 
     ApproveRequestInput:
@@ -883,6 +897,10 @@ components:
         application_id:
           type: string
           format: uuid
+        application_hostname:
+          type: string
+        application_display_name:
+          type: string
         request_id:
           type: string
           format: uuid
@@ -913,7 +931,7 @@ components:
           type: [string, "null"]
         version:
           type: integer
-      required: [id, application_id, request_id, approved_by, approved_at, expires_at, version]
+      required: [id, application_id, application_hostname, application_display_name, request_id, approved_by, approved_at, expires_at, version]
       additionalProperties: false
 
     RenewAuthorizationInput:

@@ -102,8 +102,8 @@ export const api = {
   denyRequest: (id: string, body: { version: number; reason: string; public_message?: string }) =>
     request<{ denied: boolean }>("POST", `/api/v1/requests/${id}/deny`, body),
 
-  listAuthorizations: (activeOnly = true) =>
-    request<{ authorizations: Authorization[] }>("GET", `/api/v1/authorizations?active_only=${activeOnly}`),
+  listAuthorizations: (activeOnly = true, mine = false) =>
+    request<{ authorizations: Authorization[] }>("GET", `/api/v1/authorizations?active_only=${activeOnly}&mine=${mine}`),
   renewAuthorization: (id: string, body: { version: number; new_expires_at: string; reason: string }) =>
     request<{ renewed: boolean }>("POST", `/api/v1/authorizations/${id}/renew`, body),
   revokeAuthorization: (id: string, body: { version: number; reason: string }) =>
