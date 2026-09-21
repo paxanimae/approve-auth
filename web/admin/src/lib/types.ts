@@ -35,6 +35,8 @@ export interface Application {
 export interface ApprovalRequest {
   id: string;
   application_id: string;
+  application_hostname: string;
+  application_display_name: string;
   verification_code: string;
   label?: string;
   message?: string;
@@ -55,6 +57,8 @@ export interface ApprovalRequest {
 export interface Authorization {
   id: string;
   application_id: string;
+  application_hostname: string;
+  application_display_name: string;
   request_id: string;
   label?: string;
   approved_by: string;

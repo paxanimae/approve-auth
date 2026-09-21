@@ -239,7 +239,16 @@ func (db *DB) RenewAuthorization(ctx context.Context, authorizationID uuid.UUID,
 	return nil
 }
 
-const authorizationColumns = `id, application_id, request_id, label, approved_by, approved_at, activated_at, expires_at, revoked_at, revoked_by, revocation_reason, last_seen_at, last_seen_ip, last_seen_user_agent, version`
+// authorizationColumns joins against applications for the requesting
+// application's hostname/display_name (spec section 9's admin views
+// need to show which application a session belongs to, not just its
+// opaque id) -- safe to bake into the shared column list/scanner here,
+// unlike approval_requests' equivalent, since authorizationColumns is
+// only ever used by the two admin-facing reads below, never an
+// INSERT...RETURNING. An authorization's application_id is a NOT NULL
+// FK and applications are only ever disabled, never hard-deleted, so
+// the inner join can't unexpectedly drop a row.
+const authorizationColumns = `auth.id, auth.application_id, auth.request_id, auth.label, auth.approved_by, auth.approved_at, auth.activated_at, auth.expires_at, auth.revoked_at, auth.revoked_by, auth.revocation_reason, auth.last_seen_at, auth.last_seen_ip, auth.last_seen_user_agent, auth.version, app.hostname, app.display_name`
 
 func scanAuthorization(row scanner) (Authorization, error) {
 	var auth Authorization
@@ -247,12 +256,16 @@ func scanAuthorization(row scanner) (Authorization, error) {
 		&auth.ID, &auth.ApplicationID, &auth.RequestID, &auth.Label, &auth.ApprovedBy, &auth.ApprovedAt,
 		&auth.ActivatedAt, &auth.ExpiresAt, &auth.RevokedAt, &auth.RevokedBy, &auth.RevocationReason,
 		&auth.LastSeenAt, &auth.LastSeenIP, &auth.LastSeenUserAgent, &auth.Version,
+		&auth.ApplicationHostname, &auth.ApplicationDisplayName,
 	)
 	return auth, err
 }
 
 func (db *DB) GetAuthorizationByID(ctx context.Context, id uuid.UUID) (Authorization, bool, error) {
-	auth, err := scanAuthorization(db.Pool.QueryRow(ctx, `SELECT `+authorizationColumns+` FROM authorizations WHERE id = $1`, id))
+	auth, err := scanAuthorization(db.Pool.QueryRow(ctx, `
+		SELECT `+authorizationColumns+`
+		FROM authorizations auth JOIN applications app ON app.id = auth.application_id
+		WHERE auth.id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Authorization{}, false, nil
 	}
@@ -272,10 +285,10 @@ func (db *DB) GetAuthorizationByID(ctx context.Context, id uuid.UUID) (Authoriza
 func (db *DB) ListAuthorizations(ctx context.Context, applicationID *uuid.UUID, activeOnly bool, limit int) ([]Authorization, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT `+authorizationColumns+`
-		FROM authorizations
-		WHERE ($1::uuid IS NULL OR application_id = $1)
-		  AND ($2 = false OR revoked_at IS NULL)
-		ORDER BY expires_at ASC, id DESC
+		FROM authorizations auth JOIN applications app ON app.id = auth.application_id
+		WHERE ($1::uuid IS NULL OR auth.application_id = $1)
+		  AND ($2 = false OR auth.revoked_at IS NULL)
+		ORDER BY auth.expires_at ASC, auth.id DESC
 		LIMIT $3`, applicationID, activeOnly, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: listing authorizations: %w", err)

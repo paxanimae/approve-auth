@@ -55,6 +55,14 @@ type ApprovalRequest struct {
 	SourceIP              *net.IP
 	UserAgent             *string
 	Version               int32
+
+	// ApplicationHostname/ApplicationDisplayName are only populated by
+	// the admin-facing reads (GetApprovalRequestByID, ListApprovalRequests)
+	// via a join against applications -- left "" from CreateApprovalRequest
+	// and GetApprovalRequestByTokenHash, which don't need them and, for
+	// the INSERT...RETURNING case, structurally can't join another table.
+	ApplicationHostname    string
+	ApplicationDisplayName string
 }
 
 type Authorization struct {
@@ -73,6 +81,12 @@ type Authorization struct {
 	LastSeenIP        *net.IP
 	LastSeenUserAgent *string
 	Version           int32
+
+	// ApplicationHostname/ApplicationDisplayName come from a join against
+	// applications -- see GetAuthorizationByID/ListAuthorizations, the
+	// only two callers of authorizationColumns/scanAuthorization.
+	ApplicationHostname    string
+	ApplicationDisplayName string
 }
 
 type Credential struct {

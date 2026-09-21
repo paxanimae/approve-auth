@@ -102,10 +102,32 @@ func scanApprovalRequest(row scanner) (ApprovalRequest, error) {
 
 const approvalRequestColumns = `id, application_id, pending_token_hash, verification_code, label, message, return_path, status, requested_at, deadline_at, decided_at, decided_by, claim_deadline_at, claimed_at, public_decision_message, private_note, user_agent, version`
 
+// approvalRequestColumnsWithApplication and scanApprovalRequestWithApplication
+// are a separate column list/scanner from approvalRequestColumns/
+// scanApprovalRequest above, used only by the two admin-facing reads
+// below -- CreateApprovalRequest (INSERT...RETURNING can't join another
+// table at all) and GetApprovalRequestByTokenHash (the browser's own
+// lookup, which doesn't need this) keep using the plain ones.
+const approvalRequestColumnsWithApplication = `r.id, r.application_id, r.pending_token_hash, r.verification_code, r.label, r.message, r.return_path, r.status, r.requested_at, r.deadline_at, r.decided_at, r.decided_by, r.claim_deadline_at, r.claimed_at, r.public_decision_message, r.private_note, r.user_agent, r.version, a.hostname, a.display_name`
+
+func scanApprovalRequestWithApplication(row scanner) (ApprovalRequest, error) {
+	var r ApprovalRequest
+	err := row.Scan(
+		&r.ID, &r.ApplicationID, &r.PendingTokenHash, &r.VerificationCode, &r.Label, &r.Message, &r.ReturnPath,
+		&r.Status, &r.RequestedAt, &r.DeadlineAt, &r.DecidedAt, &r.DecidedBy, &r.ClaimDeadlineAt, &r.ClaimedAt,
+		&r.PublicDecisionMessage, &r.PrivateNote, &r.UserAgent, &r.Version,
+		&r.ApplicationHostname, &r.ApplicationDisplayName,
+	)
+	return r, err
+}
+
 // GetApprovalRequestByID is the admin API's lookup, as opposed to
 // GetApprovalRequestByTokenHash which is the browser's own.
 func (db *DB) GetApprovalRequestByID(ctx context.Context, id uuid.UUID) (ApprovalRequest, bool, error) {
-	r, err := scanApprovalRequest(db.Pool.QueryRow(ctx, `SELECT `+approvalRequestColumns+` FROM approval_requests WHERE id = $1`, id))
+	r, err := scanApprovalRequestWithApplication(db.Pool.QueryRow(ctx, `
+		SELECT `+approvalRequestColumnsWithApplication+`
+		FROM approval_requests r JOIN applications a ON a.id = r.application_id
+		WHERE r.id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ApprovalRequest{}, false, nil
 	}
@@ -123,11 +145,11 @@ func (db *DB) GetApprovalRequestByID(ctx context.Context, id uuid.UUID) (Approva
 // docs/milestone-4-remaining.md.
 func (db *DB) ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID, status string, limit int) ([]ApprovalRequest, error) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT `+approvalRequestColumns+`
-		FROM approval_requests
-		WHERE ($1::uuid IS NULL OR application_id = $1)
-		  AND ($2::text = '' OR status = $2)
-		ORDER BY requested_at DESC, id DESC
+		SELECT `+approvalRequestColumnsWithApplication+`
+		FROM approval_requests r JOIN applications a ON a.id = r.application_id
+		WHERE ($1::uuid IS NULL OR r.application_id = $1)
+		  AND ($2::text = '' OR r.status = $2)
+		ORDER BY r.requested_at DESC, r.id DESC
 		LIMIT $3`, applicationID, status, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: listing approval requests: %w", err)
@@ -136,7 +158,7 @@ func (db *DB) ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID
 
 	var out []ApprovalRequest
 	for rows.Next() {
-		r, err := scanApprovalRequest(rows)
+		r, err := scanApprovalRequestWithApplication(rows)
 		if err != nil {
 			return nil, fmt.Errorf("store: scanning approval request: %w", err)
 		}

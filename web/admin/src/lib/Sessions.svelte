@@ -110,6 +110,7 @@
       <table class="data-table">
         <thead>
           <tr>
+            <th>Application</th>
             <th>Label</th>
             <th>State</th>
             <th>Expires</th>
@@ -121,6 +122,7 @@
         <tbody>
           {#each authorizations as a (a.id)}
             <tr>
+              <td title={a.application_hostname}>{a.application_display_name}</td>
               <td>{a.label ?? "—"}</td>
               <td><span class="badge {stateBadgeClass(sessionState(a))}">{sessionState(a)}</span></td>
               <td title={formatDateTime(a.expires_at)}>{formatRelative(a.expires_at)}</td>

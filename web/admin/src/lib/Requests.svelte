@@ -107,6 +107,7 @@
       <table class="data-table">
         <thead>
           <tr>
+            <th>Application</th>
             <th>Label</th>
             <th>Device</th>
             <th>Message</th>
@@ -119,6 +120,7 @@
         <tbody>
           {#each requests as r (r.id)}
             <tr>
+              <td title={r.application_hostname}>{r.application_display_name}</td>
               <td>{r.label ?? "—"}</td>
               <td class="device" title={r.user_agent ?? ""}>
                 {r.source_ip ?? "—"}

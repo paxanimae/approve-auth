@@ -39,29 +39,33 @@ func newApplicationDTO(a store.Application) applicationDTO {
 }
 
 type requestDTO struct {
-	ID                    string     `json:"id"`
-	ApplicationID         string     `json:"application_id"`
-	VerificationCode      string     `json:"verification_code"`
-	Label                 *string    `json:"label,omitempty"`
-	Message               *string    `json:"message,omitempty"`
-	Status                string     `json:"status"`
-	RequestedAt           time.Time  `json:"requested_at"`
-	DeadlineAt            time.Time  `json:"deadline_at"`
-	DecidedAt             *time.Time `json:"decided_at,omitempty"`
-	DecidedBy             *string    `json:"decided_by,omitempty"`
-	ClaimDeadlineAt       *time.Time `json:"claim_deadline_at,omitempty"`
-	ClaimedAt             *time.Time `json:"claimed_at,omitempty"`
-	PublicDecisionMessage *string    `json:"public_decision_message,omitempty"`
-	PrivateNote           *string    `json:"private_note,omitempty"`
-	SourceIP              *string    `json:"source_ip,omitempty"`
-	UserAgent             *string    `json:"user_agent,omitempty"`
-	Version               int32      `json:"version"`
+	ID                     string     `json:"id"`
+	ApplicationID          string     `json:"application_id"`
+	ApplicationHostname    string     `json:"application_hostname"`
+	ApplicationDisplayName string     `json:"application_display_name"`
+	VerificationCode       string     `json:"verification_code"`
+	Label                  *string    `json:"label,omitempty"`
+	Message                *string    `json:"message,omitempty"`
+	Status                 string     `json:"status"`
+	RequestedAt            time.Time  `json:"requested_at"`
+	DeadlineAt             time.Time  `json:"deadline_at"`
+	DecidedAt              *time.Time `json:"decided_at,omitempty"`
+	DecidedBy              *string    `json:"decided_by,omitempty"`
+	ClaimDeadlineAt        *time.Time `json:"claim_deadline_at,omitempty"`
+	ClaimedAt              *time.Time `json:"claimed_at,omitempty"`
+	PublicDecisionMessage  *string    `json:"public_decision_message,omitempty"`
+	PrivateNote            *string    `json:"private_note,omitempty"`
+	SourceIP               *string    `json:"source_ip,omitempty"`
+	UserAgent              *string    `json:"user_agent,omitempty"`
+	Version                int32      `json:"version"`
 }
 
 func newRequestDTO(r store.ApprovalRequest) requestDTO {
 	dto := requestDTO{
-		ID: r.ID.String(), ApplicationID: r.ApplicationID.String(), VerificationCode: r.VerificationCode,
-		Label: r.Label, Message: r.Message, Status: r.Status, RequestedAt: r.RequestedAt, DeadlineAt: r.DeadlineAt,
+		ID: r.ID.String(), ApplicationID: r.ApplicationID.String(),
+		ApplicationHostname: r.ApplicationHostname, ApplicationDisplayName: r.ApplicationDisplayName,
+		VerificationCode: r.VerificationCode,
+		Label:            r.Label, Message: r.Message, Status: r.Status, RequestedAt: r.RequestedAt, DeadlineAt: r.DeadlineAt,
 		DecidedAt: r.DecidedAt, DecidedBy: r.DecidedBy, ClaimDeadlineAt: r.ClaimDeadlineAt, ClaimedAt: r.ClaimedAt,
 		PublicDecisionMessage: r.PublicDecisionMessage, PrivateNote: r.PrivateNote, UserAgent: r.UserAgent, Version: r.Version,
 	}
@@ -76,26 +80,30 @@ func newRequestDTO(r store.ApprovalRequest) requestDTO {
 }
 
 type authorizationDTO struct {
-	ID                string     `json:"id"`
-	ApplicationID     string     `json:"application_id"`
-	RequestID         string     `json:"request_id"`
-	Label             *string    `json:"label,omitempty"`
-	ApprovedBy        string     `json:"approved_by"`
-	ApprovedAt        time.Time  `json:"approved_at"`
-	ActivatedAt       *time.Time `json:"activated_at,omitempty"`
-	ExpiresAt         time.Time  `json:"expires_at"`
-	RevokedAt         *time.Time `json:"revoked_at,omitempty"`
-	RevokedBy         *string    `json:"revoked_by,omitempty"`
-	RevocationReason  *string    `json:"revocation_reason,omitempty"`
-	LastSeenAt        *time.Time `json:"last_seen_at,omitempty"`
-	LastSeenUserAgent *string    `json:"last_seen_user_agent,omitempty"`
-	Version           int32      `json:"version"`
+	ID                     string     `json:"id"`
+	ApplicationID          string     `json:"application_id"`
+	ApplicationHostname    string     `json:"application_hostname"`
+	ApplicationDisplayName string     `json:"application_display_name"`
+	RequestID              string     `json:"request_id"`
+	Label                  *string    `json:"label,omitempty"`
+	ApprovedBy             string     `json:"approved_by"`
+	ApprovedAt             time.Time  `json:"approved_at"`
+	ActivatedAt            *time.Time `json:"activated_at,omitempty"`
+	ExpiresAt              time.Time  `json:"expires_at"`
+	RevokedAt              *time.Time `json:"revoked_at,omitempty"`
+	RevokedBy              *string    `json:"revoked_by,omitempty"`
+	RevocationReason       *string    `json:"revocation_reason,omitempty"`
+	LastSeenAt             *time.Time `json:"last_seen_at,omitempty"`
+	LastSeenUserAgent      *string    `json:"last_seen_user_agent,omitempty"`
+	Version                int32      `json:"version"`
 }
 
 func newAuthorizationDTO(a store.Authorization) authorizationDTO {
 	return authorizationDTO{
-		ID: a.ID.String(), ApplicationID: a.ApplicationID.String(), RequestID: a.RequestID.String(),
-		Label: a.Label, ApprovedBy: a.ApprovedBy, ApprovedAt: a.ApprovedAt, ActivatedAt: a.ActivatedAt,
+		ID: a.ID.String(), ApplicationID: a.ApplicationID.String(),
+		ApplicationHostname: a.ApplicationHostname, ApplicationDisplayName: a.ApplicationDisplayName,
+		RequestID: a.RequestID.String(),
+		Label:     a.Label, ApprovedBy: a.ApprovedBy, ApprovedAt: a.ApprovedAt, ActivatedAt: a.ActivatedAt,
 		ExpiresAt: a.ExpiresAt, RevokedAt: a.RevokedAt, RevokedBy: a.RevokedBy, RevocationReason: a.RevocationReason,
 		LastSeenAt: a.LastSeenAt, LastSeenUserAgent: a.LastSeenUserAgent, Version: a.Version,
 	}

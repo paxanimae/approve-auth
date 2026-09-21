@@ -266,6 +266,46 @@ func TestCreateApplication_DuplicateHostnameMapsTo409(t *testing.T) {
 	}
 }
 
+func TestGetRequest_IncludesRequestingApplication(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	reqID := uuid.New()
+	req := store.ApprovalRequest{ID: reqID, ApplicationHostname: "app-a.internal", ApplicationDisplayName: "App A"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{request: req, requestFound: true})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/requests/"+reqID.String(), "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if body["application_hostname"] != "app-a.internal" || body["application_display_name"] != "App A" {
+		t.Errorf("unexpected application fields: %+v", body)
+	}
+}
+
+func TestGetAuthorization_IncludesRequestingApplication(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	authID := uuid.New()
+	auth := store.Authorization{ID: authID, ApplicationHostname: "app-a.internal", ApplicationDisplayName: "App A"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{authorization: auth, authorizationFound: true})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/authorizations/"+authID.String(), "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if body["application_hostname"] != "app-a.internal" || body["application_display_name"] != "App A" {
+		t.Errorf("unexpected application fields: %+v", body)
+	}
+}
+
 func TestApproveRequest_Success(t *testing.T) {
 	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)
