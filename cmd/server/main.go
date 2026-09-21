@@ -27,6 +27,7 @@ import (
 	"github.com/frid-iks/approve-auth/internal/metrics"
 	"github.com/frid-iks/approve-auth/internal/notify"
 	"github.com/frid-iks/approve-auth/internal/oidc"
+	"github.com/frid-iks/approve-auth/internal/revokepolicy"
 	"github.com/frid-iks/approve-auth/internal/store"
 	"github.com/frid-iks/approve-auth/internal/version"
 	"github.com/frid-iks/approve-auth/internal/worker"
@@ -54,6 +55,12 @@ const workerTickInterval = 5 * time.Minute
 // notifications aren't spec-mandated, so there's no spec batch size to
 // match, just the same "bounded, not unbounded" principle.
 const notificationDeliveryBatchSize = 200
+
+// inactivityPolicyBatchSize is EnforceInactivityPolicy's own per-tick
+// bound, same "bounded, not unbounded" principle as
+// notificationDeliveryBatchSize -- revocation policy isn't spec-
+// mandated either, so there's no spec batch size to match.
+const inactivityPolicyBatchSize = 200
 
 func main() {
 	if err := run(); err != nil {
@@ -109,7 +116,10 @@ func run() error {
 		geoipLookup = mm
 	}
 
-	authzService := authz.New(db)
+	authzService := authz.New(db, authz.Config{
+		RevokePolicyIPChanged:        revokepolicy.Action(cfg.RevokePolicyIPChanged),
+		RevokePolicyUserAgentChanged: revokepolicy.Action(cfg.RevokePolicyUserAgentChanged),
+	})
 	enrollmentService := enrollment.New(db, geoipLookup, enrollment.Config{
 		RequestTTL:                     cfg.RequestTTL.Std(),
 		ClaimTTL:                       cfg.ClaimTTL.Std(),
@@ -165,6 +175,13 @@ func run() error {
 		ReturnPathsRetention:      cfg.Retention.ReturnPaths.Std(),
 		NotificationsRetention:    cfg.Retention.Notifications.Std(),
 		TickInterval:              workerTickInterval,
+	})
+	jobs = append(jobs, worker.Job{
+		Name: "enforce_inactivity_policy", Interval: workerTickInterval,
+		Run: func(ctx context.Context) error {
+			_, err := db.EnforceInactivityPolicy(ctx, revokepolicy.Action(cfg.RevokePolicyInactivityExceeded), cfg.RevocationInactivityThreshold.Std(), inactivityPolicyBatchSize)
+			return err
+		},
 	})
 
 	notifier := notify.New(notify.Config{

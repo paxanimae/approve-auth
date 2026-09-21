@@ -76,6 +76,8 @@ type fakeAdminActions struct {
 
 	grantApplicationOwnerErr  error
 	revokeApplicationOwnerErr error
+
+	clearAuthorizationFlagErr error
 }
 
 func (f fakeAdminActions) Approve(context.Context, admin.ApproveInput) (admin.ApproveResult, error) {
@@ -105,6 +107,9 @@ func (f fakeAdminActions) AddRequestNote(context.Context, admin.AddRequestNoteIn
 }
 func (f fakeAdminActions) AddAuthorizationNote(context.Context, admin.AddAuthorizationNoteInput) (store.AuthorizationNote, error) {
 	return f.addAuthorizationNoteResult, f.addAuthorizationNoteErr
+}
+func (f fakeAdminActions) ClearAuthorizationFlag(context.Context, admin.ClearAuthorizationFlagInput) error {
+	return f.clearAuthorizationFlagErr
 }
 func (f fakeAdminActions) GrantApplicationOwner(context.Context, admin.GrantApplicationOwnerInput) error {
 	return f.grantApplicationOwnerErr

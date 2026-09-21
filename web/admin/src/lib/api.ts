@@ -7,6 +7,7 @@ import type {
   Me,
   Note,
   Overview,
+  RevokePolicyAction,
 } from "./types";
 
 // ApiError carries the server's structured error code/message (spec
@@ -94,7 +95,17 @@ export const api = {
   createApplication: (input: CreateApplicationInput) => request<Application>("POST", "/api/v1/applications", input),
   updateApplication: (
     id: string,
-    body: { version: number; display_name?: string; description?: string; contact_info?: string; notify_email?: string; notify_webhook_url?: string },
+    body: {
+      version: number;
+      display_name?: string;
+      description?: string;
+      contact_info?: string;
+      notify_email?: string;
+      notify_webhook_url?: string;
+      revoke_policy_ip_changed?: RevokePolicyAction | "";
+      revoke_policy_user_agent_changed?: RevokePolicyAction | "";
+      revoke_policy_inactivity_exceeded?: RevokePolicyAction | "";
+    },
   ) => request<Application>("PATCH", `/api/v1/applications/${id}`, body),
   disableApplication: (id: string, body: { version: number; reason: string }) =>
     request<DisableApplicationResponse>("POST", `/api/v1/applications/${id}/disable`, body),
@@ -121,6 +132,7 @@ export const api = {
     request<{ renewed: boolean }>("POST", `/api/v1/authorizations/${id}/renew`, body),
   revokeAuthorization: (id: string, body: { version: number; reason: string }) =>
     request<{ revoked: boolean }>("POST", `/api/v1/authorizations/${id}/revoke`, body),
+  clearAuthorizationFlag: (id: string) => request<{ cleared: boolean }>("POST", `/api/v1/authorizations/${id}/clear-flag`, {}),
   listAuthorizationNotes: (id: string) => request<{ notes: Note[] }>("GET", `/api/v1/authorizations/${id}/notes`),
   addAuthorizationNote: (id: string, body: { body: string }) => request<Note>("POST", `/api/v1/authorizations/${id}/notes`, body),
   bulkRevokeAuthorizations: (body: { items: { id: string; version: number }[]; reason: string }) =>

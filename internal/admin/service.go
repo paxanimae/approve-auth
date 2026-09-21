@@ -88,7 +88,8 @@ func (s *Service) Approve(ctx context.Context, in ApproveInput) (result ApproveR
 		return ApproveResult{}, ErrInvalidExpiry
 	}
 
-	auth, err := s.store.ApproveRequest(ctx, requestID, in.ExpectedVersion, expiresAt, s.cfg.ClaimTTL, in.Label, in.PrivateNote, in.ApprovedBy)
+	auth, err := s.store.ApproveRequest(ctx, requestID, in.ExpectedVersion, expiresAt, s.cfg.ClaimTTL, in.Label, in.PrivateNote, in.ApprovedBy,
+		in.RevokePolicyIPChanged, in.RevokePolicyUserAgentChanged, in.RevokePolicyInactivityExceeded)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return ApproveResult{}, ErrConflict
@@ -150,6 +151,23 @@ func (s *Service) Renew(ctx context.Context, in RenewInput) (err error) {
 	return nil
 }
 
+// ClearAuthorizationFlag acknowledges a revocation-policy
+// "flag_for_review" state (internal/revokepolicy) once reviewed --
+// idempotent, clearing an authorization that isn't flagged is a no-op,
+// not an error.
+func (s *Service) ClearAuthorizationFlag(ctx context.Context, in ClearAuthorizationFlagInput) (err error) {
+	defer func() { recordAdminAction("clear_authorization_flag", err) }()
+
+	authorizationID, err := uuid.Parse(in.AuthorizationID)
+	if err != nil {
+		return fmt.Errorf("admin: clear authorization flag: invalid authorization id: %w", err)
+	}
+	if err := s.store.ClearAuthorizationFlag(ctx, authorizationID, in.ClearedBy); err != nil {
+		return fmt.Errorf("admin: clear authorization flag: %w", err)
+	}
+	return nil
+}
+
 // CreateApplication implements spec section 9's POST /applications.
 func (s *Service) CreateApplication(ctx context.Context, in CreateApplicationInput) (store.Application, error) {
 	defaultDuration := in.DefaultDuration
@@ -190,6 +208,8 @@ func (s *Service) UpdateApplication(ctx context.Context, in UpdateApplicationInp
 	app, err := s.store.UpdateApplication(ctx, applicationID, in.ExpectedVersion, store.UpdateApplicationParams{
 		DisplayName: in.DisplayName, Description: in.Description, DefaultDuration: in.DefaultDuration, MaxDuration: in.MaxDuration,
 		ContactInfo: in.ContactInfo, NotifyEmail: in.NotifyEmail, NotifyWebhookURL: in.NotifyWebhookURL,
+		RevokePolicyIPChanged: in.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: in.RevokePolicyUserAgentChanged,
+		RevokePolicyInactivityExceeded: in.RevokePolicyInactivityExceeded,
 	}, in.UpdatedBy)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {

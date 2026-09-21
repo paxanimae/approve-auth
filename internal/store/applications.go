@@ -62,7 +62,7 @@ func (db *DB) GetApplicationByHostname(ctx context.Context, hostname string) (Ap
 	return app, true, nil
 }
 
-const applicationColumns = `id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version, contact_info, notify_email, notify_webhook_url`
+const applicationColumns = `id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version, contact_info, notify_email, notify_webhook_url, revoke_policy_ip_changed, revoke_policy_user_agent_changed, revoke_policy_inactivity_exceeded`
 
 func scanApplication(row scanner) (Application, error) {
 	var app Application
@@ -71,6 +71,7 @@ func scanApplication(row scanner) (Application, error) {
 		&app.DefaultDurationSeconds, &app.MaxDurationSeconds,
 		&app.CreatedAt, &app.UpdatedAt, &app.ArchivedAt, &app.Version, &app.ContactInfo,
 		&app.NotifyEmail, &app.NotifyWebhookURL,
+		&app.RevokePolicyIPChanged, &app.RevokePolicyUserAgentChanged, &app.RevokePolicyInactivityExceeded,
 	)
 	return app, err
 }
@@ -131,6 +132,15 @@ type UpdateApplicationParams struct {
 	// ContactInfo above.
 	NotifyEmail      *string
 	NotifyWebhookURL *string
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded}: same
+	// nil-means-unchanged, empty-string-means-clear-to-global-default
+	// convention as ContactInfo above. A non-empty value must already
+	// be a valid revokepolicy.Action -- validated by the caller
+	// (internal/httpserver), matching how other input validation in
+	// this API is done at the HTTP layer, not here.
+	RevokePolicyIPChanged          *string
+	RevokePolicyUserAgentChanged   *string
+	RevokePolicyInactivityExceeded *string
 }
 
 // UpdateApplication applies only the fields the caller set, using the
@@ -193,14 +203,38 @@ func (db *DB) UpdateApplication(ctx context.Context, id uuid.UUID, expectedVersi
 			notifyWebhookURL = nil
 		}
 	}
+	revokePolicyIPChanged := current.RevokePolicyIPChanged
+	if p.RevokePolicyIPChanged != nil {
+		revokePolicyIPChanged = p.RevokePolicyIPChanged
+		if *revokePolicyIPChanged == "" {
+			revokePolicyIPChanged = nil
+		}
+	}
+	revokePolicyUserAgentChanged := current.RevokePolicyUserAgentChanged
+	if p.RevokePolicyUserAgentChanged != nil {
+		revokePolicyUserAgentChanged = p.RevokePolicyUserAgentChanged
+		if *revokePolicyUserAgentChanged == "" {
+			revokePolicyUserAgentChanged = nil
+		}
+	}
+	revokePolicyInactivityExceeded := current.RevokePolicyInactivityExceeded
+	if p.RevokePolicyInactivityExceeded != nil {
+		revokePolicyInactivityExceeded = p.RevokePolicyInactivityExceeded
+		if *revokePolicyInactivityExceeded == "" {
+			revokePolicyInactivityExceeded = nil
+		}
+	}
 
 	app, err := scanApplication(tx.QueryRow(ctx, `
 		UPDATE applications
 		SET display_name = $1, description = $2, default_duration_seconds = $3, max_duration_seconds = $4,
-		    contact_info = $5, notify_email = $6, notify_webhook_url = $7, updated_at = now(), version = version + 1
-		WHERE id = $8
+		    contact_info = $5, notify_email = $6, notify_webhook_url = $7,
+		    revoke_policy_ip_changed = $8, revoke_policy_user_agent_changed = $9, revoke_policy_inactivity_exceeded = $10,
+		    updated_at = now(), version = version + 1
+		WHERE id = $11
 		RETURNING `+applicationColumns,
-		displayName, description, defaultSeconds, maxSeconds, contactInfo, notifyEmail, notifyWebhookURL, id,
+		displayName, description, defaultSeconds, maxSeconds, contactInfo, notifyEmail, notifyWebhookURL,
+		revokePolicyIPChanged, revokePolicyUserAgentChanged, revokePolicyInactivityExceeded, id,
 	))
 	if err != nil {
 		return Application{}, fmt.Errorf("store: updating application %s: %w", id, err)

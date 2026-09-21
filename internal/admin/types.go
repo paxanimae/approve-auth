@@ -19,11 +19,12 @@ type Config struct {
 
 // Store is the persistence surface this package needs.
 type Store interface {
-	ApproveRequest(ctx context.Context, requestID uuid.UUID, expectedVersion int32, expiresAt time.Time, claimTTL time.Duration, label, privateNote, approvedBy string) (store.Authorization, error)
+	ApproveRequest(ctx context.Context, requestID uuid.UUID, expectedVersion int32, expiresAt time.Time, claimTTL time.Duration, label, privateNote, approvedBy string, revokePolicyIPChanged, revokePolicyUserAgentChanged, revokePolicyInactivityExceeded *string) (store.Authorization, error)
 	DenyRequest(ctx context.Context, requestID uuid.UUID, expectedVersion int32, reason, publicMessage, deniedBy string) error
 	RevokeAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, reason, revokedBy string) error
 	RenewAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, newExpiresAt time.Time, renewedBy string) error
 	GetAuthorizationByID(ctx context.Context, id uuid.UUID) (store.Authorization, bool, error)
+	ClearAuthorizationFlag(ctx context.Context, authorizationID uuid.UUID, clearedBy string) error
 
 	CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration, contactInfo, notifyEmail, notifyWebhookURL string) (store.Application, error)
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (store.Application, bool, error)
@@ -49,6 +50,15 @@ type ApproveInput struct {
 	Label       string
 	PrivateNote string
 	ApprovedBy  string
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded}: this
+	// session's own revocation-policy overrides (internal/revokepolicy),
+	// nil meaning "inherit the application's own override, or the
+	// deployment-wide default". Set only here, at approval time -- v1
+	// scope deliberately has no separate endpoint to edit them
+	// afterward (see store.Authorization's own comment).
+	RevokePolicyIPChanged          *string
+	RevokePolicyUserAgentChanged   *string
+	RevokePolicyInactivityExceeded *string
 }
 
 type ApproveResult struct {
@@ -78,6 +88,13 @@ type RenewInput struct {
 	RenewedBy       string
 }
 
+// ClearAuthorizationFlagInput backs POST
+// /api/v1/authorizations/{id}/clear-flag.
+type ClearAuthorizationFlagInput struct {
+	AuthorizationID string
+	ClearedBy       string
+}
+
 // CreateApplicationInput backs POST /api/v1/applications (spec section
 // 9). DefaultDuration/MaxDuration of zero mean "use the service-wide
 // configured default" (Config.DefaultAuthorizationDuration /
@@ -104,7 +121,14 @@ type UpdateApplicationInput struct {
 	ContactInfo      *string
 	NotifyEmail      *string
 	NotifyWebhookURL *string
-	UpdatedBy        string
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded}: nil
+	// means leave unchanged; a non-nil pointer sets it (an empty
+	// string clears the override back to the deployment-wide
+	// default), same convention as ContactInfo above.
+	RevokePolicyIPChanged          *string
+	RevokePolicyUserAgentChanged   *string
+	RevokePolicyInactivityExceeded *string
+	UpdatedBy                      string
 }
 
 // DisableApplicationInput backs POST /api/v1/applications/{id}/disable.

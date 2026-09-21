@@ -274,3 +274,31 @@ Every setting is optional and independent:
   still writes a row on every new request, `DeliverPending` still marks
   it delivered (nothing to send to is a vacuous success, not a stuck
   retry), and nothing is ever actually sent.
+
+## Revocation policy
+
+`internal/revokepolicy` resolves a small, fixed enumerated action
+(`off`/`warn`/`flag_for_review`/`revoke`) for each of three named
+signals -- IP changed, User-Agent changed, inactivity exceeded --
+layered global config default -> application override -> session
+override (`internal/authz.Decide`'s own comment on why IP/UA-change
+must be checked synchronously, not as a background job). Ships with
+sane, non-silent-by-default settings (see
+`deploy/approve-auth-config.example.yaml`): IP changes are flagged for
+a human to review, User-Agent changes are logged, inactivity
+enforcement is off until you pick a threshold. To exercise this
+locally:
+
+1. Register an application, approve a request, and claim the resulting
+   authorization from one IP/User-Agent (e.g. via `curl` with a custom
+   `User-Agent` header, or two different browsers).
+2. Set `revoke_policy_ip_changed: revoke` (or `flag_for_review`) either
+   globally (`deploy/dev/approve-auth-config.yaml`) or per-application
+   via the admin console's Applications view -> Revocation policy.
+3. Present the same access cookie from a different client IP -- the
+   next `/auth` call flips from Allow to Deny (or, for
+   `flag_for_review`, stays Allow but the Sessions view shows a
+   "flagged" badge with a "Clear flag" action).
+4. To see `flag_for_review`/`warn` land in the audit log, check the
+   Audit log view for `authorization.flagged_for_review` /
+   `authorization.policy_warning` entries.

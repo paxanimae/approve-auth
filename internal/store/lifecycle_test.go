@@ -74,7 +74,7 @@ func TestLifecycle_ApproveClaimRenewRevoke(t *testing.T) {
 		t.Fatalf("unexpected lookup result: ok=%v got=%+v", ok, got)
 	}
 
-	auth, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "my-tv", "looked legit", "admin@example.test")
+	auth, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "my-tv", "looked legit", "admin@example.test", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ApproveRequest: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestLifecycle_ApproveClaimRenewRevoke(t *testing.T) {
 	}
 
 	// Re-approving the same (now stale-version) request must conflict.
-	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test"); err != store.ErrConflict {
+	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test", nil, nil, nil); err != store.ErrConflict {
 		t.Errorf("re-approving: got %v, want ErrConflict", err)
 	}
 

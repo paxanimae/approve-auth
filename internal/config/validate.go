@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/url"
 	"os"
+
+	"github.com/frid-iks/approve-auth/internal/revokepolicy"
 )
 
 var validLogLevels = map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
@@ -101,6 +103,11 @@ func (c *Config) Validate() error {
 		errs = append(errs, requireAbsoluteHTTPURL("NOTIFY_DEFAULT_WEBHOOK_URL", c.NotifyDefaultWebhookURL))
 	}
 
+	errs = append(errs, requireValidRevokePolicyAction("REVOKE_POLICY_IP_CHANGED", c.RevokePolicyIPChanged))
+	errs = append(errs, requireValidRevokePolicyAction("REVOKE_POLICY_USER_AGENT_CHANGED", c.RevokePolicyUserAgentChanged))
+	errs = append(errs, requireValidRevokePolicyAction("REVOKE_POLICY_INACTIVITY_EXCEEDED", c.RevokePolicyInactivityExceeded))
+	errs = append(errs, positiveDuration("REVOCATION_INACTIVITY_THRESHOLD", c.RevocationInactivityThreshold))
+
 	errs = append(errs, distinctListenerAddrs(c))
 
 	return errors.Join(errs...)
@@ -136,6 +143,13 @@ func requireHTTPSOrigin(field, value string) error {
 	}
 	if u.Path != "" && u.Path != "/" {
 		return fmt.Errorf("%s: must be an origin with no path, got %q", field, value)
+	}
+	return nil
+}
+
+func requireValidRevokePolicyAction(field, value string) error {
+	if !revokepolicy.Action(value).Valid() {
+		return fmt.Errorf("%s: must be one of off/warn/flag_for_review/revoke, got %q", field, value)
 	}
 	return nil
 }

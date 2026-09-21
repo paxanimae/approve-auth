@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "./api";
-  import type { Application } from "./types";
+  import type { Application, RevokePolicyAction } from "./types";
   import { formatDateTime } from "./format";
 
   let applications: Application[] = $state([]);
@@ -92,6 +92,60 @@
     busyId = a.id;
     try {
       await api.updateApplication(a.id, { version: a.version, notify_email: nextEmail, notify_webhook_url: nextWebhook });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      busyId = null;
+    }
+  }
+
+  // editRevocationPolicy edits all three revocation-policy overrides
+  // (internal/revokepolicy) as three sequential prompts, matching
+  // editNotifications' own multi-prompt convention. Each prompt
+  // accepts one of off/warn/flag_for_review/revoke, or blank to
+  // inherit the deployment-wide default.
+  const revokePolicyChoices = "off, warn, flag_for_review, or revoke";
+
+  const validRevokePolicyActions: RevokePolicyAction[] = ["off", "warn", "flag_for_review", "revoke"];
+
+  async function promptRevokePolicy(label: string, current: string): Promise<RevokePolicyAction | "" | null> {
+    while (true) {
+      const next = prompt(`${label} (${revokePolicyChoices}; leave blank to inherit the deployment-wide default):`, current);
+      if (next === null || next === "") {
+        return next;
+      }
+      if ((validRevokePolicyActions as string[]).includes(next)) {
+        return next as RevokePolicyAction;
+      }
+      alert(`"${next}" is not a valid choice -- must be one of ${revokePolicyChoices}, or blank.`);
+    }
+  }
+
+  async function editRevocationPolicy(a: Application) {
+    const ipChanged = await promptRevokePolicy(`IP-changed policy for ${a.hostname}`, a.revoke_policy_ip_changed ?? "");
+    if (ipChanged === null) return;
+    const userAgentChanged = await promptRevokePolicy(`User-Agent-changed policy for ${a.hostname}`, a.revoke_policy_user_agent_changed ?? "");
+    if (userAgentChanged === null) return;
+    const inactivityExceeded = await promptRevokePolicy(`Inactivity-exceeded policy for ${a.hostname}`, a.revoke_policy_inactivity_exceeded ?? "");
+    if (inactivityExceeded === null) return;
+
+    if (
+      ipChanged === (a.revoke_policy_ip_changed ?? "") &&
+      userAgentChanged === (a.revoke_policy_user_agent_changed ?? "") &&
+      inactivityExceeded === (a.revoke_policy_inactivity_exceeded ?? "")
+    ) {
+      return;
+    }
+
+    busyId = a.id;
+    try {
+      await api.updateApplication(a.id, {
+        version: a.version,
+        revoke_policy_ip_changed: ipChanged,
+        revoke_policy_user_agent_changed: userAgentChanged,
+        revoke_policy_inactivity_exceeded: inactivityExceeded,
+      });
       await load();
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
@@ -205,6 +259,7 @@
               {/if}
               <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editContactInfo(a)}>Edit contact info</button>
               <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editNotifications(a)}>Notifications</button>
+              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editRevocationPolicy(a)}>Revocation policy</button>
               <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => manageOwners(a)}>Owners</button>
             </td>
           </tr>

@@ -37,6 +37,12 @@ type applicationDTO struct {
 	// default convention as ContactInfo above.
 	NotifyEmail      *string `json:"notify_email,omitempty"`
 	NotifyWebhookURL *string `json:"notify_webhook_url,omitempty"`
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded}: same
+	// nil-means-inherits-the-deployment-wide-default convention as
+	// ContactInfo above (internal/revokepolicy).
+	RevokePolicyIPChanged          *string `json:"revoke_policy_ip_changed,omitempty"`
+	RevokePolicyUserAgentChanged   *string `json:"revoke_policy_user_agent_changed,omitempty"`
+	RevokePolicyInactivityExceeded *string `json:"revoke_policy_inactivity_exceeded,omitempty"`
 }
 
 func newApplicationDTO(a store.Application) applicationDTO {
@@ -45,6 +51,8 @@ func newApplicationDTO(a store.Application) applicationDTO {
 		Enabled: a.Enabled, DefaultDurationSeconds: a.DefaultDurationSeconds, MaxDurationSeconds: a.MaxDurationSeconds,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt, ArchivedAt: a.ArchivedAt, Version: a.Version,
 		ContactInfo: a.ContactInfo, NotifyEmail: a.NotifyEmail, NotifyWebhookURL: a.NotifyWebhookURL,
+		RevokePolicyIPChanged: a.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: a.RevokePolicyUserAgentChanged,
+		RevokePolicyInactivityExceeded: a.RevokePolicyInactivityExceeded,
 	}
 }
 
@@ -112,6 +120,19 @@ type authorizationDTO struct {
 	LastSeenAt             *time.Time `json:"last_seen_at,omitempty"`
 	LastSeenUserAgent      *string    `json:"last_seen_user_agent,omitempty"`
 	Version                int32      `json:"version"`
+	// FlaggedAt/FlaggedReason mark a revocation-policy "flag_for_review"
+	// state (internal/revokepolicy) -- both omitted when this
+	// authorization isn't currently flagged. Access is unaffected by
+	// this state; it's a "needs a human's attention" marker only.
+	FlaggedAt     *time.Time `json:"flagged_at,omitempty"`
+	FlaggedReason *string    `json:"flagged_reason,omitempty"`
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded}:
+	// this session's own revocation-policy overrides, omitted when
+	// unset (inheriting the application's own override or the
+	// deployment-wide default).
+	RevokePolicyIPChanged          *string `json:"revoke_policy_ip_changed,omitempty"`
+	RevokePolicyUserAgentChanged   *string `json:"revoke_policy_user_agent_changed,omitempty"`
+	RevokePolicyInactivityExceeded *string `json:"revoke_policy_inactivity_exceeded,omitempty"`
 }
 
 func newAuthorizationDTO(a store.Authorization) authorizationDTO {
@@ -122,6 +143,9 @@ func newAuthorizationDTO(a store.Authorization) authorizationDTO {
 		Label:     a.Label, ApprovedBy: a.ApprovedBy, ApprovedAt: a.ApprovedAt, ActivatedAt: a.ActivatedAt,
 		ExpiresAt: a.ExpiresAt, RevokedAt: a.RevokedAt, RevokedBy: a.RevokedBy, RevocationReason: a.RevocationReason,
 		LastSeenAt: a.LastSeenAt, LastSeenUserAgent: a.LastSeenUserAgent, Version: a.Version,
+		FlaggedAt: a.FlaggedAt, FlaggedReason: a.FlaggedReason,
+		RevokePolicyIPChanged: a.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: a.RevokePolicyUserAgentChanged,
+		RevokePolicyInactivityExceeded: a.RevokePolicyInactivityExceeded,
 	}
 }
 

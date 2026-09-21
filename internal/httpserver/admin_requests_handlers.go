@@ -71,6 +71,15 @@ type approveRequestBody struct {
 	ExpiresAt   *time.Time `json:"expires_at"`
 	Label       string     `json:"label"`
 	PrivateNote string     `json:"private_note"`
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded}: this
+	// session's own revocation-policy overrides (internal/revokepolicy),
+	// set only here at approval time -- v1 scope has no separate
+	// endpoint to edit them afterward (see admin.ApproveInput's own
+	// comment). Omit any of these to inherit the application's own
+	// override or the deployment-wide default.
+	RevokePolicyIPChanged          *string `json:"revoke_policy_ip_changed"`
+	RevokePolicyUserAgentChanged   *string `json:"revoke_policy_user_agent_changed"`
+	RevokePolicyInactivityExceeded *string `json:"revoke_policy_inactivity_exceeded"`
 }
 
 func approveRequestHandler(actions AdminActions, readStore AdminReadStore) http.HandlerFunc {
@@ -86,10 +95,16 @@ func approveRequestHandler(actions AdminActions, readStore AdminReadStore) http.
 		if !decodeJSONBody(w, r, &body) {
 			return
 		}
+		if !validateOptionalRevokePolicyAction(body.RevokePolicyIPChanged) || !validateOptionalRevokePolicyAction(body.RevokePolicyUserAgentChanged) || !validateOptionalRevokePolicyAction(body.RevokePolicyInactivityExceeded) {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "revoke_policy_* fields must be one of off/warn/flag_for_review/revoke, or omitted to inherit")
+			return
+		}
 
 		in := admin.ApproveInput{
 			RequestID: id.String(), ExpectedVersion: body.Version,
 			Label: body.Label, PrivateNote: body.PrivateNote, ApprovedBy: actorSubject(r),
+			RevokePolicyIPChanged: body.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: body.RevokePolicyUserAgentChanged,
+			RevokePolicyInactivityExceeded: body.RevokePolicyInactivityExceeded,
 		}
 		if body.ExpiresAt != nil {
 			in.ExpiresAt = *body.ExpiresAt

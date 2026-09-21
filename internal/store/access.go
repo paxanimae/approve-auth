@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,9 +27,28 @@ type AccessSnapshot struct {
 	CredentialAbsoluteExpiresAt time.Time
 
 	AuthorizationID        uuid.UUID
+	AuthorizationVersion   int32
 	AuthorizationRevoked   bool
 	AuthorizationActivated bool
 	AuthorizationExpiresAt time.Time
+
+	// LastSeenIP/LastSeenUserAgent are the authorization's last-seen
+	// values as of BEFORE this request's own TouchLastSeen write --
+	// internal/authz.Decide compares req's own IP/UA against these to
+	// detect the IPChanged/UserAgentChanged revocation-policy signals.
+	// Both nil means no prior successful access to compare against
+	// (this credential's first use), which must never fire a signal.
+	LastSeenIP        *net.IP
+	LastSeenUserAgent *string
+
+	// RevokePolicy{IPChanged,UserAgentChanged}{App,Session} back
+	// internal/revokepolicy.Resolve -- inactivity's own override
+	// columns aren't needed here since InactivityExceeded is checked
+	// out-of-path by a worker job, not synchronously in Decide.
+	RevokePolicyIPChangedApp            *string
+	RevokePolicyIPChangedSession        *string
+	RevokePolicyUserAgentChangedApp     *string
+	RevokePolicyUserAgentChangedSession *string
 
 	DatabaseNow time.Time
 }
@@ -47,9 +67,16 @@ func (db *DB) GetAccessSnapshot(ctx context.Context, hostname string, credential
 			COALESCE(c.revoked_at IS NOT NULL, false),
 			c.absolute_expires_at,
 			z.id,
+			z.version,
 			COALESCE(z.revoked_at IS NOT NULL, false),
 			COALESCE(z.activated_at IS NOT NULL, false),
 			z.expires_at,
+			z.last_seen_ip,
+			z.last_seen_user_agent,
+			a.revoke_policy_ip_changed,
+			z.revoke_policy_ip_changed,
+			a.revoke_policy_user_agent_changed,
+			z.revoke_policy_user_agent_changed,
 			now()
 		FROM applications a
 		LEFT JOIN credentials c ON c.token_hash = $2
@@ -62,6 +89,7 @@ func (db *DB) GetAccessSnapshot(ctx context.Context, hostname string, credential
 	var credentialApplicationID *uuid.UUID
 	var credentialAbsoluteExpiresAt *time.Time
 	var authorizationID *uuid.UUID
+	var authorizationVersion *int32
 	var authorizationExpiresAt *time.Time
 
 	err := row.Scan(
@@ -72,9 +100,16 @@ func (db *DB) GetAccessSnapshot(ctx context.Context, hostname string, credential
 		&snap.CredentialRevoked,
 		&credentialAbsoluteExpiresAt,
 		&authorizationID,
+		&authorizationVersion,
 		&snap.AuthorizationRevoked,
 		&snap.AuthorizationActivated,
 		&authorizationExpiresAt,
+		&snap.LastSeenIP,
+		&snap.LastSeenUserAgent,
+		&snap.RevokePolicyIPChangedApp,
+		&snap.RevokePolicyIPChangedSession,
+		&snap.RevokePolicyUserAgentChangedApp,
+		&snap.RevokePolicyUserAgentChangedSession,
 		&snap.DatabaseNow,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -92,6 +127,9 @@ func (db *DB) GetAccessSnapshot(ctx context.Context, hostname string, credential
 	}
 	if authorizationID != nil {
 		snap.AuthorizationID = *authorizationID
+	}
+	if authorizationVersion != nil {
+		snap.AuthorizationVersion = *authorizationVersion
 	}
 	if authorizationExpiresAt != nil {
 		snap.AuthorizationExpiresAt = *authorizationExpiresAt
@@ -178,4 +216,15 @@ func nullableText(s string) any {
 		return nil
 	}
 	return s
+}
+
+// nilIfEmptyStringPtr normalizes a caller-supplied *string where an
+// explicit empty string and nil both mean "no value" -- used for the
+// revoke-policy override columns, whose CHECK constraint would reject
+// an empty string outright.
+func nilIfEmptyStringPtr(p *string) *string {
+	if p != nil && *p == "" {
+		return nil
+	}
+	return p
 }

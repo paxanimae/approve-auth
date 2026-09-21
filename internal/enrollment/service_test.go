@@ -415,7 +415,7 @@ func TestFullLifecycle_RequestApproveClaimRetryAck(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("GetApprovalRequestByTokenHash: found=%v err=%v", found, err)
 	}
-	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "my-tv", "", "admin@example.test"); err != nil {
+	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "my-tv", "", "admin@example.test", nil, nil, nil); err != nil {
 		t.Fatalf("ApproveRequest: %v", err)
 	}
 
@@ -472,7 +472,7 @@ func TestClaim_AlreadyClaimedButEnvelopePurged(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("GetApprovalRequestByTokenHash: found=%v err=%v", found, err)
 	}
-	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test"); err != nil {
+	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test", nil, nil, nil); err != nil {
 		t.Fatalf("ApproveRequest: %v", err)
 	}
 	if _, err := svc.Claim(ctx, boot.RawPendingToken, boot.CSRFToken); err != nil {
@@ -508,7 +508,7 @@ func TestLogout_RevokesOwnAuthorization(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("GetApprovalRequestByTokenHash: found=%v err=%v", found, err)
 	}
-	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test"); err != nil {
+	if _, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test", nil, nil, nil); err != nil {
 		t.Fatalf("ApproveRequest: %v", err)
 	}
 	claimed, err := svc.Claim(ctx, boot.RawPendingToken, boot.CSRFToken)
@@ -587,7 +587,7 @@ func TestCancel_RevokesUnclaimedAuthorization(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("GetApprovalRequestByTokenHash: found=%v err=%v", found, err)
 	}
-	auth, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test")
+	auth, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ApproveRequest: %v", err)
 	}

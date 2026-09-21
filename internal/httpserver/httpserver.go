@@ -186,6 +186,7 @@ func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminRe
 	mux.HandleFunc("GET /api/v1/authorizations/{id}", authed(getAuthorizationHandler(readStore)))
 	mux.HandleFunc("POST /api/v1/authorizations/{id}/renew", mutating(renewAuthorizationHandler(actions)))
 	mux.HandleFunc("POST /api/v1/authorizations/{id}/revoke", ownerMutating(revokeAuthorizationHandler(actions, readStore)))
+	mux.HandleFunc("POST /api/v1/authorizations/{id}/clear-flag", ownerMutating(clearAuthorizationFlagHandler(actions, readStore)))
 	mux.HandleFunc("GET /api/v1/authorizations/{id}/notes", authed(listAuthorizationNotesHandler(readStore)))
 	mux.HandleFunc("POST /api/v1/authorizations/{id}/notes", ownerMutating(addAuthorizationNoteHandler(actions, readStore)))
 	mux.HandleFunc("POST /api/v1/authorizations/bulk-renew", mutating(bulkRenewHandler(actions, readStore)))

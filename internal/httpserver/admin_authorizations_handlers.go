@@ -141,6 +141,34 @@ func revokeAuthorizationHandler(actions AdminActions, readStore AdminReadStore) 
 	}
 }
 
+// --- POST /api/v1/authorizations/{id}/clear-flag ---
+
+// clearAuthorizationFlagHandler acknowledges a revocation-policy
+// "flag_for_review" state (internal/revokepolicy) -- same ownership
+// scoping as revoke/renew/notes: administrator unconditional,
+// application_owner only for an authorization on an application they
+// own. Idempotent: clearing an authorization that isn't flagged
+// succeeds as a no-op.
+func clearAuthorizationFlagHandler(actions AdminActions, readStore AdminReadStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDPathParam(w, r)
+		if !ok {
+			return
+		}
+		if !authorizeOwnedAuthorization(w, r, readStore, id) {
+			return
+		}
+
+		if err := actions.ClearAuthorizationFlag(r.Context(), admin.ClearAuthorizationFlagInput{
+			AuthorizationID: id.String(), ClearedBy: actorSubject(r),
+		}); err != nil {
+			mapAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"cleared": true})
+	}
+}
+
 // --- GET /api/v1/authorizations/{id}/notes ---
 
 func listAuthorizationNotesHandler(readStore AdminReadStore) http.HandlerFunc {

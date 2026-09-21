@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/frid-iks/approve-auth/internal/admin"
+	"github.com/frid-iks/approve-auth/internal/revokepolicy"
 )
 
 // validateNotifyWebhookURL rejects a non-empty webhook URL that isn't
@@ -18,6 +19,16 @@ func validateNotifyWebhookURL(raw string) bool {
 	}
 	u, err := url.Parse(raw)
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
+// validateOptionalRevokePolicyAction accepts nil (field omitted, leave
+// unchanged), an empty string (clear the override back to the parent
+// default), or any of internal/revokepolicy's four recognized actions
+// -- rejecting anything else here, rather than letting the database's
+// own CHECK constraint reject it, gives the caller a clean 422 instead
+// of a raw constraint-violation error.
+func validateOptionalRevokePolicyAction(v *string) bool {
+	return v == nil || *v == "" || revokepolicy.Action(*v).Valid()
 }
 
 // --- GET /api/v1/applications ---
@@ -111,14 +122,17 @@ func getApplicationHandler(readStore AdminReadStore) http.HandlerFunc {
 // --- PATCH /api/v1/applications/{id} ---
 
 type updateApplicationRequest struct {
-	Version                int32   `json:"version"`
-	DisplayName            *string `json:"display_name"`
-	Description            *string `json:"description"`
-	DefaultDurationSeconds *int64  `json:"default_duration_seconds"`
-	MaxDurationSeconds     *int64  `json:"max_duration_seconds"`
-	ContactInfo            *string `json:"contact_info"`
-	NotifyEmail            *string `json:"notify_email"`
-	NotifyWebhookURL       *string `json:"notify_webhook_url"`
+	Version                        int32   `json:"version"`
+	DisplayName                    *string `json:"display_name"`
+	Description                    *string `json:"description"`
+	DefaultDurationSeconds         *int64  `json:"default_duration_seconds"`
+	MaxDurationSeconds             *int64  `json:"max_duration_seconds"`
+	ContactInfo                    *string `json:"contact_info"`
+	NotifyEmail                    *string `json:"notify_email"`
+	NotifyWebhookURL               *string `json:"notify_webhook_url"`
+	RevokePolicyIPChanged          *string `json:"revoke_policy_ip_changed"`
+	RevokePolicyUserAgentChanged   *string `json:"revoke_policy_user_agent_changed"`
+	RevokePolicyInactivityExceeded *string `json:"revoke_policy_inactivity_exceeded"`
 }
 
 func updateApplicationHandler(actions AdminActions) http.HandlerFunc {
@@ -143,11 +157,17 @@ func updateApplicationHandler(actions AdminActions) http.HandlerFunc {
 			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "notify_webhook_url must be an absolute http(s) URL")
 			return
 		}
+		if !validateOptionalRevokePolicyAction(body.RevokePolicyIPChanged) || !validateOptionalRevokePolicyAction(body.RevokePolicyUserAgentChanged) || !validateOptionalRevokePolicyAction(body.RevokePolicyInactivityExceeded) {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "revoke_policy_* fields must be one of off/warn/flag_for_review/revoke, or empty to clear the override")
+			return
+		}
 
 		in := admin.UpdateApplicationInput{
 			ApplicationID: id.String(), ExpectedVersion: body.Version,
 			DisplayName: body.DisplayName, Description: body.Description, ContactInfo: body.ContactInfo, UpdatedBy: actorSubject(r),
 			NotifyEmail: body.NotifyEmail, NotifyWebhookURL: body.NotifyWebhookURL,
+			RevokePolicyIPChanged: body.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: body.RevokePolicyUserAgentChanged,
+			RevokePolicyInactivityExceeded: body.RevokePolicyInactivityExceeded,
 		}
 		if body.DefaultDurationSeconds != nil {
 			d := time.Duration(*body.DefaultDurationSeconds) * time.Second

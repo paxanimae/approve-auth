@@ -964,3 +964,55 @@ func TestListApplicationOwners_ViewerCanRead(t *testing.T) {
 		t.Errorf("got %d owners, want 2", len(out.Owners))
 	}
 }
+
+// --- Revocation policy: clear-flag endpoint ---
+
+func TestClearAuthorizationFlag_Success(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "admin-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/authorizations/"+uuid.New().String()+"/clear-flag", "any-cookie-value", "tok-abc", strings.NewReader(`{}`))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestClearAuthorizationFlag_ViewerForbidden(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/authorizations/"+uuid.New().String()+"/clear-flag", "any-cookie-value", "tok-abc", strings.NewReader(`{}`))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want 403 (clearing a flag requires administrator or application_owner, viewer may only read)", resp.StatusCode)
+	}
+}
+
+func TestClearAuthorizationFlag_OwnerOutsideOwnedApplicationIs404(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	ownedApp := uuid.New()
+	otherApp := uuid.New()
+	auth := store.Authorization{ID: uuid.New(), ApplicationID: otherApp}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{
+		authorization: auth, authorizationFound: true, ownedApplicationIDs: []uuid.UUID{ownedApp},
+	})
+
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/authorizations/"+auth.ID.String()+"/clear-flag", "any-cookie-value", "tok-abc", strings.NewReader(`{}`))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got status %d, want 404 (authorization belongs to an application this owner doesn't own)", resp.StatusCode)
+	}
+}

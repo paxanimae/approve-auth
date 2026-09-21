@@ -706,6 +706,32 @@ paths:
           description: reason is required
           $ref: "#/components/responses/Error"
 
+  /api/v1/authorizations/{id}/clear-flag:
+    post:
+      operationId: clearAuthorizationFlag
+      summary: >-
+        Acknowledge a revocation-policy flag_for_review state
+        (internal/revokepolicy) once reviewed -- idempotent, clearing
+        an authorization that isn't flagged succeeds as a no-op.
+        Administrator, or application_owner for an authorization on an
+        application they own.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cleared:
+                    type: boolean
+                required: [cleared]
+        "403":
+          $ref: "#/components/responses/Error"
+
   /api/v1/authorizations/{id}/notes:
     get:
       operationId: listAuthorizationNotes
@@ -1011,6 +1037,20 @@ components:
             Absent means this application uses the deployment-wide
             notify_default_webhook_url config default instead of an
             override of its own.
+        revoke_policy_ip_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+          description: >-
+            Absent means this application uses the deployment-wide
+            revocation-policy default for this signal instead of an
+            override of its own (internal/revokepolicy). A session's
+            own override, if set, takes priority over this.
+        revoke_policy_user_agent_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+        revoke_policy_inactivity_exceeded:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
       required: [id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, version]
       additionalProperties: false
 
@@ -1072,6 +1112,16 @@ components:
           description: >-
             Must be an absolute http(s) URL if set. An empty string
             clears the override back to the global default.
+        revoke_policy_ip_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+          description: An empty string clears the override back to the deployment-wide default
+        revoke_policy_user_agent_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+        revoke_policy_inactivity_exceeded:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
       required: [version]
       additionalProperties: false
 
@@ -1146,6 +1196,20 @@ components:
           maxLength: 100
         private_note:
           type: string
+        revoke_policy_ip_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+          description: >-
+            This session's own revocation-policy override for the
+            IPChanged signal (internal/revokepolicy) -- set only here,
+            at approval time; omit to inherit the application's own
+            override or the deployment-wide default.
+        revoke_policy_user_agent_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+        revoke_policy_inactivity_exceeded:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
       required: [version]
       additionalProperties: false
 
@@ -1192,6 +1256,26 @@ components:
           type: [string, "null"]
         version:
           type: integer
+        flagged_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            Set when a revocation-policy signal resolved to
+            flag_for_review (internal/revokepolicy) -- access is
+            unaffected; this is a "needs a human's attention" marker
+            only, cleared via POST .../clear-flag.
+        flagged_reason:
+          type: [string, "null"]
+        revoke_policy_ip_changed:
+          type: [string, "null"]
+          enum: [off, warn, flag_for_review, revoke, null]
+          description: Absent/null means this session inherits the application's own override or the deployment-wide default.
+        revoke_policy_user_agent_changed:
+          type: [string, "null"]
+          enum: [off, warn, flag_for_review, revoke, null]
+        revoke_policy_inactivity_exceeded:
+          type: [string, "null"]
+          enum: [off, warn, flag_for_review, revoke, null]
       required: [id, application_id, application_hostname, application_display_name, request_id, approved_by, approved_at, expires_at, version]
       additionalProperties: false
 

@@ -38,7 +38,15 @@ export interface Application {
   // its own.
   notify_email?: string;
   notify_webhook_url?: string;
+  // Absent means this application uses the deployment-wide
+  // revocation-policy default for that signal instead of an override
+  // of its own.
+  revoke_policy_ip_changed?: RevokePolicyAction;
+  revoke_policy_user_agent_changed?: RevokePolicyAction;
+  revoke_policy_inactivity_exceeded?: RevokePolicyAction;
 }
+
+export type RevokePolicyAction = "off" | "warn" | "flag_for_review" | "revoke";
 
 export interface ApprovalRequest {
   id: string;
@@ -83,6 +91,14 @@ export interface Authorization {
   last_seen_at?: string;
   last_seen_user_agent?: string;
   version: number;
+  // Set when a revocation-policy signal resolved to flag_for_review --
+  // access is unaffected; this is a "needs a human's attention"
+  // marker only, cleared via api.clearAuthorizationFlag.
+  flagged_at?: string;
+  flagged_reason?: string;
+  revoke_policy_ip_changed?: RevokePolicyAction;
+  revoke_policy_user_agent_changed?: RevokePolicyAction;
+  revoke_policy_inactivity_exceeded?: RevokePolicyAction;
 }
 
 export interface Note {

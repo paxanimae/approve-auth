@@ -18,7 +18,16 @@ import (
 // expiresAt (spec section 5: "Approval lasts only until the earlier
 // of..."). Returns ErrConflict if the request is not pending or
 // expectedVersion is stale.
-func (db *DB) ApproveRequest(ctx context.Context, requestID uuid.UUID, expectedVersion int32, expiresAt time.Time, claimTTL time.Duration, label, privateNote, approvedBy string) (Authorization, error) {
+func (db *DB) ApproveRequest(ctx context.Context, requestID uuid.UUID, expectedVersion int32, expiresAt time.Time, claimTTL time.Duration, label, privateNote, approvedBy string, revokePolicyIPChanged, revokePolicyUserAgentChanged, revokePolicyInactivityExceeded *string) (Authorization, error) {
+	// A caller-supplied empty string means "no override" the same way
+	// nil does (the HTTP layer accepts "" as a way to explicitly not
+	// set one) -- normalized to nil here so it's never inserted as-is,
+	// which would violate the CHECK constraint (empty string isn't one
+	// of the four recognized actions).
+	revokePolicyIPChanged = nilIfEmptyStringPtr(revokePolicyIPChanged)
+	revokePolicyUserAgentChanged = nilIfEmptyStringPtr(revokePolicyUserAgentChanged)
+	revokePolicyInactivityExceeded = nilIfEmptyStringPtr(revokePolicyInactivityExceeded)
+
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
 		return Authorization{}, fmt.Errorf("store: approve: begin: %w", err)
@@ -58,14 +67,17 @@ func (db *DB) ApproveRequest(ctx context.Context, requestID uuid.UUID, expectedV
 
 	var auth Authorization
 	err = tx.QueryRow(ctx, `
-		INSERT INTO authorizations (application_id, request_id, label, approved_by, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, application_id, request_id, label, approved_by, approved_at, activated_at, expires_at, revoked_at, revoked_by, revocation_reason, last_seen_at, last_seen_ip, last_seen_user_agent, version`,
+		INSERT INTO authorizations (application_id, request_id, label, approved_by, expires_at, revoke_policy_ip_changed, revoke_policy_user_agent_changed, revoke_policy_inactivity_exceeded)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, application_id, request_id, label, approved_by, approved_at, activated_at, expires_at, revoked_at, revoked_by, revocation_reason, last_seen_at, last_seen_ip, last_seen_user_agent, version, revoke_policy_ip_changed, revoke_policy_user_agent_changed, revoke_policy_inactivity_exceeded, flagged_at, flagged_reason`,
 		applicationID, requestID, nullableText(label), approvedBy, expiresAt,
+		revokePolicyIPChanged, revokePolicyUserAgentChanged, revokePolicyInactivityExceeded,
 	).Scan(
 		&auth.ID, &auth.ApplicationID, &auth.RequestID, &auth.Label, &auth.ApprovedBy, &auth.ApprovedAt,
 		&auth.ActivatedAt, &auth.ExpiresAt, &auth.RevokedAt, &auth.RevokedBy, &auth.RevocationReason,
 		&auth.LastSeenAt, &auth.LastSeenIP, &auth.LastSeenUserAgent, &auth.Version,
+		&auth.RevokePolicyIPChanged, &auth.RevokePolicyUserAgentChanged, &auth.RevokePolicyInactivityExceeded,
+		&auth.FlaggedAt, &auth.FlaggedReason,
 	)
 	if err != nil {
 		return Authorization{}, fmt.Errorf("store: approve: creating authorization: %w", err)
@@ -248,7 +260,7 @@ func (db *DB) RenewAuthorization(ctx context.Context, authorizationID uuid.UUID,
 // INSERT...RETURNING. An authorization's application_id is a NOT NULL
 // FK and applications are only ever disabled, never hard-deleted, so
 // the inner join can't unexpectedly drop a row.
-const authorizationColumns = `auth.id, auth.application_id, auth.request_id, auth.label, auth.approved_by, auth.approved_at, auth.activated_at, auth.expires_at, auth.revoked_at, auth.revoked_by, auth.revocation_reason, auth.last_seen_at, auth.last_seen_ip, auth.last_seen_user_agent, auth.version, app.hostname, app.display_name`
+const authorizationColumns = `auth.id, auth.application_id, auth.request_id, auth.label, auth.approved_by, auth.approved_at, auth.activated_at, auth.expires_at, auth.revoked_at, auth.revoked_by, auth.revocation_reason, auth.last_seen_at, auth.last_seen_ip, auth.last_seen_user_agent, auth.version, auth.revoke_policy_ip_changed, auth.revoke_policy_user_agent_changed, auth.revoke_policy_inactivity_exceeded, auth.flagged_at, auth.flagged_reason, app.hostname, app.display_name`
 
 func scanAuthorization(row scanner) (Authorization, error) {
 	var auth Authorization
@@ -256,6 +268,8 @@ func scanAuthorization(row scanner) (Authorization, error) {
 		&auth.ID, &auth.ApplicationID, &auth.RequestID, &auth.Label, &auth.ApprovedBy, &auth.ApprovedAt,
 		&auth.ActivatedAt, &auth.ExpiresAt, &auth.RevokedAt, &auth.RevokedBy, &auth.RevocationReason,
 		&auth.LastSeenAt, &auth.LastSeenIP, &auth.LastSeenUserAgent, &auth.Version,
+		&auth.RevokePolicyIPChanged, &auth.RevokePolicyUserAgentChanged, &auth.RevokePolicyInactivityExceeded,
+		&auth.FlaggedAt, &auth.FlaggedReason,
 		&auth.ApplicationHostname, &auth.ApplicationDisplayName,
 	)
 	return auth, err

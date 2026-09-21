@@ -140,6 +140,61 @@ func TestGetAccessSnapshot_CredentialForDifferentApplication(t *testing.T) {
 	}
 }
 
+func TestGetAccessSnapshot_IncludesLastSeenAndRevokePolicyOverrides(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+
+	appID := insertApplication(t, ctx, conn, "snapshot-policy.example.test")
+	reqID := insertApprovalRequest(t, ctx, conn, appID, t.Name())
+	activatedAt := time.Now().Add(-time.Hour)
+	authID := insertAuthorization(t, ctx, conn, appID, reqID, authorizationOpts{
+		ExpiresAt:   time.Now().Add(30 * 24 * time.Hour),
+		ActivatedAt: &activatedAt,
+	})
+	tokenHash := testTokenHash(t.Name())
+	insertCredential(t, ctx, conn, authID, appID, tokenHash, credentialOpts{
+		AbsoluteExpiresAt: time.Now().Add(365 * 24 * time.Hour),
+	})
+
+	if _, err := conn.Exec(ctx, `UPDATE applications SET revoke_policy_ip_changed = 'flag_for_review' WHERE id = $1`, appID); err != nil {
+		t.Fatalf("setting application override: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `
+		UPDATE authorizations
+		SET last_seen_ip = '203.0.113.9', last_seen_user_agent = 'old-agent/1.0', revoke_policy_user_agent_changed = 'revoke'
+		WHERE id = $1`, authID); err != nil {
+		t.Fatalf("setting session state/override: %v", err)
+	}
+
+	snap, err := db.GetAccessSnapshot(ctx, "snapshot-policy.example.test", tokenHash)
+	if err != nil {
+		t.Fatalf("GetAccessSnapshot: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("expected a non-nil snapshot")
+	}
+	if snap.AuthorizationVersion == 0 {
+		t.Error("AuthorizationVersion should be populated (starts at 1)")
+	}
+	if snap.LastSeenIP == nil || snap.LastSeenIP.String() != "203.0.113.9" {
+		t.Errorf("LastSeenIP = %v, want 203.0.113.9", snap.LastSeenIP)
+	}
+	if snap.LastSeenUserAgent == nil || *snap.LastSeenUserAgent != "old-agent/1.0" {
+		t.Errorf("LastSeenUserAgent = %v, want old-agent/1.0", snap.LastSeenUserAgent)
+	}
+	if snap.RevokePolicyIPChangedApp == nil || *snap.RevokePolicyIPChangedApp != "flag_for_review" {
+		t.Errorf("RevokePolicyIPChangedApp = %v, want flag_for_review", snap.RevokePolicyIPChangedApp)
+	}
+	if snap.RevokePolicyIPChangedSession != nil {
+		t.Errorf("RevokePolicyIPChangedSession = %v, want nil (no session override was set)", snap.RevokePolicyIPChangedSession)
+	}
+	if snap.RevokePolicyUserAgentChangedSession == nil || *snap.RevokePolicyUserAgentChangedSession != "revoke" {
+		t.Errorf("RevokePolicyUserAgentChangedSession = %v, want revoke", snap.RevokePolicyUserAgentChangedSession)
+	}
+}
+
 func TestTouchLastSeen_CoalescesWithinOneMinute(t *testing.T) {
 	dbURL := skipIfNoDB(t)
 	ctx := context.Background()

@@ -25,6 +25,7 @@ type AdminActions interface {
 	AddAuthorizationNote(ctx context.Context, in admin.AddAuthorizationNoteInput) (store.AuthorizationNote, error)
 	GrantApplicationOwner(ctx context.Context, in admin.GrantApplicationOwnerInput) error
 	RevokeApplicationOwner(ctx context.Context, in admin.RevokeApplicationOwnerInput) error
+	ClearAuthorizationFlag(ctx context.Context, in admin.ClearAuthorizationFlagInput) error
 }
 
 // AdminReadStore is the read-only listing/detail surface the admin API's

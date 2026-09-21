@@ -34,6 +34,14 @@ type Application struct {
 	// see migration 000017.
 	NotifyEmail      *string
 	NotifyWebhookURL *string
+
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded} are
+	// nil when this application uses the deployment-wide revocation-
+	// policy default for that signal instead of its own override --
+	// see migration 000018 and internal/revokepolicy.Resolve.
+	RevokePolicyIPChanged          *string
+	RevokePolicyUserAgentChanged   *string
+	RevokePolicyInactivityExceeded *string
 }
 
 // NotificationOutboxItem is one pending row from notification_outbox
@@ -112,6 +120,23 @@ type Authorization struct {
 	LastSeenIP        *net.IP
 	LastSeenUserAgent *string
 	Version           int32
+
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded} are
+	// this session's own revocation-policy overrides (migration
+	// 000018) -- nil means "inherit the application's own override, or
+	// the deployment-wide default" (internal/revokepolicy.Resolve).
+	// Set only at approval time (see admin.ApproveInput) -- v1 scope
+	// deliberately has no separate endpoint to edit them afterward.
+	RevokePolicyIPChanged          *string
+	RevokePolicyUserAgentChanged   *string
+	RevokePolicyInactivityExceeded *string
+
+	// FlaggedAt/FlaggedReason mark a first-class, visible "needs
+	// attention" state (revocation-policy action "flag_for_review") --
+	// access stays allowed; distinct from RevokedAt. Cleared by an
+	// administrator/owner via ClearAuthorizationFlag once reviewed.
+	FlaggedAt     *time.Time
+	FlaggedReason *string
 
 	// ApplicationHostname/ApplicationDisplayName come from a join against
 	// applications -- see GetAuthorizationByID/ListAuthorizations, the

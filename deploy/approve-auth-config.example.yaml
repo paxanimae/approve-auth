@@ -55,6 +55,23 @@ admin_origin: https://approval-admin.example.com
 # see NOTIFY_SMTP_PASSWORD_FILE/NOTIFY_WEBHOOK_SECRET_FILE in
 # deploy/stack.yml.
 
+# Revocation policy (not spec-mandated; see docs/threat-model.md): the
+# deployment-wide default action for each named signal, one of
+# off/warn/flag_for_review/revoke. An application's own override (admin
+# console: Applications -> Revocation policy) or a session's own
+# override (set at approval time) takes priority over these -- see
+# internal/revokepolicy.Resolve. Shown here at their own built-in
+# defaults: IP changes are flagged for a human to review rather than
+# either ignored or silently revoked (an unattended display going dark
+# with no one around to notice is the exact failure mode this exists to
+# avoid); User-Agent changes (routine browser auto-updates included)
+# are merely logged; inactivity enforcement is off until you pick a
+# threshold that makes sense for your own devices.
+# revoke_policy_ip_changed: flag_for_review
+# revoke_policy_user_agent_changed: warn
+# revoke_policy_inactivity_exceeded: off
+# revocation_inactivity_threshold: 2160h # 90 days -- global only, not layered (see internal/config.Config's own comment)
+
 # admin_auth_mode: "oidc" (default, shown here) or "anonymous".
 # Anonymous mode skips this service's own login entirely -- every
 # caller is treated as one fixed identity, for a deployment that

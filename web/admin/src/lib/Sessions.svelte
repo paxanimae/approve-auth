@@ -92,6 +92,22 @@
       busyId = null;
     }
   }
+
+  // clearFlag acknowledges a revocation-policy flag_for_review state
+  // (internal/revokepolicy) once reviewed -- access was never affected
+  // by the flag, so this doesn't restore or revoke anything, it only
+  // clears the "needs attention" marker.
+  async function clearFlag(a: Authorization) {
+    busyId = a.id;
+    try {
+      await api.clearAuthorizationFlag(a.id);
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      busyId = null;
+    }
+  }
 </script>
 
 <section>
@@ -138,7 +154,12 @@
             <tr>
               <td title={a.application_hostname}>{a.application_display_name}</td>
               <td>{a.label ?? "—"}</td>
-              <td><span class="badge {stateBadgeClass(sessionState(a))}">{sessionState(a)}</span></td>
+              <td>
+                <span class="badge {stateBadgeClass(sessionState(a))}">{sessionState(a)}</span>
+                {#if a.flagged_at}
+                  <span class="badge badge-warning" title={a.flagged_reason ?? ""}>flagged</span>
+                {/if}
+              </td>
               <td title={formatDateTime(a.expires_at)}>{formatRelative(a.expires_at)}</td>
               <td title={formatDateTime(a.last_seen_at)}>{a.last_seen_at ? formatRelative(a.last_seen_at) : "Never seen"}</td>
               <td>{a.approved_by}</td>
@@ -146,6 +167,9 @@
                 {#if !a.revoked_at}
                   <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => openRenew(a)}>Renew</button>
                   <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => revoke(a)}>Revoke</button>
+                {/if}
+                {#if a.flagged_at}
+                  <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => clearFlag(a)}>Clear flag</button>
                 {/if}
                 <button class="btn btn-sm" onclick={() => openNotes(a)}>Notes</button>
               </td>

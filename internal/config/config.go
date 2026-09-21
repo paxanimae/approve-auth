@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/frid-iks/approve-auth/internal/revokepolicy"
 )
 
 // RateLimits mirrors the atomic distributed limits from spec section 11.
@@ -81,6 +83,23 @@ type Config struct {
 	// one signing key, matching the scope-discipline decision to keep
 	// this a generic webhook, not a per-destination secrets vault).
 	NotifyWebhookSecret string `yaml:"-"`
+
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded} are
+	// the deployment-wide revocation-policy defaults
+	// (internal/revokepolicy) -- each must be one of off/warn/
+	// flag_for_review/revoke. An application or session-level override
+	// (migration 000018) takes priority over these; see
+	// internal/revokepolicy.Resolve.
+	RevokePolicyIPChanged          string `yaml:"revoke_policy_ip_changed"`
+	RevokePolicyUserAgentChanged   string `yaml:"revoke_policy_user_agent_changed"`
+	RevokePolicyInactivityExceeded string `yaml:"revoke_policy_inactivity_exceeded"`
+	// RevocationInactivityThreshold is InactivityExceeded's "how long
+	// is idle" definition -- deliberately global-only, not layered per
+	// application/session like the action itself, to bound this
+	// feature's scope (a per-session inactivity window is a much rarer
+	// need than a per-session action override, e.g. "revoke this one
+	// TV's session on IP change but only flag its User-Agent change").
+	RevocationInactivityThreshold Duration `yaml:"revocation_inactivity_threshold"`
 
 	// AdminAuthMode is "oidc" (default) or "anonymous". Anonymous mode
 	// skips this service's own login entirely -- every request to the
@@ -160,6 +179,19 @@ func Defaults() *Config {
 		AdminAnonymousRole:        "administrator",
 
 		ClaimEncryptionKeyID: "primary",
+
+		// A roaming laptop and a stationary digital sign warrant
+		// different defaults, but *some* default must exist: an IP
+		// change is flagged for human review rather than either
+		// silently ignored or an unattended display going dark with
+		// no one around to notice; a User-Agent change (routine
+		// browser auto-updates included) is merely logged; inactivity
+		// enforcement is off until an operator picks a threshold that
+		// makes sense for their own devices.
+		RevokePolicyIPChanged:          string(revokepolicy.ActionFlagForReview),
+		RevokePolicyUserAgentChanged:   string(revokepolicy.ActionWarn),
+		RevokePolicyInactivityExceeded: string(revokepolicy.ActionOff),
+		RevocationInactivityThreshold:  hours(90 * 24),
 
 		DefaultAuthorizationDuration: hours(30 * 24),
 		MaxAuthorizationDuration:     hours(365 * 24),

@@ -56,7 +56,7 @@ func TestMutationsWriteAuditEvents(t *testing.T) {
 		t.Errorf("after CreateApprovalRequest: counts = %v, want request.created=1", counts)
 	}
 
-	auth, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test")
+	auth, err := db.ApproveRequest(ctx, req.ID, req.Version, time.Now().Add(30*24*time.Hour), 30*time.Minute, "", "", "admin@example.test", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ApproveRequest: %v", err)
 	}
