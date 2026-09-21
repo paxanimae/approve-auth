@@ -1,19 +1,159 @@
-# Approve
+<p align="center">
+  <img src="web/public/assets/logo.svg" width="72" alt="Approve logo" />
+</p>
 
-**Approve** (repo/service name: `approve-auth`) is a Traefik ForwardAuth
-authorization service: it lets an
-administrator manually approve a browser (e.g. a reception TV) for
-time-limited access to one Traefik-protected application hostname, via
-ForwardAuth. Traefik remains the sole reverse proxy; this service owns
-authorization decisions, approval requests, credentials, administration, and
-audit history.
+<h1 align="center">Approve</h1>
 
-Status: **Milestones 1-5 substantially complete** (foundation, ForwardAuth +
-Traefik integration, enrollment + lifecycle, the admin OIDC console, and
-operations tooling). Milestone 6 (release hardening) is in progress. See
-`docs/security-review.md` for a self-review pass and dependency/image scan
-results, `docs/threat-model.md` for what's implemented vs. explicitly
-deferred, and the sections below for how to actually run it.
+<p align="center">
+  <b>Authorize unattended browsers — no device software, no user login.</b><br />
+  A human vouches for the device once; it just works after that.
+</p>
+
+---
+
+**Approve** (repo/service name: `approve-auth`) sits in front of an internal
+web application via your reverse proxy's ForwardAuth (or equivalent) hook.
+When an unrecognized browser shows up — a reception TV, a warehouse
+Andon board, a kiosk in a location you don't manage — it's redirected to a
+simple request page instead of a login form. An administrator reviews and
+approves that request once, from anywhere. The browser then holds a
+long-lived credential and never has to ask again, until someone revokes it.
+
+No agent to install. No device to enroll in an MDM. No user account for the
+device to log into. Just a browser, and a human who vouches for it.
+
+## How it works
+
+```mermaid
+sequenceDiagram
+    participant D as Unattended browser
+    participant P as Reverse proxy
+    participant S as Approve
+    participant H as Administrator
+    participant App as Protected app
+
+    D->>P: GET https://app.example.com/
+    P->>S: ForwardAuth decision request (no credential cookie)
+    S-->>P: 303, Location: /__approve-auth/request
+    P-->>D: Redirect
+    D->>S: Request access (optional label / message)
+    S-->>D: Verification code + waiting page (auto-polling)
+    S->>H: Notify (email / webhook)
+    H->>S: Review the request in the admin console
+    H->>S: Approve, choosing a session duration
+    D->>S: Poll sees "approved" -> claim credential
+    S-->>D: Long-lived __Host-approve-auth cookie
+    D->>App: Original request, now carrying the cookie
+    Note over D,App: Every later visit: cookie present -> instant allow, no round trip to a human
+```
+
+1. **Redirect.** The proxy asks Approve's Authorization listener whether
+   this request may proceed. No valid credential cookie means "no" — the
+   browser is bounced to Approve's own request page, on the same host.
+2. **Request.** The device (or a human standing in front of it) submits a
+   request, optionally with a label and message. Approve issues a
+   verification code and starts a waiting page that polls automatically.
+3. **Notify & approve.** Approve can email or webhook whoever's on call.
+   An administrator opens the console, sees the request — application,
+   verification code, source IP/geo, unverified label/message — and
+   approves it for a chosen duration, or denies it.
+4. **Claim.** The waiting browser detects the approval, claims its
+   credential, and gets a `__Host-...` cookie scoped to that one
+   application's hostname. It's redirected back to whatever it originally
+   asked for.
+5. **Just works.** Every subsequent request carries the cookie. The
+   Authorization listener checks it against PostgreSQL directly — no
+   caching, no stale allow — and answers in-path with no human involved,
+   until the credential expires, is revoked, or trips a revocation-policy
+   signal (IP/User-Agent change, inactivity).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph client["Unattended device"]
+        B["Browser"]
+    end
+    A["Administrator"]
+
+    subgraph proxy["Reverse proxy (Traefik today)"]
+        R1["App router"]
+        R2["/__approve-auth/* router"]
+        FA["ForwardAuth"]
+    end
+
+    subgraph svc["Approve -- cmd/server (one binary)"]
+        PUB["Public listener :8080<br/>request / waiting / claim pages"]
+        AUTHL["Authorization listener :8443 (mTLS)<br/>the one ForwardAuth decision"]
+        ADM["Admin listener :8081<br/>OIDC console + API"]
+        OPS["Ops listener :9090<br/>health + Prometheus metrics"]
+        WRK["Retention worker<br/>expiry, redaction, notifications"]
+    end
+
+    DB[("PostgreSQL<br/>sole source of truth")]
+    OIDC["OIDC provider"]
+    APPX["Protected application"]
+    NOTIFY["Email / webhook"]
+
+    B -- HTTPS --> R1
+    R1 --> FA
+    FA -- mTLS decision --> AUTHL
+    R1 -- allowed --> APPX
+    B -- enrollment pages --> R2
+    R2 --> PUB
+    A -- HTTPS --> ADM
+    ADM <--> OIDC
+    AUTHL --> DB
+    PUB --> DB
+    ADM --> DB
+    WRK --> DB
+    WRK --> NOTIFY
+```
+
+Four independently-routed listeners, one PostgreSQL database as the sole
+authoritative state store, no other moving parts:
+
+| Listener | Purpose |
+|---|---|
+| **Authorization** (mTLS) | The one decision the proxy calls per request: allow, deny, or redirect. Reads PostgreSQL live — an authorization can be revoked and the very next request reflects it. |
+| **Public** | The reserved `/__approve-auth/*` paths: request a device, watch it wait, claim a credential. No authentication of its own — that's the point. |
+| **Admin** | OIDC (or anonymous-mode, for deployments that already gate access another way) login and the console: approve/deny, revoke, manage applications, audit log, live settings. |
+| **Ops** | `/livez`, `/readyz`, `/metrics` — internal network only. |
+
+`cmd/admin` is a separate operator CLI (register an application, run
+migrations, revoke an admin session urgently, purge the audit log) that
+talks to PostgreSQL directly — never a network listener. See `docs/adr/`
+for why.
+
+## Capabilities beyond the basic flow
+
+- **Per-application and per-session revocation policy** — configurable
+  response (warn / flag for review / revoke) to a credential's IP address
+  changing, its User-Agent changing, or it going inactive past a
+  threshold, layered global → application → session.
+- **Role-scoped access**: administrator, read-only viewer, and
+  application-owner (sees and acts only on their own application's
+  requests/sessions).
+- **Notifications** — email and/or a generic signed webhook when a new
+  request comes in, with per-channel delivery tracking and bounded
+  retries.
+- **Full audit trail** — every decision, mutation, and admin action,
+  independently retained from operational data.
+- **Configurable retention** — resolved requests, IP/User-Agent metadata,
+  and anonymous request text each redact/expire on their own schedule.
+- **GeoIP enrichment** (optional, bring-your-own `.mmdb`), live-editable
+  deployment-wide settings (contact info, notification targets,
+  revocation defaults) with no restart required.
+
+## Status
+
+Reverse-proxy integration ships today for **Traefik** (ForwardAuth,
+`deploy/traefik-approve-auth-middleware.yml`). The Authorization
+listener's contract (a handful of `X-Forwarded-*` headers, mTLS, and a
+204/303/401/403/503 response contract) is proxy-agnostic in principle —
+see `docs/threat-model.md` and `docs/security-review.md` for what's
+implemented vs. explicitly deferred, and `docs/acceptance-criteria.md`
+for the full sign-off walkthrough.
 
 ## Start here
 
@@ -23,37 +163,15 @@ deferred, and the sections below for how to actually run it.
 - **Developers working on this repo:** `docs/dev-environment.md` for the
   containerized local setup (no Go/Node/mkcert install on the host), then
   the section below.
-- **Understanding what this service does and doesn't do:** the product
-  spec this build targets (not checked into this repo -- see whoever gave
-  you this codebase for it) and `docs/threat-model.md`.
+- **Understanding what this service does and doesn't do:** `docs/threat-model.md`
+  and `docs/acceptance-criteria.md`.
 - **API contracts:** `api/public.yaml` and `api/admin.yaml` (OpenAPI 3.1,
   validated in CI against the real implementation, not a draft).
-
-## Architecture at a glance
-
-One binary (`cmd/server`) exposes four independently-routed listeners --
-Public, Admin, Authorization (mTLS), and Operations -- backed by
-PostgreSQL as the sole authoritative state store. `cmd/admin` is a separate
-operator CLI (register applications, run migrations, revoke an admin
-session urgently, purge the audit log) that talks to PostgreSQL directly,
-never a network listener. See `docs/adr/` for why.
-
-```
-Browser -> Traefik HTTPS application router
-              |
-              +-> ForwardAuth -> Authorization listener -> PostgreSQL
-              |
-              +-> application backend (Traefik proxies all content)
-
-Browser -> Traefik same-host /__approve-auth/* router -> Public listener
-Admin   -> Traefik dedicated admin hostname -> Admin listener -> OIDC provider
-Worker  -> PostgreSQL cleanup / audit expiry events (runs inside cmd/server)
-```
 
 ## Development
 
 No Go, Node, or mkcert install is required on the host. Every build/test/lint
-command runs inside a pinned Docker image -- see `scripts/dev.sh` (bash) or
+command runs inside a pinned Docker image — see `scripts/dev.sh` (bash) or
 `scripts/dev.ps1` (PowerShell), and `docs/dev-environment.md` for the full
 local setup including the real-Traefik integration stack and the admin
 console's OIDC login flow against `cmd/mock-oidc`.
@@ -85,9 +203,11 @@ PostgreSQL instance, and the real-Traefik integration suite.
 | `internal/enrollment` | Request/waiting/claim browser-facing flow |
 | `internal/admin`, `internal/adminsession` | Admin mutation business logic; OIDC login + session |
 | `internal/oidc` | The OIDC Authorization Code + PKCE client |
+| `internal/notify` | Email / webhook notification delivery |
+| `internal/revokepolicy` | The layered IP/User-Agent/inactivity revocation policy engine |
 | `internal/store` | All PostgreSQL access; migrations live in `migrations/` |
 | `internal/httpserver` | The four listeners' HTTP handlers |
-| `internal/worker` | Retention/cleanup jobs (spec section 12) |
+| `internal/worker` | Retention/cleanup jobs |
 | `internal/metrics` | Prometheus metrics |
 | `internal/config` | Config loading, secret handling, validation |
 | `web/admin` | The Svelte admin console, embedded into the Go binary |
