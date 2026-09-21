@@ -265,6 +265,14 @@ func listApplicationOwnersHandler(readStore AdminReadStore) http.HandlerFunc {
 			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list application owners")
 			return
 		}
+		// store.ListApplicationOwners returns a nil slice (not an empty
+		// one) when there are no rows, which would otherwise marshal to
+		// JSON null -- every other list endpoint in this API avoids
+		// that via make([]T, len(x)); normalized the same way here so
+		// the console never has to null-check the response.
+		if owners == nil {
+			owners = []string{}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"owners": owners})
 	}
 }

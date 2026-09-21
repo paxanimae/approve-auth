@@ -965,6 +965,33 @@ func TestListApplicationOwners_ViewerCanRead(t *testing.T) {
 	}
 }
 
+// TestListApplicationOwners_EmptyResultIsJSONArrayNotNull guards against
+// a real bug: store.ListApplicationOwners returns a nil (not empty)
+// slice when an application has no owners, which store.DB's zero
+// value here reproduces exactly -- if the handler passed that straight
+// through, it would marshal to `"owners":null`, and the admin
+// console's `current.join(", ")` call would throw on it silently
+// (nothing visibly happens when the Owners button is clicked, for any
+// application that has never had an owner granted).
+func TestListApplicationOwners_EmptyResultIsJSONArrayNotNull(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/applications/"+uuid.New().String()+"/owners", "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	body := strings.TrimSpace(string(bodyBytes))
+	if body != `{"owners":[]}` {
+		t.Errorf("body = %s, want {\"owners\":[]} (not null)", body)
+	}
+}
+
 // --- Revocation policy: clear-flag endpoint ---
 
 func TestClearAuthorizationFlag_Success(t *testing.T) {
