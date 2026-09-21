@@ -28,6 +28,13 @@ var (
 	ErrRateLimited              = errors.New("enrollment: rate limit exceeded")
 	ErrNotClaimable             = errors.New("enrollment: request is not in a claimable/cancelable state")
 	ErrAlreadyClaimedNoEnvelope = errors.New("enrollment: already claimed and the retry window has passed")
+	// ErrAnonymousMessageNotAllowed means this application has
+	// AllowAnonymousMessage=false (the default -- migration 000020,
+	// endpoint-review.md F3) and the submission carried a non-empty
+	// label or message anyway. Rejected outright, not silently
+	// dropped, so a caller relying on the message actually reaching an
+	// approver finds out immediately rather than assuming it did.
+	ErrAnonymousMessageNotAllowed = errors.New("enrollment: this application does not accept a label or message with the request")
 )
 
 type Service struct {
@@ -81,6 +88,7 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (BootstrapRe
 				ApplicationHostname:    app.Hostname,
 				ContactInfo:            contactInfo,
 				CSRFToken:              csrfToken(ec.CSRFSecret),
+				AllowAnonymousMessage:  app.AllowAnonymousMessage,
 			}, nil
 		}
 	}
@@ -108,6 +116,7 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (BootstrapRe
 		ContactInfo:            contactInfo,
 		RawPendingToken:        rawToken,
 		CSRFToken:              csrfToken(ec.CSRFSecret),
+		AllowAnonymousMessage:  app.AllowAnonymousMessage,
 	}, nil
 }
 
@@ -145,6 +154,22 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 	}
 	if !validCSRFToken(ec.CSRFSecret, in.CSRFToken) {
 		return SubmitRequestResult{}, ErrInvalidCSRF
+	}
+
+	// endpoint-review.md F3: an application that hasn't opted in to
+	// AllowAnonymousMessage (false by default) must reject a non-empty
+	// label or message outright, not silently drop it -- the same
+	// policy covers the label so it can't become a replacement message
+	// field.
+	app, found, err := s.store.GetApplicationByID(ctx, ec.ApplicationID)
+	if err != nil {
+		return SubmitRequestResult{}, fmt.Errorf("enrollment: submit: %w", err)
+	}
+	if !found {
+		return SubmitRequestResult{}, ErrApplicationUnavailable
+	}
+	if !app.AllowAnonymousMessage && (in.Label != "" || in.Message != "") {
+		return SubmitRequestResult{}, ErrAnonymousMessageNotAllowed
 	}
 
 	// Repeated submissions with the same pending proof reuse the
@@ -186,8 +211,13 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 		}
 	}
 
-	label := truncateRunes(in.Label, 100)
-	message := truncateRunes(in.Message, 500)
+	// sanitizeFreeText strips control/bidi-override characters and caps
+	// line count before truncation (endpoint-review.md F3's "message
+	// validation does not explicitly constrain line count or misleading
+	// control characters") -- label allows no newlines at all (0), a
+	// single-line field by design.
+	label := truncateRunes(sanitizeFreeText(in.Label, 0), 100)
+	message := truncateRunes(sanitizeFreeText(in.Message, maxMessageLines), 500)
 	returnPath := validateReturnPath(in.ReturnTo)
 
 	geoCountry, geoCity, _ := s.geoip.Lookup(in.ClientIP)
@@ -244,17 +274,12 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 // existing request (idempotent replay or a lost creation race), which
 // already got its own notification queued the first time.
 func (s *Service) enqueueRequestCreatedNotification(ctx context.Context, req store.ApprovalRequest) {
-	label := ""
-	if req.Label != nil {
-		label = *req.Label
-	}
-	message := ""
-	if req.Message != nil {
-		message = *req.Message
-	}
+	// Label/Message are deliberately excluded (endpoint-review.md F3 --
+	// see notify.RequestCreatedPayload's own comment): an approver
+	// reviews the actual submitted text, marked unverified, in the
+	// admin console itself, not in the notification that alerts them.
 	payload, err := json.Marshal(notify.RequestCreatedPayload{
-		RequestID: req.ID.String(), VerificationCode: req.VerificationCode,
-		Label: label, Message: message, RequestedAt: req.RequestedAt,
+		RequestID: req.ID.String(), VerificationCode: req.VerificationCode, RequestedAt: req.RequestedAt,
 	})
 	if err != nil {
 		log.Printf("enrollment: submit: marshaling notification payload for request %s: %v", req.ID, err)

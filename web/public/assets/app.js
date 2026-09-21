@@ -107,7 +107,8 @@
         doSubmit();
         return;
       }
-      setNotice("Requesting access automatically in " + remaining + "s… start typing to fill in a message first.");
+      var hint = labelField || messageField ? " start typing to fill in a message first." : "";
+      setNotice("Requesting access automatically in " + remaining + "s…" + hint);
       remaining--;
       timer = setTimeout(tick, 1000);
     }

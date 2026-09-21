@@ -1,0 +1,12 @@
+-- endpoint-review.md F3: an anonymous, unauthenticated requester's
+-- free-text label/message reaches an administrator (and, previously,
+-- outbound notifications) with no verification of who wrote it --
+-- "Recommendation: disable anonymous free-text messages by default ...
+-- make them an explicit per-application option with server-side
+-- enforcement." NOT NULL DEFAULT false means every existing
+-- application, on upgrade, stops accepting a label/message until an
+-- administrator explicitly opts it back in -- a deliberate behavior
+-- change, not an oversight. One flag governs both the label and the
+-- message ("apply the same policy to the anonymous label so it cannot
+-- become a replacement message field").
+ALTER TABLE applications ADD COLUMN allow_anonymous_message BOOLEAN NOT NULL DEFAULT false;

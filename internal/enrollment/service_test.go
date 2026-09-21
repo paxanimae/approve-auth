@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +88,16 @@ func setup(t *testing.T) (*store.DB, *enrollment.Service, string) {
 	app, err := db.CreateApplication(ctx, hostname, "Enrollment Test", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
+	}
+	// Most of this file's tests submit a label/message and expect it to
+	// be accepted -- AllowAnonymousMessage defaults to false (migration
+	// 000020, endpoint-review.md F3), so this shared test application
+	// opts in. Tests that specifically exercise the false/default case
+	// build their own application instead (see
+	// TestSubmitRequest_RejectsMessageWhenNotAllowed).
+	allowAnonymousMessage := true
+	if _, err := db.UpdateApplication(ctx, app.ID, app.Version, store.UpdateApplicationParams{AllowAnonymousMessage: &allowAnonymousMessage}, "test"); err != nil {
+		t.Fatalf("UpdateApplication (enabling AllowAnonymousMessage): %v", err)
 	}
 	// One sweep covering everything a test creates on top of this
 	// application, in dependency order (see internal/admin's test
@@ -288,12 +299,13 @@ func TestSubmitRequest_EnqueuesRequestCreatedNotification(t *testing.T) {
 	for _, p := range pending {
 		var decoded struct {
 			RequestID string `json:"request_id"`
-			Label     string `json:"label"`
 		}
 		if err := json.Unmarshal(p.Payload, &decoded); err == nil && decoded.RequestID == submitted.RequestID {
 			found = true
-			if decoded.Label != "Lobby TV" {
-				t.Errorf("payload label = %q, want Lobby TV", decoded.Label)
+			// endpoint-review.md F3: the requester's own label/message
+			// must never ride along in the enqueued notification payload.
+			if strings.Contains(string(p.Payload), "Lobby TV") {
+				t.Errorf("notification payload must not contain the request's label/message: %s", p.Payload)
 			}
 			if p.EventType != notify.EventRequestCreated {
 				t.Errorf("event_type = %q, want %q", p.EventType, notify.EventRequestCreated)
@@ -302,6 +314,56 @@ func TestSubmitRequest_EnqueuesRequestCreatedNotification(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("no pending notification found for request %s", submitted.RequestID)
+	}
+}
+
+// TestSubmitRequest_RejectsMessageWhenNotAllowed covers
+// endpoint-review.md F3's default-deny: a freshly registered
+// application (AllowAnonymousMessage defaults to false) must reject a
+// non-empty label/message outright, not silently drop it.
+func TestSubmitRequest_RejectsMessageWhenNotAllowed(t *testing.T) {
+	db, err := store.Open(context.Background(), skipIfNoDB(t))
+	if err != nil {
+		t.Fatalf("opening store: %v", err)
+	}
+	t.Cleanup(db.Close)
+	ctx := context.Background()
+
+	hostname := "enrollment-test-noanon-" + randomSuffix(t) + ".example.test"
+	app, err := db.CreateApplication(ctx, hostname, "No Anonymous Messages", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.Pool.Exec(ctx, `DELETE FROM enrollment_contexts WHERE application_id = $1`, app.ID)
+		_, _ = db.Pool.Exec(ctx, `DELETE FROM applications WHERE id = $1`, app.ID)
+	})
+	if app.AllowAnonymousMessage {
+		t.Fatalf("newly created application: AllowAnonymousMessage = true, want false by default")
+	}
+
+	svc := enrollment.New(db, geoip.Noop{}, testConfig())
+	boot, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	if _, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{
+		PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken, Message: "please let me in", ClientIP: "203.0.113.55",
+	}); !errors.Is(err, enrollment.ErrAnonymousMessageNotAllowed) {
+		t.Errorf("SubmitRequest with a message: got %v, want ErrAnonymousMessageNotAllowed", err)
+	}
+
+	if _, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{
+		PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken, Label: "front-desk-tv", ClientIP: "203.0.113.55",
+	}); !errors.Is(err, enrollment.ErrAnonymousMessageNotAllowed) {
+		t.Errorf("SubmitRequest with a label: got %v, want ErrAnonymousMessageNotAllowed", err)
+	}
+
+	if _, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{
+		PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken, ClientIP: "203.0.113.55",
+	}); err != nil {
+		t.Errorf("SubmitRequest with neither label nor message: got %v, want no error", err)
 	}
 }
 

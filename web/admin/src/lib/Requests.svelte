@@ -128,7 +128,7 @@
             <th>Application</th>
             <th>Label</th>
             <th>Device</th>
-            <th>Message</th>
+            <th title="Supplied by the anonymous requester -- not verified as coming from anyone in particular">Message (unverified)</th>
             <th>Code</th>
             <th>Status</th>
             <th>Requested</th>
@@ -169,7 +169,7 @@
 <DurationDialog
   bind:open={approveDialogOpen}
   title="Approve access"
-  description={approveTarget?.message ? `Message from the device: “${approveTarget.message}”` : undefined}
+  description={approveTarget?.message ? `Unverified text supplied by the requester: “${approveTarget.message}” -- this is not proof of who is asking; verify independently before approving.` : undefined}
   confirmLabel="Approve"
   initialDays={Math.max(1, Math.round(me.default_authorization_duration_seconds / 86400))}
   maxDays={Math.max(1, Math.round(me.max_authorization_duration_seconds / 86400))}

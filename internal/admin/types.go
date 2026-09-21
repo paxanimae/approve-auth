@@ -136,7 +136,10 @@ type UpdateApplicationInput struct {
 	RevokePolicyIPChanged          *string
 	RevokePolicyUserAgentChanged   *string
 	RevokePolicyInactivityExceeded *string
-	UpdatedBy                      string
+	// AllowAnonymousMessage: nil means leave unchanged (migration
+	// 000020, endpoint-review.md F3).
+	AllowAnonymousMessage *bool
+	UpdatedBy             string
 }
 
 // DisableApplicationInput backs POST /api/v1/applications/{id}/disable.

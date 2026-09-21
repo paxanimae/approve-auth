@@ -217,6 +217,7 @@ func (s *Service) UpdateApplication(ctx context.Context, in UpdateApplicationInp
 		ContactInfo: in.ContactInfo, NotifyEmail: in.NotifyEmail, NotifyWebhookURL: in.NotifyWebhookURL,
 		RevokePolicyIPChanged: in.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: in.RevokePolicyUserAgentChanged,
 		RevokePolicyInactivityExceeded: in.RevokePolicyInactivityExceeded,
+		AllowAnonymousMessage:          in.AllowAnonymousMessage,
 	}, in.UpdatedBy)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {

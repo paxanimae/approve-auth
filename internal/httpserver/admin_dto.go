@@ -43,6 +43,11 @@ type applicationDTO struct {
 	RevokePolicyIPChanged          *string `json:"revoke_policy_ip_changed,omitempty"`
 	RevokePolicyUserAgentChanged   *string `json:"revoke_policy_user_agent_changed,omitempty"`
 	RevokePolicyInactivityExceeded *string `json:"revoke_policy_inactivity_exceeded,omitempty"`
+	// AllowAnonymousMessage (migration 000020, endpoint-review.md F3):
+	// unlike ContactInfo/NotifyEmail/etc above, this is never omitted --
+	// every application has a real true/false value, not an
+	// inherits-a-default state.
+	AllowAnonymousMessage bool `json:"allow_anonymous_message"`
 }
 
 func newApplicationDTO(a store.Application) applicationDTO {
@@ -53,6 +58,7 @@ func newApplicationDTO(a store.Application) applicationDTO {
 		ContactInfo: a.ContactInfo, NotifyEmail: a.NotifyEmail, NotifyWebhookURL: a.NotifyWebhookURL,
 		RevokePolicyIPChanged: a.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: a.RevokePolicyUserAgentChanged,
 		RevokePolicyInactivityExceeded: a.RevokePolicyInactivityExceeded,
+		AllowAnonymousMessage:          a.AllowAnonymousMessage,
 	}
 }
 

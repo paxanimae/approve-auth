@@ -1092,7 +1092,15 @@ components:
         revoke_policy_inactivity_exceeded:
           type: string
           enum: [off, warn, flag_for_review, revoke]
-      required: [id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, version]
+        allow_anonymous_message:
+          type: boolean
+          description: >-
+            False by default for every application (migration 000020,
+            endpoint-review.md F3). Whether the anonymous enrollment
+            page may accept a non-empty label or message at all --
+            unlike the fields above, always present, never an
+            inherits-a-default state.
+      required: [id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, version, allow_anonymous_message]
       additionalProperties: false
 
     CreateApplicationInput:
@@ -1163,6 +1171,9 @@ components:
         revoke_policy_inactivity_exceeded:
           type: string
           enum: [off, warn, flag_for_review, revoke]
+        allow_anonymous_message:
+          type: boolean
+          description: Omit to leave unchanged.
       required: [version]
       additionalProperties: false
 

@@ -60,6 +60,10 @@ type Config struct {
 	// config, unlike EmailFrom/the defaults: it's a credential, and
 	// secrets never move into a plain DB column.
 	WebhookSecret string
+	// AdminOrigin backs Event.AdminConsoleURL (endpoint-review.md F3):
+	// the deployment's own configured admin console origin, never
+	// requester-controlled input.
+	AdminOrigin string
 }
 
 // Dispatcher delivers one Event to a Destination via email and/or
@@ -123,11 +127,11 @@ func (d *Dispatcher) sendEmail(ctx context.Context, from, to string, e Event) er
 }
 
 // buildEmailMessage is a pure function (no I/O) so it can be unit
-// tested directly without a real SMTP server. Label/Message are
-// browser-submitted and only ever placed in the body, never a header,
-// so they can't be used for header injection regardless of content;
-// ApplicationDisplayName is admin-controlled but still sanitized before
-// use in the Subject header as cheap defense in depth.
+// tested directly without a real SMTP server. It deliberately never
+// includes the request's own label/message (endpoint-review.md F3 --
+// see RequestCreatedPayload's own comment); ApplicationDisplayName is
+// admin-controlled but still sanitized before use in the Subject header
+// as cheap defense in depth.
 func buildEmailMessage(from, to string, e Event) []byte {
 	// Sanitized once and reused for both the Subject header and the
 	// body's own "Application: ..." line -- a stray CRLF in this value
@@ -147,13 +151,10 @@ func buildEmailMessage(from, to string, e Event) []byte {
 	b.WriteString("A new access request is waiting for approval.\r\n\r\n")
 	fmt.Fprintf(&b, "Application: %s (%s)\r\n", displayName, e.ApplicationHostname)
 	fmt.Fprintf(&b, "Verification code: %s\r\n", e.VerificationCode)
-	if e.Label != "" {
-		fmt.Fprintf(&b, "Label: %s\r\n", e.Label)
-	}
-	if e.Message != "" {
-		fmt.Fprintf(&b, "Message: %s\r\n", e.Message)
-	}
 	fmt.Fprintf(&b, "Requested at: %s\r\n", e.RequestedAt.Format(time.RFC1123))
+	if e.AdminConsoleURL != "" {
+		fmt.Fprintf(&b, "\r\nAny label or message the requester supplied is not verified -- review it directly in the admin console before acting on it: %s\r\n", e.AdminConsoleURL)
+	}
 	return []byte(b.String())
 }
 

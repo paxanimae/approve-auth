@@ -17,25 +17,34 @@ const EventRequestCreated = "request.created"
 // notify_email/notify_webhook_url), so baking in a possibly-stale
 // display name at enqueue time would be redundant, not just extra
 // bytes.
+//
+// Label/Message are deliberately NOT here (endpoint-review.md F3:
+// "exclude anonymous message and label content from email and webhook
+// notifications by default"). An anonymous, unauthenticated requester's
+// own text has no place riding along in a notification an approver
+// might read on a phone lock screen or a downstream automation might
+// parse -- an approver reviews the actual submitted text (marked
+// unverified) in the admin console itself, not in the notification
+// that alerts them to look.
 type RequestCreatedPayload struct {
 	RequestID        string    `json:"request_id"`
 	VerificationCode string    `json:"verification_code"`
-	Label            string    `json:"label,omitempty"`
-	Message          string    `json:"message,omitempty"`
 	RequestedAt      time.Time `json:"requested_at"`
 }
 
 // Event is what a Dispatcher actually delivers -- a RequestCreatedPayload
 // merged with the application fields resolved fresh at delivery time.
+// AdminConsoleURL is built by the caller from the deployment's own
+// configured admin origin (internal/notify.Config.AdminOrigin), never
+// from anything requester-controlled.
 type Event struct {
 	Type                   string
 	ApplicationHostname    string
 	ApplicationDisplayName string
 	RequestID              string
 	VerificationCode       string
-	Label                  string
-	Message                string
 	RequestedAt            time.Time
+	AdminConsoleURL        string
 }
 
 // webhookBody is the JSON body actually POSTed to a webhook -- a
@@ -48,14 +57,13 @@ type webhookBody struct {
 	ApplicationDisplayName string    `json:"application_display_name"`
 	RequestID              string    `json:"request_id,omitempty"`
 	VerificationCode       string    `json:"verification_code,omitempty"`
-	Label                  string    `json:"label,omitempty"`
-	Message                string    `json:"message,omitempty"`
 	RequestedAt            time.Time `json:"requested_at,omitempty"`
+	AdminConsoleURL        string    `json:"admin_console_url,omitempty"`
 }
 
 func newWebhookBody(e Event) webhookBody {
 	return webhookBody{
 		Event: e.Type, ApplicationHostname: e.ApplicationHostname, ApplicationDisplayName: e.ApplicationDisplayName,
-		RequestID: e.RequestID, VerificationCode: e.VerificationCode, Label: e.Label, Message: e.Message, RequestedAt: e.RequestedAt,
+		RequestID: e.RequestID, VerificationCode: e.VerificationCode, RequestedAt: e.RequestedAt, AdminConsoleURL: e.AdminConsoleURL,
 	}
 }

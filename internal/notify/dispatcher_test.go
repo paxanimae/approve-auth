@@ -19,7 +19,7 @@ import (
 func testEvent() notify.Event {
 	return notify.Event{
 		Type: notify.EventRequestCreated, ApplicationHostname: "app-a.example.test", ApplicationDisplayName: "App A",
-		RequestID: "req-1", VerificationCode: "ABC123", Label: "Lobby TV", Message: "please approve",
+		RequestID: "req-1", VerificationCode: "ABC123", AdminConsoleURL: "https://admin.example.test",
 		RequestedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 	}
 }
@@ -137,7 +137,10 @@ func TestBuildEmailMessage_SanitizesHeaderInjectionAndIncludesBody(t *testing.T)
 	if !strings.Contains(text, "Verification code: ABC123") {
 		t.Errorf("message body missing verification code: %s", text)
 	}
-	if !strings.Contains(text, "Label: Lobby TV") {
-		t.Errorf("message body missing label: %s", text)
+	if strings.Contains(text, "Label:") || strings.Contains(text, "Message:") {
+		t.Errorf("message body must never include the request's own label/message (endpoint-review.md F3): %s", text)
+	}
+	if !strings.Contains(text, "https://admin.example.test") {
+		t.Errorf("message body missing the admin console link: %s", text)
 	}
 }

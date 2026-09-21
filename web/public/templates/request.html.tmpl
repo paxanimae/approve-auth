@@ -19,6 +19,7 @@
     <form id="request-form" method="post" action="/__approve-auth/requests">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
       <input type="hidden" name="return_to" value="{{.ReturnTo}}" />
+      {{if .AllowAnonymousMessage}}
       <div class="field">
         <label for="label">Device label (optional)</label>
         <input type="text" id="label" name="label" maxlength="100" />
@@ -27,6 +28,8 @@
         <label for="message">Message to the administrator (optional)</label>
         <textarea id="message" name="message" maxlength="500" rows="3"></textarea>
       </div>
+      <p class="field-note">This is not verified as coming from anyone in particular -- the administrator will confirm your identity separately.</p>
+      {{end}}
       <button type="submit" class="btn-primary">Request access</button>
     </form>
     <p class="auto-notice" id="auto-notice" aria-live="polite"></p>

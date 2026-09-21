@@ -79,7 +79,7 @@ func (d *Dispatcher) DeliverPending(ctx context.Context, s JobStore, limit int) 
 			continue
 		}
 
-		event, err := buildEvent(item, app)
+		event, err := d.buildEvent(item, app)
 		if err != nil {
 			_ = s.MarkNotificationFailed(ctx, item.ID, time.Now().Add(maxBackoff), err.Error())
 			continue
@@ -127,8 +127,10 @@ func derefOrEmpty(p *string) string {
 // buildEvent unmarshals item's payload according to its event_type and
 // merges in app's own fields, freshly read at delivery time (see
 // RequestCreatedPayload's own comment on why hostname/display_name
-// aren't baked into the stored payload).
-func buildEvent(item store.NotificationOutboxItem, app store.Application) (Event, error) {
+// aren't baked into the stored payload). AdminConsoleURL is built here,
+// not stored in the payload, from this Dispatcher's own configured
+// AdminOrigin -- deployment configuration, never requester-controlled.
+func (d *Dispatcher) buildEvent(item store.NotificationOutboxItem, app store.Application) (Event, error) {
 	switch item.EventType {
 	case EventRequestCreated:
 		var p RequestCreatedPayload
@@ -137,7 +139,8 @@ func buildEvent(item store.NotificationOutboxItem, app store.Application) (Event
 		}
 		return Event{
 			Type: item.EventType, ApplicationHostname: app.Hostname, ApplicationDisplayName: app.DisplayName,
-			RequestID: p.RequestID, VerificationCode: p.VerificationCode, Label: p.Label, Message: p.Message, RequestedAt: p.RequestedAt,
+			RequestID: p.RequestID, VerificationCode: p.VerificationCode, RequestedAt: p.RequestedAt,
+			AdminConsoleURL: d.cfg.AdminOrigin,
 		}, nil
 	default:
 		return Event{}, fmt.Errorf("unknown notification event type %q", item.EventType)

@@ -197,6 +197,8 @@ func mapEnrollmentError(w http.ResponseWriter, err error) {
 		writeAPIError(w, http.StatusConflict, "not_claimable", "this request is no longer in a state that allows this action")
 	case errors.Is(err, enrollment.ErrAlreadyClaimedNoEnvelope):
 		writeAPIError(w, http.StatusUnauthorized, "claim_expired", "the claim window has passed -- please request access again")
+	case errors.Is(err, enrollment.ErrAnonymousMessageNotAllowed):
+		writeAPIError(w, http.StatusUnprocessableEntity, "messages_not_allowed", "this application does not accept a label or message with the request")
 	default:
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "an internal error occurred")
 	}
@@ -219,6 +221,8 @@ func enrollmentErrorReason(err error) string {
 		return "not_claimable"
 	case errors.Is(err, enrollment.ErrAlreadyClaimedNoEnvelope):
 		return "claim_expired"
+	case errors.Is(err, enrollment.ErrAnonymousMessageNotAllowed):
+		return "messages_not_allowed"
 	default:
 		return "internal_error"
 	}
@@ -232,6 +236,11 @@ type requestPageData struct {
 	ContactInfo string
 	CSRFToken   string
 	ReturnTo    string
+	// AllowAnonymousMessage: see enrollment.BootstrapResult's own
+	// comment (endpoint-review.md F3) -- purely a UX decision about
+	// which fields to render; SubmitRequest enforces the real policy
+	// server-side regardless.
+	AllowAnonymousMessage bool
 }
 
 func requestPageHandler(enroller Enroller, requestTTL time.Duration, trustedCIDRs []*net.IPNet) http.HandlerFunc {
@@ -256,11 +265,12 @@ func requestPageHandler(enroller Enroller, requestTTL time.Duration, trustedCIDR
 		}
 
 		renderPage(w, "request.html.tmpl", requestPageData{
-			DisplayName: result.ApplicationDisplayName,
-			Hostname:    result.ApplicationHostname,
-			ContactInfo: result.ContactInfo,
-			CSRFToken:   result.CSRFToken,
-			ReturnTo:    validateQueryReturnTo(r),
+			DisplayName:           result.ApplicationDisplayName,
+			Hostname:              result.ApplicationHostname,
+			ContactInfo:           result.ContactInfo,
+			CSRFToken:             result.CSRFToken,
+			ReturnTo:              validateQueryReturnTo(r),
+			AllowAnonymousMessage: result.AllowAnonymousMessage,
 		})
 	}
 }

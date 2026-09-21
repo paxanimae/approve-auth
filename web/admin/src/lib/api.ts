@@ -106,6 +106,7 @@ export const api = {
       revoke_policy_ip_changed?: RevokePolicyAction | "";
       revoke_policy_user_agent_changed?: RevokePolicyAction | "";
       revoke_policy_inactivity_exceeded?: RevokePolicyAction | "";
+      allow_anonymous_message?: boolean;
     },
   ) => request<Application>("PATCH", `/api/v1/applications/${id}`, body),
   disableApplication: (id: string, body: { version: number; reason: string }) =>

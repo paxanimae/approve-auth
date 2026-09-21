@@ -133,6 +133,9 @@ type updateApplicationRequest struct {
 	RevokePolicyIPChanged          *string `json:"revoke_policy_ip_changed"`
 	RevokePolicyUserAgentChanged   *string `json:"revoke_policy_user_agent_changed"`
 	RevokePolicyInactivityExceeded *string `json:"revoke_policy_inactivity_exceeded"`
+	// AllowAnonymousMessage: nil leaves it unchanged (migration 000020,
+	// endpoint-review.md F3).
+	AllowAnonymousMessage *bool `json:"allow_anonymous_message"`
 }
 
 func updateApplicationHandler(actions AdminActions) http.HandlerFunc {
@@ -168,6 +171,7 @@ func updateApplicationHandler(actions AdminActions) http.HandlerFunc {
 			NotifyEmail: body.NotifyEmail, NotifyWebhookURL: body.NotifyWebhookURL,
 			RevokePolicyIPChanged: body.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: body.RevokePolicyUserAgentChanged,
 			RevokePolicyInactivityExceeded: body.RevokePolicyInactivityExceeded,
+			AllowAnonymousMessage:          body.AllowAnonymousMessage,
 		}
 		if body.DefaultDurationSeconds != nil {
 			d := time.Duration(*body.DefaultDurationSeconds) * time.Second

@@ -62,7 +62,7 @@ func (db *DB) GetApplicationByHostname(ctx context.Context, hostname string) (Ap
 	return app, true, nil
 }
 
-const applicationColumns = `id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version, contact_info, notify_email, notify_webhook_url, revoke_policy_ip_changed, revoke_policy_user_agent_changed, revoke_policy_inactivity_exceeded`
+const applicationColumns = `id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version, contact_info, notify_email, notify_webhook_url, revoke_policy_ip_changed, revoke_policy_user_agent_changed, revoke_policy_inactivity_exceeded, allow_anonymous_message`
 
 func scanApplication(row scanner) (Application, error) {
 	var app Application
@@ -72,6 +72,7 @@ func scanApplication(row scanner) (Application, error) {
 		&app.CreatedAt, &app.UpdatedAt, &app.ArchivedAt, &app.Version, &app.ContactInfo,
 		&app.NotifyEmail, &app.NotifyWebhookURL,
 		&app.RevokePolicyIPChanged, &app.RevokePolicyUserAgentChanged, &app.RevokePolicyInactivityExceeded,
+		&app.AllowAnonymousMessage,
 	)
 	return app, err
 }
@@ -141,6 +142,10 @@ type UpdateApplicationParams struct {
 	RevokePolicyIPChanged          *string
 	RevokePolicyUserAgentChanged   *string
 	RevokePolicyInactivityExceeded *string
+	// AllowAnonymousMessage: nil means leave unchanged; a non-nil
+	// pointer sets it outright (there's no "inherit a default" state
+	// for this one -- every application has its own real true/false).
+	AllowAnonymousMessage *bool
 }
 
 // UpdateApplication applies only the fields the caller set, using the
@@ -224,17 +229,22 @@ func (db *DB) UpdateApplication(ctx context.Context, id uuid.UUID, expectedVersi
 			revokePolicyInactivityExceeded = nil
 		}
 	}
+	allowAnonymousMessage := current.AllowAnonymousMessage
+	if p.AllowAnonymousMessage != nil {
+		allowAnonymousMessage = *p.AllowAnonymousMessage
+	}
 
 	app, err := scanApplication(tx.QueryRow(ctx, `
 		UPDATE applications
 		SET display_name = $1, description = $2, default_duration_seconds = $3, max_duration_seconds = $4,
 		    contact_info = $5, notify_email = $6, notify_webhook_url = $7,
 		    revoke_policy_ip_changed = $8, revoke_policy_user_agent_changed = $9, revoke_policy_inactivity_exceeded = $10,
+		    allow_anonymous_message = $11,
 		    updated_at = now(), version = version + 1
-		WHERE id = $11
+		WHERE id = $12
 		RETURNING `+applicationColumns,
 		displayName, description, defaultSeconds, maxSeconds, contactInfo, notifyEmail, notifyWebhookURL,
-		revokePolicyIPChanged, revokePolicyUserAgentChanged, revokePolicyInactivityExceeded, id,
+		revokePolicyIPChanged, revokePolicyUserAgentChanged, revokePolicyInactivityExceeded, allowAnonymousMessage, id,
 	))
 	if err != nil {
 		return Application{}, fmt.Errorf("store: updating application %s: %w", id, err)

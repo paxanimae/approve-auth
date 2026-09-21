@@ -8,6 +8,7 @@
   import RevocationPolicyDialog from "./RevocationPolicyDialog.svelte";
   import OwnersDialog from "./OwnersDialog.svelte";
   import ReasonDialog from "./ReasonDialog.svelte";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
 
   let applications: Application[] = $state([]);
   let error: string | null = $state(null);
@@ -177,6 +178,34 @@
     dialogTarget = a;
     ownersDialogOpen = true;
   }
+
+  let allowMessageDialogOpen = $state(false);
+
+  // toggleAllowAnonymousMessage flips AllowAnonymousMessage (endpoint-
+  // review.md F3: false by default for every application). Turning it
+  // ON confirms first via a rendered dialog, since anonymous free text
+  // is never verified as coming from anyone in particular; turning it
+  // back OFF needs no confirmation.
+  function requestToggleAllowAnonymousMessage(a: Application) {
+    if (a.allow_anonymous_message) {
+      void applyAllowAnonymousMessage(a, false);
+      return;
+    }
+    dialogTarget = a;
+    allowMessageDialogOpen = true;
+  }
+
+  async function applyAllowAnonymousMessage(a: Application, value: boolean) {
+    busyId = a.id;
+    try {
+      await api.updateApplication(a.id, { version: a.version, allow_anonymous_message: value });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      busyId = null;
+    }
+  }
 </script>
 
 <section>
@@ -195,6 +224,7 @@
           <th>State</th>
           <th>Default duration</th>
           <th>Contact info</th>
+          <th title="Whether the anonymous request page may accept a label/message">Anonymous messages</th>
           <th></th>
         </tr>
       </thead>
@@ -206,6 +236,15 @@
             <td><span class="badge {a.enabled ? 'badge-success' : 'badge-neutral'}">{a.enabled ? "enabled" : "disabled"}</span></td>
             <td title={formatDateTime(a.created_at)}>{Math.round(a.default_duration_seconds / 86400)} days</td>
             <td class="contact-info-cell">{a.contact_info ?? "(global default)"}</td>
+            <td>
+              <button
+                class="btn btn-sm"
+                disabled={busyId === a.id}
+                onclick={() => requestToggleAllowAnonymousMessage(a)}
+              >
+                {a.allow_anonymous_message ? "Allowed" : "Blocked"}
+              </button>
+            </td>
             <td class="actions">
               {#if a.enabled}
                 <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => openDisable(a)}>Disable</button>
@@ -289,6 +328,16 @@
   confirmLabel="Disable"
   danger
   onConfirm={confirmDisable}
+/>
+
+<ConfirmDialog
+  bind:open={allowMessageDialogOpen}
+  title="Allow anonymous messages"
+  description={dialogTarget
+    ? `Allow ${dialogTarget.hostname}'s request page to accept a label/message from an anonymous requester? This text is never verified as coming from anyone in particular -- review it as unverified in Requests before acting on it.`
+    : undefined}
+  confirmLabel="Allow"
+  onConfirm={() => dialogTarget && applyAllowAnonymousMessage(dialogTarget, true)}
 />
 
 <style>

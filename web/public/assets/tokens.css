@@ -185,6 +185,12 @@ button[type="submit"]:hover {
   margin: 0;
 }
 
+.field-note {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin: -0.5rem 0 0.5rem;
+}
+
 #reconnecting-notice {
   font-size: 0.8125rem;
   color: var(--color-text-muted);

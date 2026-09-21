@@ -208,7 +208,7 @@ func run() error {
 
 	notifier := notify.New(notify.Config{
 		SMTPHost: cfg.NotifySMTPHost, SMTPPort: cfg.NotifySMTPPort, SMTPUsername: cfg.NotifySMTPUsername, SMTPPassword: cfg.NotifySMTPPassword,
-		WebhookSecret: cfg.NotifyWebhookSecret,
+		WebhookSecret: cfg.NotifyWebhookSecret, AdminOrigin: cfg.AdminOrigin,
 	})
 	jobs = append(jobs, worker.Job{
 		Name: "deliver_notifications", Interval: workerTickInterval,

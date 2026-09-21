@@ -37,6 +37,11 @@ type Config struct {
 // business-rule branches, the same pattern as internal/authz.Store.
 type Store interface {
 	GetApplicationByHostname(ctx context.Context, hostname string) (store.Application, bool, error)
+	// GetApplicationByID backs SubmitRequest's server-side enforcement
+	// of AllowAnonymousMessage (endpoint-review.md F3) -- the
+	// enrollment context only carries the application's ID, not its
+	// current settings.
+	GetApplicationByID(ctx context.Context, id uuid.UUID) (store.Application, bool, error)
 
 	CreateEnrollmentContext(ctx context.Context, applicationID uuid.UUID, pendingTokenHash, csrfSecret []byte, expiresAt time.Time) (store.EnrollmentContext, error)
 	GetLiveEnrollmentContextByTokenHash(ctx context.Context, hash []byte) (store.EnrollmentContext, bool, error)
@@ -87,6 +92,12 @@ type BootstrapResult struct {
 	// as-is (an existing valid context was reused).
 	RawPendingToken string
 	CSRFToken       string
+	// AllowAnonymousMessage tells the request page whether to render
+	// the label/message fields at all (endpoint-review.md F3) --
+	// SubmitRequest enforces the same flag server-side regardless of
+	// what the page renders, so this is a UX convenience, not the
+	// actual security boundary.
+	AllowAnonymousMessage bool
 }
 
 // SubmitRequestInput/Result back POST /__approve-auth/requests (spec

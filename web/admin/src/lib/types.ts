@@ -44,6 +44,10 @@ export interface Application {
   revoke_policy_ip_changed?: RevokePolicyAction;
   revoke_policy_user_agent_changed?: RevokePolicyAction;
   revoke_policy_inactivity_exceeded?: RevokePolicyAction;
+  // False by default for every application (migration 000020): whether
+  // an anonymous enrollment submission may carry a non-empty label or
+  // message at all.
+  allow_anonymous_message: boolean;
 }
 
 export type RevokePolicyAction = "off" | "warn" | "flag_for_review" | "revoke";

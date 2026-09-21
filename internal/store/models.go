@@ -42,6 +42,13 @@ type Application struct {
 	RevokePolicyIPChanged          *string
 	RevokePolicyUserAgentChanged   *string
 	RevokePolicyInactivityExceeded *string
+
+	// AllowAnonymousMessage gates whether an anonymous enrollment
+	// submission for this application may carry a non-empty label or
+	// message (migration 000020, endpoint-review.md F3) -- false by
+	// default for every application, including ones registered before
+	// this column existed.
+	AllowAnonymousMessage bool
 }
 
 // NotificationOutboxItem is one pending row from notification_outbox
