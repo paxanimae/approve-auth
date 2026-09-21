@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/frid-iks/approve-auth/internal/geoip"
 	"github.com/frid-iks/approve-auth/internal/metrics"
 	"github.com/frid-iks/approve-auth/internal/store"
 )
@@ -28,11 +29,16 @@ var (
 
 type Service struct {
 	store Store
+	geoip geoip.Lookup
 	cfg   Config
 }
 
-func New(s Store, cfg Config) *Service {
-	return &Service{store: s, cfg: cfg}
+// New wires in geoipLookup for SubmitRequest's best-effort enrichment
+// of a new request's source_ip -- pass geoip.Noop{} when no GeoIP
+// database is configured, never nil, so this package never needs to
+// nil-check it.
+func New(s Store, geoipLookup geoip.Lookup, cfg Config) *Service {
+	return &Service{store: s, geoip: geoipLookup, cfg: cfg}
 }
 
 func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (BootstrapResult, error) {
@@ -146,6 +152,8 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 	message := truncateRunes(in.Message, 500)
 	returnPath := validateReturnPath(in.ReturnTo)
 
+	geoCountry, geoCity, _ := s.geoip.Lookup(in.ClientIP)
+
 	params := store.CreateApprovalRequestParams{
 		ApplicationID:    ec.ApplicationID,
 		PendingTokenHash: hash,
@@ -155,6 +163,8 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 		DeadlineAt:       time.Now().Add(s.cfg.RequestTTL),
 		SourceIP:         in.ClientIP,
 		UserAgent:        in.UserAgent,
+		SourceGeoCountry: geoCountry,
+		SourceGeoCity:    geoCity,
 	}
 
 	const maxAttempts = 5

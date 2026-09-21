@@ -53,6 +53,10 @@ export interface ApprovalRequest {
   public_decision_message?: string;
   private_note?: string;
   source_ip?: string;
+  // Both absent when no GeoIP database is configured, or the lookup
+  // simply didn't resolve for this address.
+  source_geo_country?: string;
+  source_geo_city?: string;
   user_agent?: string;
   version: number;
 }

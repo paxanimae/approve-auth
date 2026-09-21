@@ -978,6 +978,11 @@ components:
           type: [string, "null"]
         source_ip:
           type: [string, "null"]
+        source_geo_country:
+          type: [string, "null"]
+          description: Best-effort GeoIP lookup of source_ip; null if no GeoIP database is configured or the lookup didn't resolve
+        source_geo_city:
+          type: [string, "null"]
         user_agent:
           type: [string, "null"]
         version:

@@ -44,6 +44,14 @@ type Config struct {
 	// default -- unset means no contact info is shown at all.
 	ContactInfo string `yaml:"contact_info"`
 
+	// GeoIPDatabasePath is a MaxMind GeoLite2-City (or commercial
+	// GeoIP2-City) .mmdb file, used for best-effort country/city
+	// enrichment of a new request's source_ip (internal/geoip). Empty
+	// (the default) disables the feature entirely -- this repo does not
+	// and cannot bundle a database file; MaxMind requires each user to
+	// register their own free account. See docs/dev-environment.md.
+	GeoIPDatabasePath string `yaml:"geoip_database_path"`
+
 	// AdminAuthMode is "oidc" (default) or "anonymous". Anonymous mode
 	// skips this service's own login entirely -- every request to the
 	// admin listener is treated as the fixed identity described by the

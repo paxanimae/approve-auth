@@ -22,6 +22,7 @@ import (
 	"github.com/frid-iks/approve-auth/internal/authz"
 	"github.com/frid-iks/approve-auth/internal/config"
 	"github.com/frid-iks/approve-auth/internal/enrollment"
+	"github.com/frid-iks/approve-auth/internal/geoip"
 	"github.com/frid-iks/approve-auth/internal/httpserver"
 	"github.com/frid-iks/approve-auth/internal/metrics"
 	"github.com/frid-iks/approve-auth/internal/oidc"
@@ -89,8 +90,20 @@ func run() error {
 		return fmt.Errorf("building authorization listener TLS config: %w", err)
 	}
 
+	// geoipLookup stays Noop{} (every lookup reports "unresolved") when
+	// no database is configured -- this feature is opt-in, not required.
+	var geoipLookup geoip.Lookup = geoip.Noop{}
+	if cfg.GeoIPDatabasePath != "" {
+		mm, err := geoip.Open(cfg.GeoIPDatabasePath)
+		if err != nil {
+			return fmt.Errorf("opening GeoIP database at %s: %w", cfg.GeoIPDatabasePath, err)
+		}
+		defer mm.Close()
+		geoipLookup = mm
+	}
+
 	authzService := authz.New(db)
-	enrollmentService := enrollment.New(db, enrollment.Config{
+	enrollmentService := enrollment.New(db, geoipLookup, enrollment.Config{
 		RequestTTL:                     cfg.RequestTTL.Std(),
 		ClaimTTL:                       cfg.ClaimTTL.Std(),
 		ClaimRetryTTL:                  cfg.ClaimRetryTTL.Std(),

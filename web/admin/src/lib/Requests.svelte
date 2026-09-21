@@ -133,6 +133,9 @@
               <td>{r.label ?? "—"}</td>
               <td class="device" title={r.user_agent ?? ""}>
                 {r.source_ip ?? "—"}
+                {#if r.source_geo_city || r.source_geo_country}
+                  <span class="muted">({[r.source_geo_city, r.source_geo_country].filter(Boolean).join(", ")})</span>
+                {/if}
                 {#if r.user_agent}<br /><span class="muted user-agent">{r.user_agent}</span>{/if}
               </td>
               <td class="message-cell">{r.message ?? "—"}</td>

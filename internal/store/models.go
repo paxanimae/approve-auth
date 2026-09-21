@@ -61,6 +61,13 @@ type ApprovalRequest struct {
 	UserAgent             *string
 	Version               int32
 
+	// SourceGeoCountry/SourceGeoCity are a best-effort GeoIP lookup of
+	// SourceIP (internal/geoip) -- both nil means no GeoIP database was
+	// configured, or the lookup simply didn't resolve. Redacted
+	// alongside SourceIP by RedactOldClientMetadata, never outliving it.
+	SourceGeoCountry *string
+	SourceGeoCity    *string
+
 	// ApplicationHostname/ApplicationDisplayName are only populated by
 	// the admin-facing reads (GetApprovalRequestByID, ListApprovalRequests)
 	// via a join against applications -- left "" from CreateApprovalRequest

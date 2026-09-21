@@ -28,10 +28,10 @@ func (db *DB) CreateApprovalRequest(ctx context.Context, p CreateApprovalRequest
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	r, err := scanApprovalRequest(tx.QueryRow(ctx, `
-		INSERT INTO approval_requests (application_id, pending_token_hash, verification_code, label, message, return_path, deadline_at, source_ip, user_agent)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO approval_requests (application_id, pending_token_hash, verification_code, label, message, return_path, deadline_at, source_ip, user_agent, source_geo_country, source_geo_city)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING `+approvalRequestColumns,
-		p.ApplicationID, p.PendingTokenHash, p.VerificationCode, nullableText(p.Label), nullableText(p.Message), nullableText(p.ReturnPath), p.DeadlineAt, nullableInet(p.SourceIP), nullableText(p.UserAgent),
+		p.ApplicationID, p.PendingTokenHash, p.VerificationCode, nullableText(p.Label), nullableText(p.Message), nullableText(p.ReturnPath), p.DeadlineAt, nullableInet(p.SourceIP), nullableText(p.UserAgent), nullableText(p.SourceGeoCountry), nullableText(p.SourceGeoCity),
 	))
 	// A unique-constraint violation (duplicate pending_token_hash or a
 	// live verification_code collision) is the caller's to interpret --
@@ -67,6 +67,12 @@ type CreateApprovalRequestParams struct {
 	DeadlineAt       time.Time
 	SourceIP         string
 	UserAgent        string
+	// SourceGeoCountry/SourceGeoCity: the caller (internal/enrollment)
+	// resolves these via internal/geoip before calling in -- this
+	// package has no GeoIP dependency of its own, it just persists
+	// whatever it's given.
+	SourceGeoCountry string
+	SourceGeoCity    string
 }
 
 // GetApprovalRequestByTokenHash is how the browser's own pending proof
@@ -95,12 +101,19 @@ func scanApprovalRequest(row scanner) (ApprovalRequest, error) {
 	err := row.Scan(
 		&r.ID, &r.ApplicationID, &r.PendingTokenHash, &r.VerificationCode, &r.Label, &r.Message, &r.ReturnPath,
 		&r.Status, &r.RequestedAt, &r.DeadlineAt, &r.DecidedAt, &r.DecidedBy, &r.ClaimDeadlineAt, &r.ClaimedAt,
-		&r.PublicDecisionMessage, &r.PrivateNote, &r.UserAgent, &r.Version,
+		&r.PublicDecisionMessage, &r.PrivateNote, &r.UserAgent, &r.Version, &r.SourceIP, &r.SourceGeoCountry, &r.SourceGeoCity,
 	)
 	return r, err
 }
 
-const approvalRequestColumns = `id, application_id, pending_token_hash, verification_code, label, message, return_path, status, requested_at, deadline_at, decided_at, decided_by, claim_deadline_at, claimed_at, public_decision_message, private_note, user_agent, version`
+// source_ip was, until now, captured on write but never included in
+// this list -- GetApprovalRequestByID/ListApprovalRequests/
+// GetApprovalRequestByTokenHash all silently came back with a nil
+// SourceIP regardless of what was actually stored. Fixed here rather
+// than filed separately since source_geo_country/source_geo_city are
+// derived from the exact same column and were about to have the same
+// bug on day one otherwise.
+const approvalRequestColumns = `id, application_id, pending_token_hash, verification_code, label, message, return_path, status, requested_at, deadline_at, decided_at, decided_by, claim_deadline_at, claimed_at, public_decision_message, private_note, user_agent, version, source_ip, source_geo_country, source_geo_city`
 
 // approvalRequestColumnsWithApplication and scanApprovalRequestWithApplication
 // are a separate column list/scanner from approvalRequestColumns/
@@ -108,14 +121,14 @@ const approvalRequestColumns = `id, application_id, pending_token_hash, verifica
 // below -- CreateApprovalRequest (INSERT...RETURNING can't join another
 // table at all) and GetApprovalRequestByTokenHash (the browser's own
 // lookup, which doesn't need this) keep using the plain ones.
-const approvalRequestColumnsWithApplication = `r.id, r.application_id, r.pending_token_hash, r.verification_code, r.label, r.message, r.return_path, r.status, r.requested_at, r.deadline_at, r.decided_at, r.decided_by, r.claim_deadline_at, r.claimed_at, r.public_decision_message, r.private_note, r.user_agent, r.version, a.hostname, a.display_name`
+const approvalRequestColumnsWithApplication = `r.id, r.application_id, r.pending_token_hash, r.verification_code, r.label, r.message, r.return_path, r.status, r.requested_at, r.deadline_at, r.decided_at, r.decided_by, r.claim_deadline_at, r.claimed_at, r.public_decision_message, r.private_note, r.user_agent, r.version, r.source_ip, r.source_geo_country, r.source_geo_city, a.hostname, a.display_name`
 
 func scanApprovalRequestWithApplication(row scanner) (ApprovalRequest, error) {
 	var r ApprovalRequest
 	err := row.Scan(
 		&r.ID, &r.ApplicationID, &r.PendingTokenHash, &r.VerificationCode, &r.Label, &r.Message, &r.ReturnPath,
 		&r.Status, &r.RequestedAt, &r.DeadlineAt, &r.DecidedAt, &r.DecidedBy, &r.ClaimDeadlineAt, &r.ClaimedAt,
-		&r.PublicDecisionMessage, &r.PrivateNote, &r.UserAgent, &r.Version,
+		&r.PublicDecisionMessage, &r.PrivateNote, &r.UserAgent, &r.Version, &r.SourceIP, &r.SourceGeoCountry, &r.SourceGeoCity,
 		&r.ApplicationHostname, &r.ApplicationDisplayName,
 	)
 	return r, err

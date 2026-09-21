@@ -62,8 +62,13 @@ type requestDTO struct {
 	PublicDecisionMessage  *string    `json:"public_decision_message,omitempty"`
 	PrivateNote            *string    `json:"private_note,omitempty"`
 	SourceIP               *string    `json:"source_ip,omitempty"`
-	UserAgent              *string    `json:"user_agent,omitempty"`
-	Version                int32      `json:"version"`
+	// SourceGeoCountry/SourceGeoCity: both omitted when no GeoIP
+	// database is configured, or the lookup simply didn't resolve --
+	// never an error either way (internal/geoip).
+	SourceGeoCountry *string `json:"source_geo_country,omitempty"`
+	SourceGeoCity    *string `json:"source_geo_city,omitempty"`
+	UserAgent        *string `json:"user_agent,omitempty"`
+	Version          int32   `json:"version"`
 }
 
 func newRequestDTO(r store.ApprovalRequest) requestDTO {
@@ -74,6 +79,7 @@ func newRequestDTO(r store.ApprovalRequest) requestDTO {
 		Label:            r.Label, Message: r.Message, Status: r.Status, RequestedAt: r.RequestedAt, DeadlineAt: r.DeadlineAt,
 		DecidedAt: r.DecidedAt, DecidedBy: r.DecidedBy, ClaimDeadlineAt: r.ClaimDeadlineAt, ClaimedAt: r.ClaimedAt,
 		PublicDecisionMessage: r.PublicDecisionMessage, PrivateNote: r.PrivateNote, UserAgent: r.UserAgent, Version: r.Version,
+		SourceGeoCountry: r.SourceGeoCountry, SourceGeoCity: r.SourceGeoCity,
 	}
 	// Requests submitted without a device label rely on this (plus
 	// UserAgent) as the admin's only way to tell devices apart -- see

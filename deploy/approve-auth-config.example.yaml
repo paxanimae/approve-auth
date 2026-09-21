@@ -28,6 +28,14 @@ admin_origin: https://approval-admin.example.com
 # Leave unset to show nothing by default.
 # contact_info: "IT helpdesk: it@example.com"
 
+# Path to a MaxMind GeoLite2-City (or commercial GeoIP2-City) .mmdb
+# file, mounted into the container -- enables best-effort country/city
+# enrichment of each new request's source_ip, shown in the admin
+# console's Requests view. Leave unset to disable the feature entirely
+# (the default -- this repo cannot bundle a database file itself; see
+# docs/dev-environment.md for how to get your own free copy).
+# geoip_database_path: /geoip/GeoLite2-City.mmdb
+
 # admin_auth_mode: "oidc" (default, shown here) or "anonymous".
 # Anonymous mode skips this service's own login entirely -- every
 # caller is treated as one fixed identity, for a deployment that

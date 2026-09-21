@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/frid-iks/approve-auth/internal/enrollment"
+	"github.com/frid-iks/approve-auth/internal/geoip"
 	"github.com/frid-iks/approve-auth/internal/store"
 )
 
@@ -70,7 +71,7 @@ func setup(t *testing.T) (*store.DB, *enrollment.Service, string) {
 		_, _ = db.Pool.Exec(ctx, `DELETE FROM applications WHERE id = $1`, app.ID)
 	})
 
-	return db, enrollment.New(db, testConfig()), hostname
+	return db, enrollment.New(db, geoip.Noop{}, testConfig()), hostname
 }
 
 func randomSuffix(t *testing.T) string {
@@ -144,6 +145,52 @@ func TestBootstrap_UnknownHost(t *testing.T) {
 	_, err := svc.Bootstrap(context.Background(), enrollment.BootstrapInput{Hostname: "does-not-exist.example.test"})
 	if !errors.Is(err, enrollment.ErrApplicationUnavailable) {
 		t.Errorf("Bootstrap: got %v, want ErrApplicationUnavailable", err)
+	}
+}
+
+// fakeGeoIPLookup is a configurable stand-in for internal/geoip.Lookup,
+// so this test doesn't need a real .mmdb file to verify SubmitRequest
+// actually persists whatever the lookup resolves.
+type fakeGeoIPLookup struct {
+	country, city string
+	ok            bool
+}
+
+func (f fakeGeoIPLookup) Lookup(string) (string, string, bool) {
+	return f.country, f.city, f.ok
+}
+
+func TestSubmitRequest_EnrichesWithGeoIP(t *testing.T) {
+	db, _, hostname := setup(t)
+	ctx := context.Background()
+	svc := enrollment.New(db, fakeGeoIPLookup{country: "Norway", city: "Oslo", ok: true}, testConfig())
+
+	boot, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	result, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{
+		PendingTokenRaw: boot.RawPendingToken,
+		CSRFToken:       boot.CSRFToken,
+		ClientIP:        "203.0.113.7",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest: %v", err)
+	}
+
+	requestID, err := uuid.Parse(result.RequestID)
+	if err != nil {
+		t.Fatalf("parsing request id: %v", err)
+	}
+	stored, found, err := db.GetApprovalRequestByID(ctx, requestID)
+	if err != nil || !found {
+		t.Fatalf("GetApprovalRequestByID: found=%v err=%v", found, err)
+	}
+	if stored.SourceGeoCountry == nil || *stored.SourceGeoCountry != "Norway" {
+		t.Errorf("SourceGeoCountry = %v, want \"Norway\"", stored.SourceGeoCountry)
+	}
+	if stored.SourceGeoCity == nil || *stored.SourceGeoCity != "Oslo" {
+		t.Errorf("SourceGeoCity = %v, want \"Oslo\"", stored.SourceGeoCity)
 	}
 }
 

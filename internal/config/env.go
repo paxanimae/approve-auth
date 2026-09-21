@@ -43,6 +43,7 @@ func envOverrides(cfg *Config) []envOverride {
 		{"ADMIN_ORIGIN", func(c *Config, v string) error { c.AdminOrigin = v; return nil }},
 		{"INSTANCE_NAME", func(c *Config, v string) error { c.InstanceName = v; return nil }},
 		{"CONTACT_INFO", func(c *Config, v string) error { c.ContactInfo = v; return nil }},
+		{"GEOIP_DATABASE_PATH", func(c *Config, v string) error { c.GeoIPDatabasePath = v; return nil }},
 		{"ADMIN_AUTH_MODE", func(c *Config, v string) error { c.AdminAuthMode = v; return nil }},
 		{"ADMIN_ANONYMOUS_SUBJECT", func(c *Config, v string) error { c.AdminAnonymousSubject = v; return nil }},
 		{"ADMIN_ANONYMOUS_DISPLAY_NAME", func(c *Config, v string) error { c.AdminAnonymousDisplayName = v; return nil }},

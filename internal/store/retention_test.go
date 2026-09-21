@@ -336,7 +336,8 @@ func TestRedactOldClientMetadata(t *testing.T) {
 	appID := insertApplication(t, ctx, conn, "retention-redact.example.test")
 	oldReqID := insertApprovalRequest(t, ctx, conn, appID, "REDT-0001")
 	if _, err := conn.Exec(ctx, `
-		UPDATE approval_requests SET requested_at = now() - interval '40 days', source_ip = '203.0.113.5', user_agent = 'test-agent'
+		UPDATE approval_requests SET requested_at = now() - interval '40 days', source_ip = '203.0.113.5', user_agent = 'test-agent',
+		    source_geo_country = 'Norway', source_geo_city = 'Oslo'
 		WHERE id = $1`, oldReqID); err != nil {
 		t.Fatalf("backdating request: %v", err)
 	}
@@ -361,12 +362,12 @@ func TestRedactOldClientMetadata(t *testing.T) {
 		t.Errorf("got %d rows redacted, want 2 (one request, one authorization)", n)
 	}
 
-	var sourceIP, userAgent *string
-	if err := conn.QueryRow(ctx, `SELECT source_ip::text, user_agent FROM approval_requests WHERE id = $1`, oldReqID).Scan(&sourceIP, &userAgent); err != nil {
+	var sourceIP, userAgent, geoCountry, geoCity *string
+	if err := conn.QueryRow(ctx, `SELECT source_ip::text, user_agent, source_geo_country, source_geo_city FROM approval_requests WHERE id = $1`, oldReqID).Scan(&sourceIP, &userAgent, &geoCountry, &geoCity); err != nil {
 		t.Fatalf("checking old request: %v", err)
 	}
-	if sourceIP != nil || userAgent != nil {
-		t.Errorf("old request metadata = (%v, %v), want both nil", sourceIP, userAgent)
+	if sourceIP != nil || userAgent != nil || geoCountry != nil || geoCity != nil {
+		t.Errorf("old request metadata = (%v, %v, %v, %v), want all nil", sourceIP, userAgent, geoCountry, geoCity)
 	}
 
 	if err := conn.QueryRow(ctx, `SELECT source_ip::text, user_agent FROM approval_requests WHERE id = $1`, newReqID).Scan(&sourceIP, &userAgent); err != nil {

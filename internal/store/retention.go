@@ -307,17 +307,19 @@ func (db *DB) PurgeExpiredIdempotencyRecords(ctx context.Context, limit int) (in
 }
 
 // RedactOldClientMetadata blanks approval_requests.source_ip/user_agent
-// and authorizations.last_seen_ip/last_seen_user_agent once they're
-// older than maxAge (spec section 12: "IP/user-agent fields 30 days").
-// The rows themselves persist until their own, separate 90-day
-// retention window -- this only nulls the fields.
+// (plus source_geo_country/source_geo_city, derived from source_ip and
+// with no reason to outlive it) and authorizations.last_seen_ip/
+// last_seen_user_agent once they're older than maxAge (spec section 12:
+// "IP/user-agent fields 30 days"). The rows themselves persist until
+// their own, separate 90-day retention window -- this only nulls the
+// fields.
 func (db *DB) RedactOldClientMetadata(ctx context.Context, maxAge time.Duration, limit int) (int, error) {
 	cutoff := time.Now().Add(-maxAge)
 	tag1, err := db.Pool.Exec(ctx, `
-		UPDATE approval_requests SET source_ip = NULL, user_agent = NULL
+		UPDATE approval_requests SET source_ip = NULL, user_agent = NULL, source_geo_country = NULL, source_geo_city = NULL
 		WHERE id IN (
 			SELECT id FROM approval_requests
-			WHERE requested_at <= $1 AND (source_ip IS NOT NULL OR user_agent IS NOT NULL)
+			WHERE requested_at <= $1 AND (source_ip IS NOT NULL OR user_agent IS NOT NULL OR source_geo_country IS NOT NULL OR source_geo_city IS NOT NULL)
 			ORDER BY id
 			LIMIT $2
 		)`, cutoff, limit)

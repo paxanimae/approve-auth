@@ -212,3 +212,33 @@ This one is unrelated to the real-Traefik stack above -- it predates
 ForwardAuth logic existing at all, and just proves two independent HTTPS
 origins exist to build cookie-isolation tests against. It does not run
 the actual `approve-auth` service.
+
+## Optional: GeoIP enrichment
+
+Setting `geoip_database_path` (nonsecret config) enables best-effort
+country/city enrichment of each new request's `source_ip`, shown in the
+admin console's Requests view (`internal/geoip`). This repo cannot
+bundle the database file itself -- MaxMind's license requires each user
+to register their own account, even for the free tier:
+
+1. Create a free account at
+   [maxmind.com/en/geolite2/signup](https://www.maxmind.com/en/geolite2/signup).
+2. Under **My License Keys**, generate one, then download
+   **GeoLite2 City** in `.mmdb` format (either directly from the
+   account portal, or via MaxMind's `geoipupdate` tool if you want it to
+   refresh automatically -- the database is rebuilt periodically and
+   old copies still work, just with staler city boundaries).
+3. Mount the downloaded `GeoLite2-City.mmdb` into the container and
+   point `geoip_database_path` at it -- e.g. in
+   `deploy/dev/docker-compose.yml`'s `approve-auth` service:
+   ```yaml
+   volumes:
+     - /path/to/GeoLite2-City.mmdb:/geoip/GeoLite2-City.mmdb:ro
+   ```
+   and in `deploy/dev/approve-auth-config.yaml`:
+   ```yaml
+   geoip_database_path: /geoip/GeoLite2-City.mmdb
+   ```
+4. Leave it unset entirely to skip this -- every lookup then reports
+   "unresolved" (`geoip.Noop`) and no request is ever blocked or slowed
+   down by its absence.
