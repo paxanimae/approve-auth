@@ -22,6 +22,12 @@ admin_origin: https://approval-admin.example.com
 # deployment setup.
 # instance_name: prod-eu-west
 
+# Shown on every application's request page ("Need help? ..."), unless
+# that specific application has its own contact_info set via the admin
+# console (Applications -> Edit contact info), which takes precedence.
+# Leave unset to show nothing by default.
+# contact_info: "IT helpdesk: it@example.com"
+
 # admin_auth_mode: "oidc" (default, shown here) or "anonymous".
 # Anonymous mode skips this service's own login entirely -- every
 # caller is treated as one fixed identity, for a deployment that

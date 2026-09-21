@@ -881,6 +881,12 @@ components:
           format: date-time
         version:
           type: integer
+        contact_info:
+          type: string
+          description: >-
+            Absent means this application uses the deployment-wide
+            contact_info config default instead of an override of its
+            own.
       required: [id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, version]
       additionalProperties: false
 
@@ -900,6 +906,10 @@ components:
         max_duration_seconds:
           type: integer
           description: Zero means "use this deployment's configured default"
+        contact_info:
+          type: string
+          maxLength: 500
+          description: Omit to use the deployment-wide contact_info config default
       required: [hostname, display_name]
       additionalProperties: false
 
@@ -916,6 +926,10 @@ components:
           type: integer
         max_duration_seconds:
           type: integer
+        contact_info:
+          type: string
+          maxLength: 500
+          description: An empty string clears the override back to the global default
       required: [version]
       additionalProperties: false
 

@@ -100,6 +100,7 @@ func run() error {
 		PendingRequestsPerHourPerAppIP: cfg.RateLimits.PendingRequestsPerHourPerAppIP,
 		BootstrapPerMinutePerIP:        cfg.RateLimits.BootstrapPerMinutePerIP,
 		StatusPerMinutePerPendingProof: cfg.RateLimits.StatusPerMinutePerPendingProof,
+		DefaultContactInfo:             cfg.ContactInfo,
 	})
 
 	adminHost, err := adminOriginHost(cfg.AdminOrigin)

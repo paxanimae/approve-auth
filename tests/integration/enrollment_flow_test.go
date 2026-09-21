@@ -92,7 +92,7 @@ func registerProtectedApplication(t *testing.T, ctx context.Context, dbURL strin
 	}
 	t.Cleanup(db.Close)
 
-	app, err := db.CreateApplication(ctx, protectedHostname, "Full Enrollment Flow Test", "", 30*24*time.Hour, 365*24*time.Hour)
+	app, err := db.CreateApplication(ctx, protectedHostname, "Full Enrollment Flow Test", "", 30*24*time.Hour, 365*24*time.Hour, "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}

@@ -32,6 +32,7 @@ type createApplicationRequest struct {
 	Description            string `json:"description"`
 	DefaultDurationSeconds int64  `json:"default_duration_seconds"`
 	MaxDurationSeconds     int64  `json:"max_duration_seconds"`
+	ContactInfo            string `json:"contact_info"`
 }
 
 func createApplicationHandler(actions AdminActions) http.HandlerFunc {
@@ -44,11 +45,16 @@ func createApplicationHandler(actions AdminActions) http.HandlerFunc {
 			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "hostname and display_name are required")
 			return
 		}
+		if len(body.ContactInfo) > 500 {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "contact_info must be at most 500 characters")
+			return
+		}
 
 		app, err := actions.CreateApplication(r.Context(), admin.CreateApplicationInput{
 			Hostname: body.Hostname, DisplayName: body.DisplayName, Description: body.Description,
 			DefaultDuration: time.Duration(body.DefaultDurationSeconds) * time.Second,
 			MaxDuration:     time.Duration(body.MaxDurationSeconds) * time.Second,
+			ContactInfo:     body.ContactInfo,
 		})
 		if err != nil {
 			mapAdminError(w, err)
@@ -87,6 +93,7 @@ type updateApplicationRequest struct {
 	Description            *string `json:"description"`
 	DefaultDurationSeconds *int64  `json:"default_duration_seconds"`
 	MaxDurationSeconds     *int64  `json:"max_duration_seconds"`
+	ContactInfo            *string `json:"contact_info"`
 }
 
 func updateApplicationHandler(actions AdminActions) http.HandlerFunc {
@@ -99,10 +106,14 @@ func updateApplicationHandler(actions AdminActions) http.HandlerFunc {
 		if !decodeJSONBody(w, r, &body) {
 			return
 		}
+		if body.ContactInfo != nil && len(*body.ContactInfo) > 500 {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "contact_info must be at most 500 characters")
+			return
+		}
 
 		in := admin.UpdateApplicationInput{
 			ApplicationID: id.String(), ExpectedVersion: body.Version,
-			DisplayName: body.DisplayName, Description: body.Description, UpdatedBy: actorSubject(r),
+			DisplayName: body.DisplayName, Description: body.Description, ContactInfo: body.ContactInfo, UpdatedBy: actorSubject(r),
 		}
 		if body.DefaultDurationSeconds != nil {
 			d := time.Duration(*body.DefaultDurationSeconds) * time.Second

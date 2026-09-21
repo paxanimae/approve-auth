@@ -10,6 +10,7 @@
 
   let newHostname = $state("");
   let newDisplayName = $state("");
+  let newContactInfo = $state("");
   let creating = $state(false);
   let createError: string | null = $state(null);
 
@@ -34,14 +35,37 @@
     }
     creating = true;
     try {
-      await api.createApplication({ hostname: newHostname.trim(), display_name: newDisplayName.trim() });
+      await api.createApplication({
+        hostname: newHostname.trim(),
+        display_name: newDisplayName.trim(),
+        contact_info: newContactInfo.trim() || undefined,
+      });
       newHostname = "";
       newDisplayName = "";
+      newContactInfo = "";
       await load();
     } catch (e) {
       createError = e instanceof Error ? e.message : String(e);
     } finally {
       creating = false;
+    }
+  }
+
+  async function editContactInfo(a: Application) {
+    const current = a.contact_info ?? "";
+    const next = prompt(
+      `Contact info shown on ${a.hostname}'s request page.\nLeave blank to use the global default instead of an override.`,
+      current,
+    );
+    if (next === null || next === current) return;
+    busyId = a.id;
+    try {
+      await api.updateApplication(a.id, { version: a.version, contact_info: next });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      busyId = null;
     }
   }
 
@@ -88,6 +112,7 @@
           <th>Display name</th>
           <th>State</th>
           <th>Default duration</th>
+          <th>Contact info</th>
           <th></th>
         </tr>
       </thead>
@@ -98,12 +123,14 @@
             <td>{a.display_name}</td>
             <td><span class="badge {a.enabled ? 'badge-success' : 'badge-neutral'}">{a.enabled ? "enabled" : "disabled"}</span></td>
             <td title={formatDateTime(a.created_at)}>{Math.round(a.default_duration_seconds / 86400)} days</td>
+            <td class="contact-info-cell">{a.contact_info ?? "(global default)"}</td>
             <td class="actions">
               {#if a.enabled}
                 <button class="btn btn-danger btn-sm" disabled={busyId === a.id} onclick={() => disable(a)}>Disable</button>
               {:else}
                 <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => enable(a)}>Enable</button>
               {/if}
+              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editContactInfo(a)}>Edit contact info</button>
             </td>
           </tr>
         {/each}
@@ -121,6 +148,10 @@
       <label class="field">
         <span class="field-label">Display name</span>
         <input type="text" bind:value={newDisplayName} placeholder="Internal Dashboard" required />
+      </label>
+      <label class="field">
+        <span class="field-label">Contact info (optional)</span>
+        <input type="text" bind:value={newContactInfo} placeholder="Leave blank to use the global default" maxlength="500" />
       </label>
       <button type="submit" class="btn btn-primary" disabled={creating}>Register</button>
     </form>
@@ -157,5 +188,12 @@
   }
   .actions {
     white-space: nowrap;
+  }
+  .contact-info-cell {
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-muted);
   }
 </style>

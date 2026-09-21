@@ -23,6 +23,11 @@ type Application struct {
 	UpdatedAt              time.Time
 	ArchivedAt             *time.Time
 	Version                int32
+
+	// ContactInfo is nil when this application uses the global
+	// contact_info config default instead of its own -- see migration
+	// 000014.
+	ContactInfo *string
 }
 
 type EnrollmentContext struct {

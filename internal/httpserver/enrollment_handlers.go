@@ -142,6 +142,7 @@ func enrollmentErrorReason(err error) string {
 type requestPageData struct {
 	DisplayName string
 	Hostname    string
+	ContactInfo string
 	CSRFToken   string
 	ReturnTo    string
 }
@@ -170,6 +171,7 @@ func requestPageHandler(enroller Enroller, requestTTL time.Duration) http.Handle
 		renderPage(w, "request.html.tmpl", requestPageData{
 			DisplayName: result.ApplicationDisplayName,
 			Hostname:    result.ApplicationHostname,
+			ContactInfo: result.ContactInfo,
 			CSRFToken:   result.CSRFToken,
 			ReturnTo:    validateQueryReturnTo(r),
 		})

@@ -66,6 +66,7 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (BootstrapRe
 			return BootstrapResult{
 				ApplicationDisplayName: app.DisplayName,
 				ApplicationHostname:    app.Hostname,
+				ContactInfo:            s.resolveContactInfo(app),
 				CSRFToken:              csrfToken(ec.CSRFSecret),
 			}, nil
 		}
@@ -87,9 +88,19 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (BootstrapRe
 	return BootstrapResult{
 		ApplicationDisplayName: app.DisplayName,
 		ApplicationHostname:    app.Hostname,
+		ContactInfo:            s.resolveContactInfo(app),
 		RawPendingToken:        rawToken,
 		CSRFToken:              csrfToken(ec.CSRFSecret),
 	}, nil
+}
+
+// resolveContactInfo returns app's own contact_info override if it has
+// one, otherwise the service-wide default.
+func (s *Service) resolveContactInfo(app store.Application) string {
+	if app.ContactInfo != nil {
+		return *app.ContactInfo
+	}
+	return s.cfg.DefaultContactInfo
 }
 
 func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (SubmitRequestResult, error) {

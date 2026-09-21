@@ -38,6 +38,7 @@ func testConfig() enrollment.Config {
 		PendingRequestsPerHourPerAppIP: 5,
 		BootstrapPerMinutePerIP:        5,
 		StatusPerMinutePerPendingProof: 5,
+		DefaultContactInfo:             "global default contact",
 	}
 }
 
@@ -53,7 +54,7 @@ func setup(t *testing.T) (*store.DB, *enrollment.Service, string) {
 	t.Cleanup(db.Close)
 
 	hostname := "enrollment-test-" + randomSuffix(t) + ".example.test"
-	app, err := db.CreateApplication(ctx, hostname, "Enrollment Test", "", 30*24*time.Hour, 365*24*time.Hour)
+	app, err := db.CreateApplication(ctx, hostname, "Enrollment Test", "", 30*24*time.Hour, 365*24*time.Hour, "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -102,6 +103,39 @@ func TestBootstrap_CreatesThenReusesContext(t *testing.T) {
 	}
 	if second.CSRFToken != first.CSRFToken {
 		t.Error("expected the same CSRF token when reusing a live context")
+	}
+}
+
+func TestBootstrap_ContactInfoFallsBackToGlobalDefault(t *testing.T) {
+	_, svc, hostname := setup(t)
+	ctx := context.Background()
+
+	result, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if result.ContactInfo != "global default contact" {
+		t.Errorf("ContactInfo = %q, want the global default (this application has no override)", result.ContactInfo)
+	}
+}
+
+func TestBootstrap_ContactInfoUsesApplicationOverride(t *testing.T) {
+	db, svc, _ := setup(t)
+	ctx := context.Background()
+
+	hostname := "enrollment-contact-" + randomSuffix(t) + ".example.test"
+	app, err := db.CreateApplication(ctx, hostname, "Contact Override Test", "", 30*24*time.Hour, 365*24*time.Hour, "app-specific contact")
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Pool.Exec(ctx, `DELETE FROM applications WHERE id = $1`, app.ID) })
+
+	result, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if result.ContactInfo != "app-specific contact" {
+		t.Errorf("ContactInfo = %q, want this application's own override, not the global default", result.ContactInfo)
 	}
 }
 

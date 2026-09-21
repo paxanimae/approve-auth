@@ -30,6 +30,9 @@ export interface Application {
   updated_at: string;
   archived_at?: string;
   version: number;
+  // Absent means this application uses the global contact_info config
+  // default instead of an override of its own.
+  contact_info?: string;
 }
 
 export interface ApprovalRequest {

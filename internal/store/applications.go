@@ -16,25 +16,20 @@ import (
 // case value outright, but normalizing here gives a clearer error path
 // than a raw constraint violation for the common case of a caller not
 // having lowercased it themselves.
-func (db *DB) CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration) (Application, error) {
+func (db *DB) CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration, contactInfo string) (Application, error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
 		return Application{}, fmt.Errorf("store: creating application %q: begin: %w", hostname, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var app Application
-	err = tx.QueryRow(ctx, `
-		INSERT INTO applications (hostname, display_name, description, default_duration_seconds, max_duration_seconds)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version`,
+	app, err := scanApplication(tx.QueryRow(ctx, `
+		INSERT INTO applications (hostname, display_name, description, default_duration_seconds, max_duration_seconds, contact_info)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING `+applicationColumns,
 		strings.ToLower(hostname), displayName, description,
-		int32(defaultDuration.Seconds()), int32(maxDuration.Seconds()),
-	).Scan(
-		&app.ID, &app.Hostname, &app.DisplayName, &app.Description, &app.Enabled,
-		&app.DefaultDurationSeconds, &app.MaxDurationSeconds,
-		&app.CreatedAt, &app.UpdatedAt, &app.ArchivedAt, &app.Version,
-	)
+		int32(defaultDuration.Seconds()), int32(maxDuration.Seconds()), nullableText(contactInfo),
+	))
 	if err != nil {
 		return Application{}, fmt.Errorf("store: creating application %q: %w", hostname, err)
 	}
@@ -67,14 +62,14 @@ func (db *DB) GetApplicationByHostname(ctx context.Context, hostname string) (Ap
 	return app, true, nil
 }
 
-const applicationColumns = `id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version`
+const applicationColumns = `id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version, contact_info`
 
 func scanApplication(row scanner) (Application, error) {
 	var app Application
 	err := row.Scan(
 		&app.ID, &app.Hostname, &app.DisplayName, &app.Description, &app.Enabled,
 		&app.DefaultDurationSeconds, &app.MaxDurationSeconds,
-		&app.CreatedAt, &app.UpdatedAt, &app.ArchivedAt, &app.Version,
+		&app.CreatedAt, &app.UpdatedAt, &app.ArchivedAt, &app.Version, &app.ContactInfo,
 	)
 	return app, err
 }
@@ -126,6 +121,10 @@ type UpdateApplicationParams struct {
 	Description     *string
 	DefaultDuration *time.Duration
 	MaxDuration     *time.Duration
+	// ContactInfo: nil means leave unchanged; a non-nil pointer sets it,
+	// normalizing "" to NULL (use the global default) the same way
+	// CreateApplication does.
+	ContactInfo *string
 }
 
 // UpdateApplication applies only the fields the caller set, using the
@@ -167,14 +166,21 @@ func (db *DB) UpdateApplication(ctx context.Context, id uuid.UUID, expectedVersi
 	if p.MaxDuration != nil {
 		maxSeconds = int32(p.MaxDuration.Seconds())
 	}
+	contactInfo := current.ContactInfo
+	if p.ContactInfo != nil {
+		contactInfo = p.ContactInfo
+		if *contactInfo == "" {
+			contactInfo = nil
+		}
+	}
 
 	app, err := scanApplication(tx.QueryRow(ctx, `
 		UPDATE applications
 		SET display_name = $1, description = $2, default_duration_seconds = $3, max_duration_seconds = $4,
-		    updated_at = now(), version = version + 1
-		WHERE id = $5
+		    contact_info = $5, updated_at = now(), version = version + 1
+		WHERE id = $6
 		RETURNING `+applicationColumns,
-		displayName, description, defaultSeconds, maxSeconds, id,
+		displayName, description, defaultSeconds, maxSeconds, contactInfo, id,
 	))
 	if err != nil {
 		return Application{}, fmt.Errorf("store: updating application %s: %w", id, err)

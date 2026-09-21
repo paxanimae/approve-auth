@@ -13,7 +13,7 @@ func TestListAuditEvents_FiltersByApplicationAndAction(t *testing.T) {
 	ctx := context.Background()
 	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
-	app, err := db.CreateApplication(ctx, "audit-list.example.test", "Audit List App", "", 30*24*time.Hour, 365*24*time.Hour)
+	app, err := db.CreateApplication(ctx, "audit-list.example.test", "Audit List App", "", 30*24*time.Hour, 365*24*time.Hour, "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}

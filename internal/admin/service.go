@@ -164,7 +164,7 @@ func (s *Service) CreateApplication(ctx context.Context, in CreateApplicationInp
 		return store.Application{}, ErrInvalidDuration
 	}
 
-	app, err := s.store.CreateApplication(ctx, in.Hostname, in.DisplayName, in.Description, defaultDuration, maxDuration)
+	app, err := s.store.CreateApplication(ctx, in.Hostname, in.DisplayName, in.Description, defaultDuration, maxDuration, in.ContactInfo)
 	if err != nil {
 		if pgConstraintName(err) == "applications_hostname_key" {
 			return store.Application{}, ErrDuplicateHostname
@@ -189,6 +189,7 @@ func (s *Service) UpdateApplication(ctx context.Context, in UpdateApplicationInp
 
 	app, err := s.store.UpdateApplication(ctx, applicationID, in.ExpectedVersion, store.UpdateApplicationParams{
 		DisplayName: in.DisplayName, Description: in.Description, DefaultDuration: in.DefaultDuration, MaxDuration: in.MaxDuration,
+		ContactInfo: in.ContactInfo,
 	}, in.UpdatedBy)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {

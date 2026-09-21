@@ -95,6 +95,7 @@ func runRegisterApplication(args []string) error {
 	description := fs.String("description", "", "optional description")
 	defaultDuration := fs.Duration("default-duration", 30*24*time.Hour, "default authorization duration (e.g. 720h)")
 	maxDuration := fs.Duration("max-duration", 365*24*time.Hour, "maximum authorization duration (e.g. 8760h)")
+	contactInfo := fs.String("contact-info", "", "optional contact info shown on this application's request page, overriding the global default")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -123,7 +124,7 @@ func runRegisterApplication(args []string) error {
 	}
 	defer db.Close()
 
-	app, err := db.CreateApplication(ctx, *hostname, *displayName, *description, *defaultDuration, *maxDuration)
+	app, err := db.CreateApplication(ctx, *hostname, *displayName, *description, *defaultDuration, *maxDuration, *contactInfo)
 	if err != nil {
 		return fmt.Errorf("registering application: %w", err)
 	}

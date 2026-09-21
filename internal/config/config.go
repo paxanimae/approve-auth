@@ -38,6 +38,12 @@ type Config struct {
 	// in any decision. Empty by default; unset is valid.
 	InstanceName string `yaml:"instance_name"`
 
+	// ContactInfo is the global default shown on every application's
+	// request page (who to contact about access), unless that specific
+	// application has its own override (see migration 000014). Empty by
+	// default -- unset means no contact info is shown at all.
+	ContactInfo string `yaml:"contact_info"`
+
 	// AdminAuthMode is "oidc" (default) or "anonymous". Anonymous mode
 	// skips this service's own login entirely -- every request to the
 	// admin listener is treated as the fixed identity described by the

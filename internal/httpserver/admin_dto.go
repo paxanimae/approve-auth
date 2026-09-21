@@ -28,6 +28,11 @@ type applicationDTO struct {
 	UpdatedAt              time.Time  `json:"updated_at"`
 	ArchivedAt             *time.Time `json:"archived_at,omitempty"`
 	Version                int32      `json:"version"`
+	// ContactInfo is omitted entirely when this application has no
+	// override and uses the global config default instead -- nil, not
+	// an empty string, distinguishes "inherits the default" from "opts
+	// out with no contact info at all" for the console to display.
+	ContactInfo *string `json:"contact_info,omitempty"`
 }
 
 func newApplicationDTO(a store.Application) applicationDTO {
@@ -35,6 +40,7 @@ func newApplicationDTO(a store.Application) applicationDTO {
 		ID: a.ID.String(), Hostname: a.Hostname, DisplayName: a.DisplayName, Description: a.Description,
 		Enabled: a.Enabled, DefaultDurationSeconds: a.DefaultDurationSeconds, MaxDurationSeconds: a.MaxDurationSeconds,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt, ArchivedAt: a.ArchivedAt, Version: a.Version,
+		ContactInfo: a.ContactInfo,
 	}
 }
 

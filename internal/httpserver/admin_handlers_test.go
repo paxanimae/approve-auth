@@ -266,6 +266,42 @@ func TestCreateApplication_DuplicateHostnameMapsTo409(t *testing.T) {
 	}
 }
 
+func TestCreateApplication_ContactInfoTooLongMapsTo422(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"hostname":"a.example.test","display_name":"A","contact_info":"` + strings.Repeat("x", 501) + `"}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/applications", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("got status %d, want 422", resp.StatusCode)
+	}
+}
+
+func TestGetApplication_ContactInfoOmittedWhenNoOverride(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	appID := uuid.New()
+	app := store.Application{ID: appID, ContactInfo: nil}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{application: app, applicationFound: true})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/applications/"+appID.String(), "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if _, present := body["contact_info"]; present {
+		t.Errorf("contact_info present in response (%v) for an application with no override, want it omitted", body["contact_info"])
+	}
+}
+
 func TestGetRequest_IncludesRequestingApplication(t *testing.T) {
 	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
 	reqID := uuid.New()

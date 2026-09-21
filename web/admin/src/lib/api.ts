@@ -67,6 +67,7 @@ export interface CreateApplicationInput {
   description?: string;
   default_duration_seconds?: number;
   max_duration_seconds?: number;
+  contact_info?: string;
 }
 
 export interface DisableApplicationResponse {
@@ -89,7 +90,7 @@ export const api = {
 
   listApplications: () => request<{ applications: Application[] }>("GET", "/api/v1/applications"),
   createApplication: (input: CreateApplicationInput) => request<Application>("POST", "/api/v1/applications", input),
-  updateApplication: (id: string, body: { version: number; display_name?: string; description?: string }) =>
+  updateApplication: (id: string, body: { version: number; display_name?: string; description?: string; contact_info?: string }) =>
     request<Application>("PATCH", `/api/v1/applications/${id}`, body),
   disableApplication: (id: string, body: { version: number; reason: string }) =>
     request<DisableApplicationResponse>("POST", `/api/v1/applications/${id}/disable`, body),

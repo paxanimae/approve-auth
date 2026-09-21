@@ -30,6 +30,7 @@
       <button type="submit" class="btn-primary">Request access</button>
     </form>
     <p class="auto-notice" id="auto-notice" aria-live="polite"></p>
+    {{if .ContactInfo}}<p class="contact-info">Need help? {{.ContactInfo}}</p>{{end}}
   </main>
 </body>
 </html>

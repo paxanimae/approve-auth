@@ -25,7 +25,7 @@ type Store interface {
 	RenewAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, newExpiresAt time.Time, renewedBy string) error
 	GetAuthorizationByID(ctx context.Context, id uuid.UUID) (store.Authorization, bool, error)
 
-	CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration) (store.Application, error)
+	CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration, contactInfo string) (store.Application, error)
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (store.Application, bool, error)
 	UpdateApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, p store.UpdateApplicationParams, updatedBy string) (store.Application, error)
 	DisableApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, reason, disabledBy string) (store.Application, int, int, error)
@@ -84,6 +84,7 @@ type CreateApplicationInput struct {
 	Description     string
 	DefaultDuration time.Duration
 	MaxDuration     time.Duration
+	ContactInfo     string
 }
 
 // UpdateApplicationInput backs PATCH /api/v1/applications/{id}.
@@ -94,6 +95,7 @@ type UpdateApplicationInput struct {
 	Description     *string
 	DefaultDuration *time.Duration
 	MaxDuration     *time.Duration
+	ContactInfo     *string
 	UpdatedBy       string
 }
 
