@@ -328,6 +328,13 @@ components:
         state:
           type: string
           enum: [not_requested, pending, approved, denied, canceled, timed_out, claimed, claim_expired]
+        request_id:
+          type: string
+          format: uuid
+          description: >-
+            Absent for state "not_requested" (no pending proof to name).
+            Backs the waiting page's own approve-by-QR deep link; this
+            JSON response is not itself consumed for that purpose.
         verification_code:
           type: string
         public_message:

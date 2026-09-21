@@ -16,7 +16,7 @@ import (
 // individual handlers.
 func TestSecurityHeaders_PresentOnBothBrowserFacingListeners(t *testing.T) {
 	muxes := map[string]*http.ServeMux{
-		"public": httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{}, time.Hour, time.Hour, time.Second, nil),
+		"public": httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{}, time.Hour, time.Hour, time.Second, nil, ""),
 		"admin":  httpserver.NewAdminMux(fakeAdminSessions{}, fakeAdminActions{}, fakeAdminReadStore{}, "admin.example.test", time.Hour, time.Hour, time.Hour, time.Hour, time.Hour, time.Hour, "test", "test"),
 	}
 

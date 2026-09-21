@@ -32,14 +32,35 @@
   let theme: Theme = $state("dark");
   let navOpen = $state(false);
 
+  // openRequestId: set when this page was opened via the waiting page's
+  // approve-by-QR deep link (?open_request=<id>). Read once at load and
+  // then stripped from the URL bar (history.replaceState) so a later
+  // refresh of this same tab doesn't keep re-opening the same dialog.
+  // Kept as $state (not a plain module-level value) and cleared via
+  // Requests' onHandledDeepLink callback once it's acted on it --
+  // <Requests> is inside an {#if} block and gets destroyed/recreated
+  // on every nav away and back, so without this, switching back to the
+  // Requests tab later in the same session would re-trigger the same
+  // auto-open every time.
+  let openRequestId: string | undefined = $state(new URLSearchParams(location.search).get("open_request") ?? undefined);
+  // loginReturnTo carries that same query string through the OIDC round
+  // trip -- validateAdminReturnPath (server-side) accepts any same-
+  // origin path+query, so this survives login intact.
+  const loginReturnTo = location.pathname + location.search;
+
   onMount(async () => {
     theme = initTheme();
+    if (openRequestId) {
+      history.replaceState(null, "", location.pathname);
+    }
     try {
       const identity = await api.me();
       me = identity;
       setCsrfToken(identity.csrf_token);
       if (identity.role === "application_owner") {
         views = allViews.filter((v) => v.id === "requests" || v.id === "sessions");
+        view = "requests";
+      } else if (openRequestId) {
         view = "requests";
       }
     } catch {
@@ -91,7 +112,7 @@
       {@render logoMark(40)}
       <h1>Approve</h1>
       <p class="muted">Sign in with your organizational identity provider to continue.</p>
-      <a class="btn btn-primary" href="/auth/login?return_to=/">Log in</a>
+      <a class="btn btn-primary" href="/auth/login?return_to={encodeURIComponent(loginReturnTo)}">Log in</a>
     </div>
   </div>
 {:else}
@@ -138,7 +159,7 @@
         {#if view === "overview"}
           <Overview onNavigate={selectView} />
         {:else if view === "requests"}
-          <Requests {me} />
+          <Requests {me} {openRequestId} onHandledDeepLink={() => (openRequestId = undefined)} />
         {:else if view === "sessions"}
           <Sessions {me} />
         {:else if view === "applications"}

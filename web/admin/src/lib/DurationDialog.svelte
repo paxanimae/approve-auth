@@ -13,6 +13,9 @@
     initialDays = 30,
     maxDays,
     reasonRequired = false,
+    messageField = false,
+    messageLabel = "Message (optional)",
+    initialMessage = "",
     onConfirm,
   }: {
     open: boolean;
@@ -22,7 +25,13 @@
     initialDays?: number;
     maxDays: number;
     reasonRequired?: boolean;
-    onConfirm: (result: { days: number; reason: string }) => void;
+    // messageField adds a free-text note to the dialog (e.g. approve's
+    // private_note) -- off by default so renew's own use of this same
+    // dialog is unaffected.
+    messageField?: boolean;
+    messageLabel?: string;
+    initialMessage?: string;
+    onConfirm: (result: { days: number; reason: string; message: string }) => void;
   } = $props();
 
   let dialogEl: HTMLDialogElement | undefined = $state();
@@ -31,6 +40,7 @@
   let days = $state(0);
   let permanent = $state(false);
   let reason = $state("");
+  let message = $state("");
   let formError: string | null = $state(null);
 
   $effect(() => {
@@ -39,6 +49,7 @@
       days = initialDays;
       permanent = false;
       reason = "";
+      message = initialMessage;
       formError = null;
       dialogEl.showModal();
     } else if (!open && dialogEl.open) {
@@ -65,7 +76,7 @@
       formError = "A reason is required.";
       return;
     }
-    onConfirm({ days: chosenDays, reason: reason.trim() });
+    onConfirm({ days: chosenDays, reason: reason.trim(), message: message.trim() });
     open = false;
   }
 </script>
@@ -91,6 +102,13 @@
       <label class="field">
         <span class="field-label">Reason</span>
         <textarea bind:value={reason} rows="2" placeholder="Recorded in the audit log"></textarea>
+      </label>
+    {/if}
+
+    {#if messageField}
+      <label class="field">
+        <span class="field-label">{messageLabel}</span>
+        <textarea bind:value={message} rows="2" placeholder="Visible to other admins, not to the requester"></textarea>
       </label>
     {/if}
 

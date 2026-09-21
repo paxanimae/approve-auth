@@ -21,6 +21,12 @@
       <h1>Waiting for approval</h1>
       <p class="verification-code">{{.VerificationCode}}</p>
       <p class="hostname">Show this code to your administrator so they can confirm it's you.</p>
+      {{if .ApproveQRCodeSVG}}
+        <div class="approve-qr">
+          <p class="approve-qr-label">Or, if you have approval rights: scan to review and approve</p>
+          {{.ApproveQRCodeSVG}}
+        </div>
+      {{end}}
       <form method="post" action="/__approve-auth/cancel">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
         <button type="submit">Cancel request</button>

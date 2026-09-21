@@ -86,14 +86,16 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 // caller whose immediate TCP peer falls inside one of these blocks has
 // its X-Forwarded-For trusted for rate-limiting/audit purposes; every
 // other caller's own TCP-layer address is used instead, regardless of
-// what forwarded headers it sends.
-func NewPublicMux(enroller Enroller, decider Decider, requestTTL, credentialCookieMaxAge, decisionTimeout time.Duration, trustedTraefikCIDRs []string) *http.ServeMux {
+// what forwarded headers it sends. adminOrigin is config.Config.AdminOrigin
+// -- the waiting page's approve-by-QR code deep-links there (empty
+// disables the QR code entirely, e.g. in tests that don't care about it).
+func NewPublicMux(enroller Enroller, decider Decider, requestTTL, credentialCookieMaxAge, decisionTimeout time.Duration, trustedTraefikCIDRs []string, adminOrigin string) *http.ServeMux {
 	mux := http.NewServeMux()
 	trustedCIDRs := parseTrustedCIDRs(trustedTraefikCIDRs)
 
 	mux.HandleFunc("GET /__approve-auth/request", requestPageHandler(enroller, requestTTL, trustedCIDRs))
 	mux.HandleFunc("POST /__approve-auth/requests", submitRequestHandler(enroller, trustedCIDRs))
-	mux.HandleFunc("GET /__approve-auth/waiting", waitingPageHandler(enroller))
+	mux.HandleFunc("GET /__approve-auth/waiting", waitingPageHandler(enroller, adminOrigin))
 	mux.HandleFunc("GET /__approve-auth/status", statusHandler(enroller))
 	mux.HandleFunc("POST /__approve-auth/cancel", cancelHandler(enroller))
 	mux.HandleFunc("POST /__approve-auth/claim", claimHandler(enroller, credentialCookieMaxAge))

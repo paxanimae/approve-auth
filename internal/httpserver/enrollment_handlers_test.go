@@ -55,7 +55,7 @@ func (f configurableEnroller) Logout(context.Context, string, string) error { re
 
 func newPublicServer(t *testing.T, enroller httpserver.Enroller, decider httpserver.Decider) *httptest.Server {
 	t.Helper()
-	mux := httpserver.NewPublicMux(enroller, decider, time.Hour, 365*24*time.Hour, time.Second, nil)
+	mux := httpserver.NewPublicMux(enroller, decider, time.Hour, 365*24*time.Hour, time.Second, nil, "")
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -96,7 +96,7 @@ func submitWithForwardedFor(t *testing.T, srv *httptest.Server, forwardedFor str
 // 127.0.0.1) is inside TrustedTraefikCIDRs, X-Forwarded-For is honored.
 func TestSubmitRequest_TrustsForwardedForFromTrustedPeer(t *testing.T) {
 	rec := &recordingEnroller{configurableEnroller: configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}}
-	mux := httpserver.NewPublicMux(rec, fakeDecider{}, time.Hour, 365*24*time.Hour, time.Second, []string{"127.0.0.1/32"})
+	mux := httpserver.NewPublicMux(rec, fakeDecider{}, time.Hour, 365*24*time.Hour, time.Second, []string{"127.0.0.1/32"}, "")
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -113,7 +113,7 @@ func TestSubmitRequest_TrustsForwardedForFromTrustedPeer(t *testing.T) {
 // peer address is used instead.
 func TestSubmitRequest_IgnoresForwardedForFromUntrustedPeer(t *testing.T) {
 	rec := &recordingEnroller{configurableEnroller: configurableEnroller{submitResult: enrollment.SubmitRequestResult{RequestID: "r1", VerificationCode: "AB12-CD34"}}}
-	mux := httpserver.NewPublicMux(rec, fakeDecider{}, time.Hour, 365*24*time.Hour, time.Second, []string{"10.0.0.0/8"})
+	mux := httpserver.NewPublicMux(rec, fakeDecider{}, time.Hour, 365*24*time.Hour, time.Second, []string{"10.0.0.0/8"}, "")
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -577,6 +577,78 @@ func TestWaitingPage_RendersVerificationCodeWhenPending(t *testing.T) {
 	}
 	if !strings.Contains(body, "/__approve-auth/cancel") {
 		t.Errorf("waiting page body does not contain a cancel form action:\n%s", body)
+	}
+	if strings.Contains(body, "<svg") {
+		t.Error("waiting page rendered an approve QR code with no admin_origin configured")
+	}
+}
+
+// TestWaitingPage_RendersApproveQRCodeWhenPendingAndAdminOriginConfigured
+// covers the QR feature: a deep link to the admin console, scoped to
+// this specific request, appears while (and only while) the request is
+// still pending and an admin_origin is configured. The QR encodes the
+// URL as a module pattern, not literal text, so this only checks for
+// an <svg> at the HTTP layer -- internal/qrcode's own tests cover
+// encoding correctness; the assertion below on two different request
+// ids producing different SVGs is what actually proves this handler
+// feeds the real per-request URL into it, rather than always rendering
+// the same fixed code.
+func TestWaitingPage_RendersApproveQRCodeWhenPendingAndAdminOriginConfigured(t *testing.T) {
+	fetchWaitingPage := func(t *testing.T, requestID string) string {
+		t.Helper()
+		mux := httpserver.NewPublicMux(
+			configurableEnroller{statusResult: enrollment.StatusResult{State: "pending", VerificationCode: "AB12-CD34", RequestID: requestID}},
+			fakeDecider{}, time.Hour, 365*24*time.Hour, time.Second, nil, "https://admin.example.test",
+		)
+		srv := httptest.NewServer(mux)
+		t.Cleanup(srv.Close)
+
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/__approve-auth/waiting", nil)
+		req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("GET: %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		return readAll(t, resp)
+	}
+
+	bodyA := fetchWaitingPage(t, "11111111-2222-3333-4444-555555555555")
+	if !strings.Contains(bodyA, "<svg") {
+		t.Errorf("waiting page body does not contain an approve QR code:\n%s", bodyA)
+	}
+
+	bodyB := fetchWaitingPage(t, "66666666-7777-8888-9999-000000000000")
+	svgA := bodyA[strings.Index(bodyA, "<svg"):]
+	svgB := bodyB[strings.Index(bodyB, "<svg"):]
+	if svgA == svgB {
+		t.Error("two different request ids produced identical QR code SVGs -- the handler is not encoding the actual request id")
+	}
+}
+
+// TestWaitingPage_OmitsApproveQRCodeWhenNotPending covers the other
+// half: even with admin_origin configured, an already-approved (or
+// otherwise non-pending) request has nothing left to approve, so the
+// QR code must not appear.
+func TestWaitingPage_OmitsApproveQRCodeWhenNotPending(t *testing.T) {
+	mux := httpserver.NewPublicMux(
+		configurableEnroller{statusResult: enrollment.StatusResult{State: "approved", VerificationCode: "AB12-CD34", RequestID: "11111111-2222-3333-4444-555555555555"}},
+		fakeDecider{}, time.Hour, 365*24*time.Hour, time.Second, nil, "https://admin.example.test",
+	)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/__approve-auth/waiting", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-approve-auth-request", Value: "token"})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body := readAll(t, resp)
+	if strings.Contains(body, "<svg") {
+		t.Error("waiting page rendered an approve QR code for a non-pending request")
 	}
 }
 

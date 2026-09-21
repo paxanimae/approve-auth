@@ -1,18 +1,29 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api } from "./api";
+  import { api, ApiError } from "./api";
   import type { ApprovalRequest, Me } from "./types";
   import { formatDateTime, formatRelative } from "./format";
   import DurationDialog from "./DurationDialog.svelte";
   import NotesDialog from "./NotesDialog.svelte";
   import ReasonDialog from "./ReasonDialog.svelte";
 
-  let { me }: { me: Me } = $props();
+  // openRequestId: set when the console was opened via the waiting
+  // page's approve-by-QR deep link (App.svelte reads ?open_request=
+  // from the URL) -- once loaded, that specific request's approve
+  // dialog opens automatically instead of requiring a scroll/search
+  // through the table. onHandledDeepLink tells App.svelte the id has
+  // been acted on (found and opened, or reported as not-found/already-
+  // resolved) so it can clear its own state -- this component gets
+  // destroyed and recreated every time the admin navigates away from
+  // and back to this tab, so without that, switching back later in the
+  // same session would re-trigger the same auto-open again.
+  let { me, openRequestId, onHandledDeepLink }: { me: Me; openRequestId?: string; onHandledDeepLink?: () => void } = $props();
 
   let requests: ApprovalRequest[] = $state([]);
   let error: string | null = $state(null);
   let busyId: string | null = $state(null);
   let statusFilter: string = $state("pending");
+  let deepLinkNotice: string | null = $state(null);
 
   let approveDialogOpen = $state(false);
   let approveTarget: ApprovalRequest | null = $state(null);
@@ -38,20 +49,61 @@
     }
   }
 
-  onMount(load);
+  // openDeepLinkedRequest resolves the request named by a scanned QR
+  // code and opens its approve dialog -- the default "pending" filter
+  // usually already has it loaded, but a direct fetch covers a filter
+  // change or a request that isn't on the first page of any future
+  // pagination. A 404 here is the normal shape of "an application
+  // owner scanned a code for a request outside their own application"
+  // (backend returns 404, not 403, to avoid confirming the id exists),
+  // not necessarily an error worth alarming over.
+  async function openDeepLinkedRequest(id: string) {
+    let target = requests.find((r) => r.id === id) ?? null;
+    if (!target) {
+      try {
+        target = await api.getRequest(id);
+      } catch (e) {
+        deepLinkNotice =
+          e instanceof ApiError && e.status === 404
+            ? "That request could not be found -- it may not exist, or you may not have access to its application."
+            : `Could not load that request: ${e instanceof Error ? e.message : String(e)}`;
+        onHandledDeepLink?.();
+        return;
+      }
+    }
+    if (target.status !== "pending") {
+      deepLinkNotice = `This request is already ${target.status} -- there is nothing left to approve.`;
+      onHandledDeepLink?.();
+      return;
+    }
+    openApprove(target);
+    onHandledDeepLink?.();
+  }
+
+  onMount(async () => {
+    await load();
+    if (openRequestId) {
+      await openDeepLinkedRequest(openRequestId);
+    }
+  });
 
   function openApprove(r: ApprovalRequest) {
     approveTarget = r;
     approveDialogOpen = true;
   }
 
-  async function confirmApprove({ days }: { days: number; reason: string }) {
+  async function confirmApprove({ days, message }: { days: number; reason: string; message: string }) {
     const r = approveTarget;
     if (!r) return;
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
     busyId = r.id;
     try {
-      await api.approveRequest(r.id, { version: r.version, expires_at: expiresAt, label: r.label });
+      await api.approveRequest(r.id, {
+        version: r.version,
+        expires_at: expiresAt,
+        label: r.label,
+        ...(message ? { private_note: message } : {}),
+      });
       await load();
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
@@ -118,6 +170,13 @@
     <p role="alert" class="error-text">{error}</p>
   {/if}
 
+  {#if deepLinkNotice}
+    <p role="alert" class="notice-text">
+      {deepLinkNotice}
+      <button class="btn btn-ghost btn-sm" onclick={() => (deepLinkNotice = null)}>Dismiss</button>
+    </p>
+  {/if}
+
   {#if requests.length === 0}
     <p class="muted">No requests in this state.</p>
   {:else}
@@ -173,6 +232,8 @@
   confirmLabel="Approve"
   initialDays={Math.max(1, Math.round(me.default_authorization_duration_seconds / 86400))}
   maxDays={Math.max(1, Math.round(me.max_authorization_duration_seconds / 86400))}
+  messageField
+  messageLabel="Note (optional)"
   onConfirm={confirmApprove}
 />
 
@@ -236,5 +297,16 @@
     display: flex;
     gap: var(--space-2);
     white-space: nowrap;
+  }
+  .notice-text {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    border-radius: var(--radius-sm);
   }
 </style>

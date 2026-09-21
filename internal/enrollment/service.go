@@ -318,6 +318,7 @@ func (s *Service) Status(ctx context.Context, pendingTokenRaw string) (StatusRes
 
 	result := StatusResult{
 		State:            req.Status,
+		RequestID:        req.ID.String(),
 		VerificationCode: req.VerificationCode,
 		RequestedAt:      req.RequestedAt,
 		DeadlineAt:       req.DeadlineAt,

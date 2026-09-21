@@ -117,6 +117,31 @@ h1 {
   text-align: left;
 }
 
+.approve-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.approve-qr-label {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  margin: 0;
+  max-width: 22rem;
+}
+
+.approve-qr svg {
+  /* A real white quiet zone regardless of page theme -- the code's own
+     black/white fill must stay high-contrast to scan reliably, unlike
+     every other themed element on this page. */
+  background: #fff;
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
 .field label {
   font-size: 0.8125rem;
   font-weight: 600;

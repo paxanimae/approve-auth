@@ -6,6 +6,7 @@ import (
 	"errors"
 	"html/template"
 	"io"
+	"log"
 	"mime"
 	"net"
 	"net/http"
@@ -16,8 +17,15 @@ import (
 	"github.com/frid-iks/approve-auth/internal/authz"
 	"github.com/frid-iks/approve-auth/internal/enrollment"
 	"github.com/frid-iks/approve-auth/internal/metrics"
+	"github.com/frid-iks/approve-auth/internal/qrcode"
 	webpublic "github.com/frid-iks/approve-auth/web/public"
 )
+
+// approveQRCodeSizePixels is the waiting page's approve-by-QR code's
+// rendered size -- deliberately large: this is meant to be scanned off
+// a physical screen from a few feet away, not a phone held close to a
+// printed page.
+const approveQRCodeSizePixels = 220
 
 // maxSubmitBodyBytes bounds every JSON/form body the public,
 // unauthenticated enrollment endpoints accept (endpoint-review.md F1):
@@ -391,9 +399,16 @@ type waitingPageData struct {
 	PublicMessage    string
 	CSRFToken        string
 	HasAccessCookie  bool
+	// ApproveQRCodeSVG is set only while State is "pending" -- an inline
+	// <svg> (safe to emit unescaped: built entirely from this service's
+	// own AdminOrigin config and a UUID, never requester-controlled)
+	// encoding a deep link into the admin console for whoever has
+	// approval rights over this application to scan and act on from
+	// their phone.
+	ApproveQRCodeSVG template.HTML
 }
 
-func waitingPageHandler(enroller Enroller) http.HandlerFunc {
+func waitingPageHandler(enroller Enroller, adminOrigin string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		pendingToken, ok := singleCookieValue(r, pendingCookieName)
 		if !ok {
@@ -413,6 +428,9 @@ func waitingPageHandler(enroller Enroller) http.HandlerFunc {
 				data.VerificationCode = status.VerificationCode
 				data.PublicMessage = status.PublicMessage
 				data.CSRFToken = status.CSRFToken
+				if status.State == "pending" && status.RequestID != "" {
+					data.ApproveQRCodeSVG = approveQRCodeSVG(adminOrigin, status.RequestID)
+				}
 			}
 		}
 		if accessToken, ok := singleCookieValue(r, accessCookieName); ok && accessToken != "" {
@@ -421,6 +439,25 @@ func waitingPageHandler(enroller Enroller) http.HandlerFunc {
 
 		renderPage(w, "waiting.html.tmpl", data)
 	}
+}
+
+// approveQRCodeSVG builds the admin-console deep-link URL
+// (adminOrigin + "/?open_request=<id>") and renders it as an inline QR
+// code. A failure here is advisory, not fatal -- the waiting page
+// remains fully usable via the verification code alone (spec's
+// existing no-JS/no-QR path), so a rendering error is logged and the
+// QR is simply omitted rather than failing the whole page.
+func approveQRCodeSVG(adminOrigin, requestID string) template.HTML {
+	if adminOrigin == "" {
+		return ""
+	}
+	target := adminOrigin + "/?open_request=" + url.QueryEscape(requestID)
+	svg, err := qrcode.SVG(target, approveQRCodeSizePixels)
+	if err != nil {
+		log.Printf("httpserver: rendering approve QR code: %v", err)
+		return ""
+	}
+	return template.HTML(svg)
 }
 
 // --- GET /__approve-auth/status ---

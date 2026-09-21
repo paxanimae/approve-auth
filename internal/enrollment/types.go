@@ -123,7 +123,15 @@ type SubmitRequestResult struct {
 // directly rather than building a map (spec section 9: "JSON uses
 // snake_case").
 type StatusResult struct {
-	State            string     `json:"state"`
+	State string `json:"state"`
+	// RequestID is this browser's own pending request's id -- used to
+	// build the admin-approval QR code's deep-link URL (the waiting
+	// page template, not this JSON response itself, is the primary
+	// consumer). Exposing it here is no different from the
+	// verification code already below: it's the caller's own request,
+	// and knowing the id grants no capability without also being an
+	// authenticated admin.
+	RequestID        string     `json:"request_id"`
 	VerificationCode string     `json:"verification_code"`
 	PublicMessage    string     `json:"public_message"`
 	RequestedAt      time.Time  `json:"requested_at"`

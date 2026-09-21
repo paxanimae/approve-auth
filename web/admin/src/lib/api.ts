@@ -121,6 +121,7 @@ export const api = {
 
   listRequests: (status?: string) =>
     request<{ requests: ApprovalRequest[] }>("GET", `/api/v1/requests${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  getRequest: (id: string) => request<ApprovalRequest>("GET", `/api/v1/requests/${id}`),
   approveRequest: (id: string, body: { version: number; expires_at?: string; label?: string; private_note?: string }) =>
     request<{ authorization_id: string; expires_at: string }>("POST", `/api/v1/requests/${id}/approve`, body),
   denyRequest: (id: string, body: { version: number; reason: string; public_message?: string }) =>

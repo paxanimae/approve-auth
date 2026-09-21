@@ -81,7 +81,7 @@ func listeners() []listener {
 	return []listener{
 		{
 			name: "public",
-			mux:  httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Hour, time.Hour, time.Second, nil),
+			mux:  httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{decision: authz.Decision{Category: authz.CategoryAllow}}, time.Hour, time.Hour, time.Second, nil, ""),
 			routes: []route{
 				{"GET", "/__approve-auth/request"},
 				{"POST", "/__approve-auth/requests"},
@@ -197,7 +197,7 @@ func TestCrossListenerRoutesAreUnreachable(t *testing.T) {
 }
 
 func TestPublicAssetsServeEmbeddedContent(t *testing.T) {
-	mux := httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{}, time.Hour, time.Hour, time.Second, nil)
+	mux := httpserver.NewPublicMux(fakeEnroller{}, fakeDecider{}, time.Hour, time.Hour, time.Second, nil, "")
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
