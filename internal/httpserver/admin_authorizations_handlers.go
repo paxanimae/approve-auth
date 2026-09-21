@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/approve-auth/internal/admin"
+	"github.com/paxanimae/approve-auth/internal/admin"
 )
 
 // --- GET /api/v1/authorizations ---

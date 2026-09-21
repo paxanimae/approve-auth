@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/authz"
-	"github.com/frid-iks/approve-auth/internal/enrollment"
-	"github.com/frid-iks/approve-auth/internal/metrics"
-	"github.com/frid-iks/approve-auth/internal/qrcode"
-	webpublic "github.com/frid-iks/approve-auth/web/public"
+	"github.com/paxanimae/approve-auth/internal/authz"
+	"github.com/paxanimae/approve-auth/internal/enrollment"
+	"github.com/paxanimae/approve-auth/internal/metrics"
+	"github.com/paxanimae/approve-auth/internal/qrcode"
+	webpublic "github.com/paxanimae/approve-auth/web/public"
 )
 
 // approveQRCodeSizePixels is the waiting page's approve-by-QR code's

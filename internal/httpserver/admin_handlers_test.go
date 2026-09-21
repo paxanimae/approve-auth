@@ -12,10 +12,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/approve-auth/internal/admin"
-	"github.com/frid-iks/approve-auth/internal/adminsession"
-	"github.com/frid-iks/approve-auth/internal/httpserver"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/admin"
+	"github.com/paxanimae/approve-auth/internal/adminsession"
+	"github.com/paxanimae/approve-auth/internal/httpserver"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 const testAdminHost = "admin.example.test"

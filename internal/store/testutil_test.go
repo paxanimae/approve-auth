@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 func mustParseUUID(t *testing.T, s string) uuid.UUID {

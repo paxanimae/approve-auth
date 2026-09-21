@@ -35,7 +35,7 @@
 #   docker run --rm --network <approve-auth's db network> \
 #     -e DATABASE_URL_FILE=/secret \
 #     -v <path-to-a-copy-of-database_url>:/secret:ro \
-#     registry.frid-iks.no/approve-auth:0.1.0 \
+#     dividedbyzeroexception/approve-auth:0.1.0 \
 #     admin register-application -hostname app-a.internal -display-name "Test App A"
 #   (repeat for app-b.internal)
 

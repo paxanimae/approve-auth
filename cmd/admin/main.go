@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/config"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/config"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 func main() {

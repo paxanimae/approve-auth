@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/frid-iks/approve-auth/internal/admin"
+	"github.com/paxanimae/approve-auth/internal/admin"
 )
 
 func TestGrantApplicationOwner_Success(t *testing.T) {

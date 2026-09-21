@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/approve-auth/internal/authz"
-	"github.com/frid-iks/approve-auth/internal/revokepolicy"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/authz"
+	"github.com/paxanimae/approve-auth/internal/revokepolicy"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 func ipPtr(s string) *net.IP {

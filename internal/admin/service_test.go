@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/approve-auth/internal/admin"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/admin"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 func skipIfNoDB(t *testing.T) string {

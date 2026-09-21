@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/authz"
-	"github.com/frid-iks/approve-auth/internal/metrics"
+	"github.com/paxanimae/approve-auth/internal/authz"
+	"github.com/paxanimae/approve-auth/internal/metrics"
 )
 
 // stripPort removes a ":port" suffix from a Host-style value, lowercasing

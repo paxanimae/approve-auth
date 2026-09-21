@@ -1,5 +1,5 @@
 // Package version holds this build's version string, set at build time
-// via -ldflags "-X github.com/frid-iks/approve-auth/internal/version.Version=..."
+// via -ldflags "-X github.com/paxanimae/approve-auth/internal/version.Version=..."
 // (see Dockerfile's VERSION build arg) -- never bump this by hand here.
 package version
 

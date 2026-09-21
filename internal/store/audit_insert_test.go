@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 // TestMutationsWriteAuditEvents confirms spec section 12's "mutations

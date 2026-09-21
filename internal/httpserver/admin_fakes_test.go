@@ -6,9 +6,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/approve-auth/internal/admin"
-	"github.com/frid-iks/approve-auth/internal/adminsession"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/admin"
+	"github.com/paxanimae/approve-auth/internal/adminsession"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 // fakeAdminSessions is a minimal, configurable stand-in for

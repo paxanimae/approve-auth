@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/frid-iks/approve-auth/internal/adminsession"
+	"github.com/paxanimae/approve-auth/internal/adminsession"
 )
 
 func TestAnonymous_ValidateSessionAlwaysSucceedsWithFixedIdentity(t *testing.T) {

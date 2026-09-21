@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/admin"
-	"github.com/frid-iks/approve-auth/internal/revokepolicy"
+	"github.com/paxanimae/approve-auth/internal/admin"
+	"github.com/paxanimae/approve-auth/internal/revokepolicy"
 )
 
 // validateNotifyWebhookURL rejects a non-empty webhook URL that isn't

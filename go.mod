@@ -1,4 +1,4 @@
-module github.com/frid-iks/approve-auth
+module github.com/paxanimae/approve-auth
 
 go 1.25.11
 

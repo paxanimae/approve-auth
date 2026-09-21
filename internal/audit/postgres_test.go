@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/frid-iks/approve-auth/internal/audit"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/audit"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 func testPool(t *testing.T) *pgxpool.Pool {

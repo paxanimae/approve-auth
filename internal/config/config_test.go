@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frid-iks/approve-auth/internal/config"
+	"github.com/paxanimae/approve-auth/internal/config"
 )
 
 func setSecretEnv(t *testing.T) {

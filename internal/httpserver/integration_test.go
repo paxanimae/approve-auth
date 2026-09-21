@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/authz"
-	"github.com/frid-iks/approve-auth/internal/httpserver"
+	"github.com/paxanimae/approve-auth/internal/authz"
+	"github.com/paxanimae/approve-auth/internal/httpserver"
 )
 
 // --- test PKI helpers: a small self-signed CA + leaf issuer, entirely

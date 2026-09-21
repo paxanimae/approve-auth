@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/approve-auth/internal/revokepolicy"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/revokepolicy"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 // Store is the read/write surface Decide needs. Defined here (not just

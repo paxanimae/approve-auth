@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frid-iks/approve-auth/internal/qrcode"
+	"github.com/paxanimae/approve-auth/internal/qrcode"
 )
 
 func TestSVG_ProducesWellFormedSVG(t *testing.T) {

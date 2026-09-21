@@ -11,10 +11,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/frid-iks/approve-auth/internal/geoip"
-	"github.com/frid-iks/approve-auth/internal/metrics"
-	"github.com/frid-iks/approve-auth/internal/notify"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/geoip"
+	"github.com/paxanimae/approve-auth/internal/metrics"
+	"github.com/paxanimae/approve-auth/internal/notify"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 var (

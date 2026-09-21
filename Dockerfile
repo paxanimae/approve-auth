@@ -22,7 +22,7 @@ COPY --from=web /src/web/admin/dist ./web/admin/dist
 # internal/version's own doc comment for why this must stay a var, not
 # a const.
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/frid-iks/approve-auth/internal/version.Version=${VERSION}" -o /out/server ./cmd/server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/paxanimae/approve-auth/internal/version.Version=${VERSION}" -o /out/server ./cmd/server
 RUN CGO_ENABLED=0 go build -trimpath -o /out/admin ./cmd/admin
 RUN CGO_ENABLED=0 go build -trimpath -o /out/mock-oidc ./cmd/mock-oidc
 

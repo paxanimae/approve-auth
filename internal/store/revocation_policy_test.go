@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/revokepolicy"
+	"github.com/paxanimae/approve-auth/internal/revokepolicy"
 )
 
 func TestFlagAuthorizationForReview_SetsFlagAndIsIdempotent(t *testing.T) {

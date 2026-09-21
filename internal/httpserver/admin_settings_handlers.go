@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/admin"
-	"github.com/frid-iks/approve-auth/internal/revokepolicy"
+	"github.com/paxanimae/approve-auth/internal/admin"
+	"github.com/paxanimae/approve-auth/internal/revokepolicy"
 )
 
 // validateRequiredRevokePolicyAction accepts nil (field omitted, leave

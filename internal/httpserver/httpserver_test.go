@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/authz"
-	"github.com/frid-iks/approve-auth/internal/enrollment"
-	"github.com/frid-iks/approve-auth/internal/httpserver"
+	"github.com/paxanimae/approve-auth/internal/authz"
+	"github.com/paxanimae/approve-auth/internal/enrollment"
+	"github.com/paxanimae/approve-auth/internal/httpserver"
 )
 
 // fakeDecider lets httpserver tests exercise the /auth response-mapping

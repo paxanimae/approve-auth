@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 func TestWithAdvisoryLock_MutualExclusion(t *testing.T) {

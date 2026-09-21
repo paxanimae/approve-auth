@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/adminsession"
-	"github.com/frid-iks/approve-auth/internal/oidc"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/adminsession"
+	"github.com/paxanimae/approve-auth/internal/oidc"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 func skipIfNoDB(t *testing.T) string {

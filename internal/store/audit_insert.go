@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/frid-iks/approve-auth/internal/metrics"
+	"github.com/paxanimae/approve-auth/internal/metrics"
 )
 
 // auditParams is the subset of audit_events columns every mutation in

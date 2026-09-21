@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/admin"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/admin"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 var csrfTokenPattern = regexp.MustCompile(`name="csrf_token" value="([^"]*)"`)

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/authz"
-	"github.com/frid-iks/approve-auth/internal/httpserver"
+	"github.com/paxanimae/approve-auth/internal/authz"
+	"github.com/paxanimae/approve-auth/internal/httpserver"
 )
 
 func newAuthRequest(t *testing.T, srvURL string) *http.Request {

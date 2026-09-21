@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	webadmin "github.com/frid-iks/approve-auth/web/admin"
-	webpublic "github.com/frid-iks/approve-auth/web/public"
+	webadmin "github.com/paxanimae/approve-auth/web/admin"
+	webpublic "github.com/paxanimae/approve-auth/web/public"
 )
 
 type apiError struct {

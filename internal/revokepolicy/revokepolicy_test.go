@@ -3,7 +3,7 @@ package revokepolicy_test
 import (
 	"testing"
 
-	"github.com/frid-iks/approve-auth/internal/revokepolicy"
+	"github.com/paxanimae/approve-auth/internal/revokepolicy"
 )
 
 func strPtr(s string) *string { return &s }

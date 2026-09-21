@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/frid-iks/approve-auth/internal/metrics"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/metrics"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 // ErrConflict means the request/authorization wasn't in the state the

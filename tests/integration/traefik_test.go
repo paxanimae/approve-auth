@@ -27,7 +27,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 const protectedHostname = "protected.localtest.me"

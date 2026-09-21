@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/frid-iks/approve-auth/internal/notify"
-	"github.com/frid-iks/approve-auth/internal/store"
+	"github.com/paxanimae/approve-auth/internal/notify"
+	"github.com/paxanimae/approve-auth/internal/store"
 )
 
 // fakeJobStore is an in-memory stand-in for notify.JobStore, so

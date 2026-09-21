@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/adminsession"
+	"github.com/paxanimae/approve-auth/internal/adminsession"
 )
 
 // --- GET /auth/login ---

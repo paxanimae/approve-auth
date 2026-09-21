@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/frid-iks/approve-auth/internal/revokepolicy"
+	"github.com/paxanimae/approve-auth/internal/revokepolicy"
 )
 
 // FlagAuthorizationForReview marks authorizationID as needing a

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frid-iks/approve-auth/internal/notify"
+	"github.com/paxanimae/approve-auth/internal/notify"
 )
 
 func testEvent() notify.Event {
