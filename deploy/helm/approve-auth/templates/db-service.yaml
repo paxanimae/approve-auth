@@ -1,0 +1,22 @@
+{{- if .Values.db.enabled -}}
+# Headless (clusterIP: None) -- the StatefulSet above needs this for
+# stable per-Pod DNS; a single-replica db has no load-balancing need
+# a normal ClusterIP Service would add. Reachable at
+# <this-name>.<namespace>.svc.cluster.local:5432 -- see NOTES.txt for
+# the connection string this feeds into secrets.databaseUrl/
+# db.existingSuperuserUrlSecret.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "approve-auth.db.fullname" . }}
+  labels:
+    {{- include "approve-auth.db.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "approve-auth.db.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+{{- end }}

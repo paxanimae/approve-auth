@@ -1,0 +1,28 @@
+# One Service, four named ports -- deploy/stack.yml's `approve-auth`
+# service is likewise one Swarm service reachable on all four listener
+# ports; Traefik's own ForwardAuth address and this chart's optional
+# Middleware (templates/traefik-middleware.yaml) both target the "auth"
+# port here by name, the reserved-path IngressRoute targets "public",
+# the admin IngressRoute targets "admin".
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "approve-auth.fullname" . }}
+  labels:
+    {{- include "approve-auth.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "approve-auth.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: public
+      port: {{ .Values.service.public.port }}
+      targetPort: public
+    - name: admin
+      port: {{ .Values.service.admin.port }}
+      targetPort: admin
+    - name: auth
+      port: {{ .Values.service.auth.port }}
+      targetPort: auth
+    - name: ops
+      port: {{ .Values.service.ops.port }}
+      targetPort: ops

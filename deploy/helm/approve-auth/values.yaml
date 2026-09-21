@@ -1,0 +1,261 @@
+# Default values for approve-auth. See README.md for the full
+# prerequisite walkthrough (it mirrors deploy/stack.yml's own big
+# comment block: create secrets, load config, then install).
+#
+# Design rule this whole file follows: every *_FILE config value and
+# every secret mount path is byte-identical to deploy/stack.yml's own
+# /run/secrets/<name> convention. If you already run the Swarm stack,
+# your existing approve-auth-config.yaml needs zero edits to become
+# this chart's `config:` value -- only *where the secrets come from*
+# changes (Kubernetes Secrets you create with `kubectl create secret`,
+# instead of `docker secret create`).
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: dividedbyzeroexception/approve-auth
+  tag: "0.3.0"
+  pullPolicy: IfNotPresent
+
+# "Deploy two authorization-service replicas with separate-node
+# placement where capacity allows" -- deploy/stack.yml's own
+# deploy.replicas + deploy.placement.max_replicas_per_node: 1. The
+# podAntiAffinity below implements the "where capacity allows" part
+# (preferred, not required, so a single-node dev cluster still
+# schedules both replicas rather than leaving one Pending forever).
+replicaCount: 2
+
+# The real admin console hostname. Required whenever traefik.enabled is
+# true (see below) -- matches ADMIN_HOSTNAME in deploy/stack.yml.
+adminHostname: ""
+
+# Rendered into a ConfigMap unchanged and mounted at
+# /config/approve-auth.yaml (CONFIG_FILE) -- this is
+# deploy/approve-auth-config.example.yaml verbatim, since nothing about
+# its content is Kubernetes-specific. Edit the same way you'd edit a
+# real approve-auth-config.yaml before `docker config create`. Every
+# auth_tls_*_file path below is a Secret volume mount path this chart's
+# Deployment template creates automatically (see secrets: below) --
+# change both together if you ever change one.
+config: |
+  admin_origin: https://approve.example.com
+
+  # instance_name: prod-eu-west
+
+  # geoip_database_path: /geoip/GeoLite2-City.mmdb
+
+  # notify_smtp_host: smtp.example.com
+  # notify_smtp_port: 587
+  # notify_smtp_username: approve-auth@example.com
+
+  admin_auth_mode: oidc
+  oidc_issuer: https://login.example.com/
+  oidc_client_id: replace-with-your-real-oidc-client-id
+  oidc_admin_groups: ["replace-with-a-real-admin-group-id"]
+  oidc_viewer_groups: ["replace-with-a-real-viewer-group-id"]
+
+  claim_encryption_key_id: primary
+
+  auth_tls_cert_file: /run/secrets/auth_tls_cert
+  auth_tls_key_file: /run/secrets/auth_tls_key
+  auth_client_ca_file: /run/secrets/auth_client_ca
+  auth_allowed_client_identities: ["traefik-client"]
+
+  # Real deployment network ranges only -- the CIDR block your
+  # cluster's Traefik Pods actually get their in-cluster IPs from
+  # (check your CNI), never 0.0.0.0/0.
+  trusted_traefik_cidrs: ["10.0.0.0/8"]
+
+  default_authorization_duration: 720h # 30 days
+  max_authorization_duration: 8760h # 365 days
+  credential_max_age: 8760h # 365 days
+  request_ttl: 24h
+  claim_ttl: 30m
+  claim_retry_ttl: 10m
+  expiring_soon_window: 168h # 7 days
+  admin_idle_ttl: 30m
+  admin_absolute_ttl: 8h
+  auth_decision_timeout: 2s
+  log_level: info
+
+  rate_limits:
+    pending_requests_per_hour_per_app_ip: 5
+    bootstrap_per_minute_per_ip: 30
+    status_per_minute_per_pending_proof: 20
+    admin_writes_per_minute_per_admin: 60
+    global_enrollment_per_hour: 1000
+
+  retention:
+    audit_events: 8760h # 365 days
+    resolved_requests: 2160h # 90 days
+    ip_and_user_agent: 720h # 30 days
+    return_paths: 168h # 7 days
+    idempotency_records: 24h
+    claim_envelopes: 10m
+    notifications: 720h # 30 days
+
+# Every value below is the *name* of a Kubernetes Secret you create
+# yourself (kubectl create secret generic <name> --from-literal=...),
+# never a literal value in this file -- the same "external: true"
+# philosophy deploy/stack.yml's own secrets: block uses, for the same
+# reason: a value baked into values.yaml ends up readable in `helm get
+# values`/`helm history` forever. Each Secret's own key name is fixed
+# (shown alongside) and must match exactly -- see README.md for the
+# full `kubectl create secret` walkthrough.
+secrets:
+  databaseUrl: "" # key: database_url
+  oidcClientSecret: "" # key: oidc_client_secret
+  claimEncryptionKey: "" # key: claim_encryption_key
+  oidcStateKey: "" # key: oidc_state_key
+  authTlsCert: "" # key: auth_tls_cert
+  authTlsKey: "" # key: auth_tls_key
+  authClientCa: "" # key: auth_client_ca
+  # OPTIONAL -- see notify_smtp_host in config: above. Leave blank to
+  # leave NOTIFY_SMTP_PASSWORD_FILE/NOTIFY_WEBHOOK_SECRET_FILE unset.
+  notifySmtpPassword: "" # key: notify_smtp_password
+  notifyWebhookSecret: "" # key: notify_webhook_secret
+
+# OPTIONAL -- only if oidc_issuer (or anything else this service calls
+# out to over TLS) presents a certificate signed by a private/internal
+# CA. Mirrors deploy/stack.yml's own approve-auth-ca-bundle Swarm
+# config + SSL_CERT_FILE: build a combined bundle (public CAs + your
+# internal CA, concatenated -- see README.md for the exact commands,
+# identical to deploy/stack.approve.yml's prerequisite step 9) and load
+# it as a ConfigMap yourself, then point this at it.
+caBundle:
+  enabled: false
+  existingConfigMap: "" # key: ca-bundle.pem
+
+# OPTIONAL -- best-effort GeoIP enrichment (internal/geoip). This repo
+# cannot bundle a database file itself (see scripts/fetch-geoip.sh).
+# The file is ~60MB, too large for a ConfigMap (etcd's 1MiB limit), so
+# unlike caBundle above this needs a real volume:
+#   - hostPath: same caveat deploy/stack.yml's own commented-out volume
+#     mount documents -- pinned to one node, does not survive node loss
+#     or follow rescheduling. nodeSelector below is this chart's
+#     equivalent of that file's `node.labels.approve-auth-db-storage`
+#     placement constraint; label a node and set both together.
+#   - existingClaim: a PVC you populated yourself (e.g. a one-off Job
+#     with an initContainer that downloads GeoLite2-City.mmdb into it) --
+#     the portable option if your cluster has a shared/network storage
+#     class.
+geoip:
+  enabled: false
+  volumeType: hostPath # hostPath | existingClaim
+  hostPath: /var/lib/approve-auth/geoip
+  nodeSelector: {}
+  existingClaim: ""
+
+# Mirrors deploy/stack.yml's own bundled `db` service (self-hosted,
+# single-node Postgres -- spec section 13 documents this as a
+# deliberate single point of failure, not something either artifact
+# papers over). Set enabled: false to bring your own Postgres instead
+# (deploy/stack.approve.yml's Azure-managed variant is the compose
+# equivalent of that choice) -- secrets.databaseUrl/databaseUrlSuperuser
+# then just need to point at wherever that is.
+db:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17.6"
+  # keys: db_superuser_name, db_superuser_password (same names as the
+  # Swarm secrets deploy/stack.yml mounts for
+  # POSTGRES_USER_FILE/POSTGRES_PASSWORD_FILE and its own pg_isready
+  # healthcheck).
+  existingSecret: ""
+  # Only used by the migrate Job (runs `admin migrate-up`, which needs
+  # superuser-equivalent privilege to run migration 000012's CREATE
+  # ROLE/GRANT statements) -- deploy/stack.yml keeps this as a
+  # separate secret from db_superuser_name/password rather than
+  # reconstructing the connection string from parts, and so does this
+  # chart, for the same reason: a Helm template string-building a
+  # connection string containing a password is a real value sitting in
+  # `helm template`/`helm get values` output. key: database_url_superuser.
+  existingSuperuserUrlSecret: ""
+  storage:
+    size: 10Gi
+    storageClassName: ""
+  # Matches deploy/stack.yml's own
+  # `node.labels.approve-auth-db-storage == true` placement constraint
+  # -- optional; a real StorageClass with its own topology awareness
+  # usually makes this unnecessary in Kubernetes, unlike Swarm's local
+  # volume driver.
+  nodeSelector: {}
+
+resources:
+  # Spec section 15's load-testing baseline assumes "two app replicas
+  # provisioned at 2 vCPU/512 MiB each" -- deploy/stack.yml's own
+  # deploy.resources.limits/reservations, unchanged. Adjust after your
+  # own load test, not before.
+  limits:
+    cpu: "2"
+    memory: 512Mi
+  requests:
+    cpu: "500m"
+    memory: 256Mi
+
+# "Gracefully drain for up to 30 seconds" -- deploy/stack.yml's own
+# stop_grace_period.
+terminationGracePeriodSeconds: 30
+
+service:
+  public:
+    port: 8080
+  admin:
+    port: 8081
+  auth:
+    port: 8443
+  ops:
+    port: 9090
+
+# Kubernetes-native equivalent of the same three lines in
+# deploy/stack.yml (read_only/cap_drop/nonroot). The image's own
+# default user is already nonroot (65532, distroless/static:nonroot) --
+# runAsNonRoot here is restated for auditability the same way the
+# compose comment says, not because the image would otherwise run as
+# root.
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+# Optional Traefik Kubernetes-CRD wiring (Middleware + IngressRoute),
+# the direct equivalent of deploy/traefik-approve-auth-middleware.yml
+# for a cluster where Traefik itself runs as Kubernetes ingress instead
+# of a Swarm service. Requires Traefik's own CRDs
+# (traefik.io/v1alpha1 Middleware/IngressRoute) already installed --
+# this chart does not install Traefik itself, exactly like
+# deploy/stack.yml "does NOT bundle Traefik". A protected application
+# references the resulting Middleware the same way its Swarm
+# counterpart references `approve-auth@file`: as
+# `<release-name>-approve-auth@kubernetescrd` (cross-namespace requires
+# enabling Traefik's own allowCrossNamespace, same as any other
+# Traefik Kubernetes-CRD middleware).
+traefik:
+  enabled: true
+  entryPoint: websecure
+  certResolver: default
+  # mTLS from Traefik to this chart's Authorization listener (spec
+  # section 13) -- same two pieces deploy/traefik-approve-auth-middleware.yml's
+  # `tls:` block needs, as Kubernetes Secrets instead of Swarm secrets.
+  mtls:
+    caSecret: "" # Opaque Secret, key: tls.ca -- the CA that issued Traefik's own client certificate
+    certSecret: "" # kubernetes.io/tls Secret -- Traefik's client certificate for calling /auth
+
+# Extra pod-spec escape hatches, for anything this chart doesn't
+# already expose a dedicated value for (tolerations, extra env vars via
+# a Secret/ConfigMap envFrom, etc.) -- kept deliberately minimal rather
+# than piling on more top-level keys.
+tolerations: []
+affinity: {}

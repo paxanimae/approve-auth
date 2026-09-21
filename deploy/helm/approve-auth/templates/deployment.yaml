@@ -1,0 +1,252 @@
+# The Kubernetes equivalent of deploy/stack.yml's `approve-auth`
+# service. Field-by-field mapping, for anyone comparing the two side by
+# side:
+#   read_only / cap_drop / (nonroot)   -> securityContext below
+#   tmpfs: [/tmp]                       -> the "tmp" emptyDir volume
+#   environment: *_FILE                 -> env below, same names, same
+#                                          /run/secrets/<name> paths
+#   secrets:                            -> the "secrets" volume
+#                                          (projected, one entry per
+#                                          Kubernetes Secret referenced
+#                                          in values.secrets)
+#   configs: approve-auth-config        -> the "config" volume
+#                                          (configmap-config.yaml)
+#   deploy.replicas /
+#     placement.max_replicas_per_node   -> replicas + podAntiAffinity
+#   deploy.update_config                -> strategy (RollingUpdate)
+#   deploy.resources                    -> resources
+#   deploy.labels (traefik.*)           -> templates/traefik-*.yaml
+#                                          instead (Kubernetes has no
+#                                          per-Pod-label ingress
+#                                          discovery the way Traefik's
+#                                          Swarm provider does)
+#   stop_grace_period                   -> terminationGracePeriodSeconds
+#
+# Not in deploy/stack.yml at all: readiness/liveness probes below. The
+# compose file has no equivalent (Swarm's own rolling-update health
+# gating is coarser -- container exit status only), but this service
+# already exposes exactly GET /livez and GET /readyz for this purpose
+# (spec section 13), so wiring them in is filling a gap Kubernetes
+# expects filled, not a behavioral departure from the compose version.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "approve-auth.fullname" . }}
+  labels:
+    {{- include "approve-auth.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # order: start-first, parallelism: 1 in deploy/stack.yml -- bring
+      # up the new Pod before removing an old one, one at a time.
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "approve-auth.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Forces a rollout whenever the rendered config actually
+        # changes -- deploy/stack.yml's own config update needs an
+        # explicit `docker config create` + service update instead
+        # (Swarm configs are immutable); this is the Kubernetes-native
+        # way to get the same "a config edit takes effect on the next
+        # deploy" property without that dance.
+        checksum/config: {{ .Values.config | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "approve-auth.serviceAccountName" . }}
+      # "Deploy ... with separate-node placement where capacity
+      # allows" (spec section 13) -- preferred, not required, so a
+      # single-node cluster still schedules every replica instead of
+      # leaving one Pending forever the way a `required` rule would.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "approve-auth.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+        {{- with .Values.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
+      containers:
+        - name: approve-auth
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # No command/args override -- the image's own default
+          # ENTRYPOINT (/usr/local/bin/server) is used unchanged, same
+          # as deploy/stack.yml; CONFIG_FILE below is how it finds its
+          # config either way.
+          securityContext:
+            readOnlyRootFilesystem: {{ .Values.securityContext.readOnlyRootFilesystem }}
+            allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
+            capabilities:
+              drop:
+                {{- toYaml .Values.securityContext.capabilities.drop | nindent 16 }}
+          env:
+            - name: CONFIG_FILE
+              value: /config/approve-auth.yaml
+            - name: DATABASE_URL_FILE
+              value: /run/secrets/database_url
+            - name: OIDC_CLIENT_SECRET_FILE
+              value: /run/secrets/oidc_client_secret
+            - name: CLAIM_ENCRYPTION_KEY_FILE
+              value: /run/secrets/claim_encryption_key
+            - name: OIDC_STATE_ENCRYPTION_KEY_FILE
+              value: /run/secrets/oidc_state_key
+            {{- if .Values.caBundle.enabled }}
+            - name: SSL_CERT_FILE
+              value: /certs/ca-bundle.pem
+            {{- end }}
+            {{- if .Values.secrets.notifySmtpPassword }}
+            - name: NOTIFY_SMTP_PASSWORD_FILE
+              value: /run/secrets/notify_smtp_password
+            {{- end }}
+            {{- if .Values.secrets.notifyWebhookSecret }}
+            - name: NOTIFY_WEBHOOK_SECRET_FILE
+              value: /run/secrets/notify_webhook_secret
+            {{- end }}
+            {{- if .Values.geoip.enabled }}
+            - name: GEOIP_DATABASE_PATH
+              value: /geoip/GeoLite2-City.mmdb
+            {{- end }}
+          ports:
+            - name: public
+              containerPort: 8080
+            - name: admin
+              containerPort: 8081
+            - name: auth
+              containerPort: 8443
+            - name: ops
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: ops
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: ops
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.caBundle.enabled }}
+            - name: ca-bundle
+              mountPath: /certs
+              readOnly: true
+            {{- end }}
+            {{- if .Values.geoip.enabled }}
+            - name: geoip
+              mountPath: /geoip
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "approve-auth.fullname" . }}-config
+        - name: secrets
+          projected:
+            sources:
+              - secret:
+                  name: {{ required "secrets.databaseUrl is required" .Values.secrets.databaseUrl }}
+                  items:
+                    - key: database_url
+                      path: database_url
+              - secret:
+                  name: {{ required "secrets.oidcClientSecret is required" .Values.secrets.oidcClientSecret }}
+                  items:
+                    - key: oidc_client_secret
+                      path: oidc_client_secret
+              - secret:
+                  name: {{ required "secrets.claimEncryptionKey is required" .Values.secrets.claimEncryptionKey }}
+                  items:
+                    - key: claim_encryption_key
+                      path: claim_encryption_key
+              - secret:
+                  name: {{ required "secrets.oidcStateKey is required" .Values.secrets.oidcStateKey }}
+                  items:
+                    - key: oidc_state_key
+                      path: oidc_state_key
+              - secret:
+                  name: {{ required "secrets.authTlsCert is required" .Values.secrets.authTlsCert }}
+                  items:
+                    - key: auth_tls_cert
+                      path: auth_tls_cert
+              - secret:
+                  name: {{ required "secrets.authTlsKey is required" .Values.secrets.authTlsKey }}
+                  items:
+                    - key: auth_tls_key
+                      path: auth_tls_key
+              - secret:
+                  name: {{ required "secrets.authClientCa is required" .Values.secrets.authClientCa }}
+                  items:
+                    - key: auth_client_ca
+                      path: auth_client_ca
+              {{- if .Values.secrets.notifySmtpPassword }}
+              - secret:
+                  name: {{ .Values.secrets.notifySmtpPassword }}
+                  items:
+                    - key: notify_smtp_password
+                      path: notify_smtp_password
+              {{- end }}
+              {{- if .Values.secrets.notifyWebhookSecret }}
+              - secret:
+                  name: {{ .Values.secrets.notifyWebhookSecret }}
+                  items:
+                    - key: notify_webhook_secret
+                      path: notify_webhook_secret
+              {{- end }}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.caBundle.enabled }}
+        - name: ca-bundle
+          configMap:
+            name: {{ required "caBundle.existingConfigMap is required when caBundle.enabled" .Values.caBundle.existingConfigMap }}
+        {{- end }}
+        {{- if .Values.geoip.enabled }}
+        - name: geoip
+          {{- if eq .Values.geoip.volumeType "existingClaim" }}
+          persistentVolumeClaim:
+            claimName: {{ required "geoip.existingClaim is required when geoip.volumeType is existingClaim" .Values.geoip.existingClaim }}
+          {{- else }}
+          hostPath:
+            path: {{ .Values.geoip.hostPath }}
+            type: Directory
+          {{- end }}
+        {{- end }}
+      {{- if and .Values.geoip.enabled (eq .Values.geoip.volumeType "hostPath") .Values.geoip.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.geoip.nodeSelector | nindent 8 }}
+      {{- end }}

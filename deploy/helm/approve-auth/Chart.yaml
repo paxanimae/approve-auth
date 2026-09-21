@@ -1,0 +1,22 @@
+apiVersion: v2
+name: approve-auth
+description: >-
+  Traefik ForwardAuth authorization service for manually approving an
+  unattended browser (a reception TV, a warehouse display) for
+  time-limited access to one protected application hostname. Kubernetes
+  port of deploy/stack.yml (the project's own Docker Swarm deployment) --
+  see this chart's README.md for exactly what was kept identical and
+  what had to change.
+type: application
+version: 0.1.0
+appVersion: "0.3.0"
+home: https://gitea.internal/admin/approve-auth
+sources:
+  - https://gitea.internal/admin/approve-auth
+keywords:
+  - forwardauth
+  - traefik
+  - zero-trust
+  - authorization
+maintainers:
+  - name: We Zard

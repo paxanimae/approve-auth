@@ -1,0 +1,94 @@
+{{- if .Values.traefik.enabled -}}
+# The Kubernetes-CRD equivalent of deploy/traefik-approve-auth-middleware.yml's
+# `http.middlewares.approve-auth.forwardAuth` block, for a cluster
+# where Traefik itself runs as Kubernetes ingress (traefik.io/v1alpha1
+# CRDs) instead of reading Traefik's file provider. Every field below
+# is that file's field, unchanged, except the tls block: a Kubernetes
+# Secret reference instead of an in-container file path, since Traefik
+# reads the CRD version's mTLS material from Secrets, not mounted
+# files.
+#
+# NOTE: verify the exact `tls` sub-field names (caSecret/certSecret)
+# against your installed Traefik CRD version's own docs before relying
+# on this in production -- the shape below matches Traefik v3's
+# documented ForwardAuth Middleware CRD, but this chart has not been
+# validated against a live cluster with Traefik's CRDs actually
+# installed.
+#
+# A protected application's own Ingress/IngressRoute references this
+# by {{ include "approve-auth.fullname" . }}@kubernetescrd -- enable
+# Traefik's own `--providers.kubernetescrd.allowCrossNamespace` if that
+# application lives in a different namespace than this release.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "approve-auth.fullname" . }}
+  labels:
+    {{- include "approve-auth.labels" . | nindent 4 }}
+spec:
+  forwardAuth:
+    address: "https://{{ include "approve-auth.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.auth.port }}/auth"
+    trustForwardHeader: true
+    preserveLocationHeader: true
+    forwardBody: false
+    authRequestHeaders:
+      - Cookie
+      - Accept
+      - User-Agent
+      - Sec-Fetch-Mode
+      - Sec-Fetch-Dest
+    addAuthCookiesToResponse:
+      - __Host-approve-auth
+    tls:
+      caSecret: {{ required "traefik.mtls.caSecret is required when traefik.enabled" .Values.traefik.mtls.caSecret }}
+      certSecret: {{ required "traefik.mtls.certSecret is required when traefik.enabled" .Values.traefik.mtls.certSecret }}
+---
+# The Kubernetes-CRD equivalent of the same file's
+# `http.routers.approve-auth-public` + `http.services.approve-auth-public`:
+# a PathPrefix-only router (no Host() match at all, same as the
+# compose version) so it matches the reserved path regardless of which
+# protected application's hostname the browser is actually on --
+# Traefik's Kubernetes provider merges IngressRoutes across the whole
+# cluster into one routing table the same way its Swarm provider merges
+# routers across stacks, so this needs defining exactly once, here, not
+# once per protected application.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "approve-auth.fullname" . }}-public
+  labels:
+    {{- include "approve-auth.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.traefik.entryPoint }}
+  routes:
+    - kind: Rule
+      match: "PathPrefix(`/__approve-auth/`)"
+      priority: 1000
+      services:
+        - name: {{ include "approve-auth.fullname" . }}
+          port: public
+---
+# The Kubernetes-CRD equivalent of deploy/stack.yml's own
+# traefik.http.routers.approve-auth-admin.* Swarm labels -- the admin
+# console's dedicated hostname router, never behind the forwardAuth
+# middleware above (this service authenticates its own admin listener
+# via OIDC).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "approve-auth.fullname" . }}-admin
+  labels:
+    {{- include "approve-auth.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.traefik.entryPoint }}
+  tls:
+    certResolver: {{ .Values.traefik.certResolver }}
+  routes:
+    - kind: Rule
+      match: "Host(`{{ required "adminHostname is required when traefik.enabled" .Values.adminHostname }}`)"
+      services:
+        - name: {{ include "approve-auth.fullname" . }}
+          port: admin
+{{- end }}

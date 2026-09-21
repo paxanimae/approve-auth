@@ -1,0 +1,21 @@
+# Not a real deployment's values -- exists only so `helm lint`/
+# `helm template` (CI's "helm" job, .github/workflows/ci.yml) has
+# something to satisfy every `required` value with. None of these
+# secret names need to actually exist anywhere; nothing here is ever
+# installed against a real cluster.
+adminHostname: approve.example.com
+secrets:
+  databaseUrl: test-database-url
+  oidcClientSecret: test-oidc-client-secret
+  claimEncryptionKey: test-claim-encryption-key
+  oidcStateKey: test-oidc-state-key
+  authTlsCert: test-auth-tls-cert
+  authTlsKey: test-auth-tls-key
+  authClientCa: test-auth-client-ca
+db:
+  existingSecret: test-db-superuser
+  existingSuperuserUrlSecret: test-database-url-superuser
+traefik:
+  mtls:
+    caSecret: test-traefik-ca
+    certSecret: test-traefik-cert

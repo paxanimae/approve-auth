@@ -1,0 +1,58 @@
+# The Kubernetes equivalent of deploy/stack.yml's `migrate` service:
+# "One-off, locked migration step (spec section 13) -- run to
+# completion before approve-auth starts, never on every replica."
+# Swarm gets that ordering from `restart_policy: condition: none` plus
+# redeploying the whole stack; a Helm pre-install/pre-upgrade hook is
+# the direct equivalent -- it runs and must succeed before Helm
+# proceeds to the Deployment below, and a fresh Job runs on every
+# `helm upgrade` the same way re-running `docker stack deploy` does.
+# hook-delete-policy removes the previous attempt's Job first so the
+# (immutable) Job name can be reused release after release.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "approve-auth.fullname" . }}-migrate
+  labels:
+    {{- include "approve-auth.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/admin", "migrate-up"]
+          securityContext:
+            readOnlyRootFilesystem: {{ .Values.securityContext.readOnlyRootFilesystem }}
+            allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
+            capabilities:
+              drop:
+                {{- toYaml .Values.securityContext.capabilities.drop | nindent 16 }}
+          env:
+            - name: DATABASE_URL_FILE
+              value: /run/secrets/database_url_superuser
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        - name: secrets
+          projected:
+            sources:
+              - secret:
+                  name: {{ required "either db.existingSuperuserUrlSecret, or db.enabled with a real Postgres, is required" .Values.db.existingSuperuserUrlSecret }}
+                  items:
+                    - key: database_url_superuser
+                      path: database_url_superuser

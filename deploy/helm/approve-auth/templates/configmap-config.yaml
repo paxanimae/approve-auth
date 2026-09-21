@@ -1,0 +1,21 @@
+# The Kubernetes equivalent of deploy/stack.yml's `approve-auth-config`
+# Swarm config: a plain ConfigMap this chart creates itself (`external:
+# true` doesn't have a Kubernetes ConfigMap equivalent worth
+# reinventing -- ConfigMaps are namespaced and cheap to template,
+# unlike a cluster-wide Swarm config), mounted at
+# /config/approve-auth.yaml (CONFIG_FILE) exactly like the Swarm one.
+# A `helm upgrade` after editing values.config takes effect on the
+# Deployment's next Pod restart -- this template's own checksum
+# annotation on the Deployment (see deployment.yaml) forces that
+# restart automatically, unlike Swarm's own config update which needs
+# an explicit `docker config create` + service update dance (see
+# docs/runbooks/rollout-rollback.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "approve-auth.fullname" . }}-config
+  labels:
+    {{- include "approve-auth.labels" . | nindent 4 }}
+data:
+  approve-auth.yaml: |
+{{- .Values.config | nindent 4 }}

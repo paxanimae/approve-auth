@@ -1,0 +1,41 @@
+Approve ({{ include "approve-auth.fullname" . }}) -- release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+{{- if .Values.db.enabled }}
+
+Bundled Postgres: {{ include "approve-auth.db.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:5432
+{{- else }}
+
+db.enabled is false -- this release expects you to already have a
+reachable Postgres and to have pointed secrets.databaseUrl /
+db.existingSuperuserUrlSecret at it yourself.
+{{- end }}
+
+Check rollout status:
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "approve-auth.fullname" . }}
+
+Tail the migration Job's own log if `helm install`/`helm upgrade` failed
+during it:
+  kubectl -n {{ .Release.Namespace }} logs job/{{ include "approve-auth.fullname" . }}-migrate
+
+{{- if .Values.traefik.enabled }}
+
+Traefik CRD wiring was rendered (traefik.enabled: true). A protected
+application's own Ingress/IngressRoute references the ForwardAuth
+middleware this release created as:
+  {{ include "approve-auth.fullname" . }}@kubernetescrd
+(add --providers.kubernetescrd.allowCrossNamespace to Traefik's own
+static config if that application lives in a different namespace).
+
+Admin console: https://{{ .Values.adminHostname }}/
+{{- else }}
+
+traefik.enabled is false -- no Ingress/IngressRoute/Middleware was
+created. Wire this release's Service
+({{ include "approve-auth.fullname" . }}, ports: public/admin/auth/ops)
+into your own ingress by hand -- see this chart's README.md for what
+each port needs.
+{{- end }}
+
+See this chart's README.md for the full prerequisite walkthrough
+(secrets, config, GeoIP, CA bundle) if anything above didn't come up
+clean.

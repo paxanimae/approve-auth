@@ -110,3 +110,30 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+
+  helm:
+    name: helm lint / template (approve-auth chart)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint --strict deploy/helm/approve-auth -f deploy/helm/approve-auth/ci/test-values.yaml
+      # ci/test-values.yaml supplies every `required` value with a
+      # placeholder (see that file's own comment) purely so this
+      # renders at all -- this only proves the templates are valid
+      # Kubernetes YAML, not that a real install against a live
+      # cluster succeeds (no cluster in this job).
+      - run: helm template approve-auth deploy/helm/approve-auth -f deploy/helm/approve-auth/ci/test-values.yaml | tee /tmp/rendered.yaml
+      - name: kubeconform (schema-validate every rendered resource)
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          # Traefik's own CRDs (Middleware/IngressRoute) aren't in any
+          # public OpenAPI schema registry -- skip schema validation for
+          # those two kinds specifically rather than skipping the whole
+          # job; every core Kubernetes kind this chart renders (Job,
+          # Deployment, StatefulSet, Service, ConfigMap,
+          # ServiceAccount) is still fully checked.
+          ./kubeconform -strict -summary \
+            -skip Middleware,IngressRoute \
+            -schema-location default \
+            /tmp/rendered.yaml
