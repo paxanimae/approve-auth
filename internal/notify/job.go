@@ -16,7 +16,9 @@ type JobStore interface {
 	ListPendingNotifications(ctx context.Context, limit int) ([]store.NotificationOutboxItem, error)
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (store.Application, bool, error)
 	MarkNotificationDelivered(ctx context.Context, id uuid.UUID) error
+	MarkNotificationChannelDelivered(ctx context.Context, id uuid.UUID, channel string) error
 	MarkNotificationFailed(ctx context.Context, id uuid.UUID, nextAttemptAt time.Time, lastError string) error
+	GiveUpOnNotification(ctx context.Context, id uuid.UUID, reason string) error
 
 	// GetGlobalSettings resolves EmailFrom/the two default
 	// destinations -- called once per DeliverPending batch, not per
@@ -33,6 +35,19 @@ var backoffSchedule = []time.Duration{
 }
 
 const maxBackoff = time.Hour
+
+// maxNotificationAttempts/maxNotificationAge bound how long a row keeps
+// retrying at all (endpoint-review.md F4: "apply maximum retry age,
+// queue size, and terminal-failure handling") -- neither is operator-
+// tunable, same rationale as this package's other fixed internal
+// timeouts: a row that can't be delivered after roughly a day of
+// backoff (about 20 attempts, given backoffSchedule/maxBackoff above)
+// realistically never will be, and must stop consuming a delivery-job
+// slot and retaining its payload forever.
+const (
+	maxNotificationAttempts = 20
+	maxNotificationAge      = 24 * time.Hour
+)
 
 func backoffFor(attempts int) time.Duration {
 	if attempts < len(backoffSchedule) {
@@ -68,6 +83,16 @@ func (d *Dispatcher) DeliverPending(ctx context.Context, s JobStore, limit int) 
 
 	delivered := 0
 	for _, item := range items {
+		// endpoint-review.md F4: a row that's exhausted its own retry
+		// budget stops retrying entirely, regardless of why it keeps
+		// failing -- checked before any delivery attempt so every
+		// failure path (application gone, bad payload, actual delivery
+		// failure) is bounded the same way.
+		if item.Attempts >= maxNotificationAttempts || time.Since(item.CreatedAt) >= maxNotificationAge {
+			_ = s.GiveUpOnNotification(ctx, item.ID, fmt.Sprintf("exceeded max retry budget (%d attempts, %s old)", item.Attempts, time.Since(item.CreatedAt).Round(time.Second)))
+			continue
+		}
+
 		app, found, err := s.GetApplicationByID(ctx, item.ApplicationID)
 		if err != nil || !found {
 			// The application row is gone -- its own ON DELETE CASCADE
@@ -89,11 +114,28 @@ func (d *Dispatcher) DeliverPending(ctx context.Context, s JobStore, limit int) 
 			Email:      resolveOverride(app.NotifyEmail, derefOrEmpty(settings.NotifyDefaultEmail)),
 			WebhookURL: resolveOverride(app.NotifyWebhookURL, derefOrEmpty(settings.NotifyDefaultWebhookURL)),
 		}
+		// Never re-attempt a channel that already succeeded on a prior
+		// try (endpoint-review.md F4) -- Deliver skips any Destination
+		// field left empty, so clearing it here is enough.
+		if item.EmailDeliveredAt != nil {
+			dest.Email = ""
+		}
+		if item.WebhookDeliveredAt != nil {
+			dest.WebhookURL = ""
+		}
 
 		attemptCtx, cancel := context.WithTimeout(ctx, deliveryTimeout)
-		deliverErr := d.Deliver(attemptCtx, derefOrEmpty(settings.NotifyEmailFrom), dest, event)
+		result := d.Deliver(attemptCtx, derefOrEmpty(settings.NotifyEmailFrom), dest, event)
 		cancel()
-		if deliverErr != nil {
+
+		if result.EmailAttempted && result.EmailErr == nil {
+			_ = s.MarkNotificationChannelDelivered(ctx, item.ID, "email")
+		}
+		if result.WebhookAttempted && result.WebhookErr == nil {
+			_ = s.MarkNotificationChannelDelivered(ctx, item.ID, "webhook")
+		}
+
+		if deliverErr := result.Err(); deliverErr != nil {
 			_ = s.MarkNotificationFailed(ctx, item.ID, time.Now().Add(backoffFor(item.Attempts)), deliverErr.Error())
 			continue
 		}

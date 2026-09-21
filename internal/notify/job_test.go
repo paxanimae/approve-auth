@@ -25,15 +25,19 @@ type fakeJobStore struct {
 	apps     map[uuid.UUID]store.Application
 	settings store.GlobalSettings
 
-	delivered    map[uuid.UUID]bool
-	failed       map[uuid.UUID]string
-	nextAttempts map[uuid.UUID]time.Time
+	delivered        map[uuid.UUID]bool
+	channelDelivered map[uuid.UUID]map[string]bool
+	failed           map[uuid.UUID]string
+	nextAttempts     map[uuid.UUID]time.Time
+	givenUp          map[uuid.UUID]string
 }
 
 func newFakeJobStore() *fakeJobStore {
 	return &fakeJobStore{
 		apps: make(map[uuid.UUID]store.Application), delivered: make(map[uuid.UUID]bool),
-		failed: make(map[uuid.UUID]string), nextAttempts: make(map[uuid.UUID]time.Time),
+		channelDelivered: make(map[uuid.UUID]map[string]bool),
+		failed:           make(map[uuid.UUID]string), nextAttempts: make(map[uuid.UUID]time.Time),
+		givenUp: make(map[uuid.UUID]string),
 	}
 }
 
@@ -57,11 +61,28 @@ func (f *fakeJobStore) MarkNotificationDelivered(_ context.Context, id uuid.UUID
 	return nil
 }
 
+func (f *fakeJobStore) MarkNotificationChannelDelivered(_ context.Context, id uuid.UUID, channel string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.channelDelivered[id] == nil {
+		f.channelDelivered[id] = make(map[string]bool)
+	}
+	f.channelDelivered[id][channel] = true
+	return nil
+}
+
 func (f *fakeJobStore) MarkNotificationFailed(_ context.Context, id uuid.UUID, nextAttemptAt time.Time, lastError string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failed[id] = lastError
 	f.nextAttempts[id] = nextAttemptAt
+	return nil
+}
+
+func (f *fakeJobStore) GiveUpOnNotification(_ context.Context, id uuid.UUID, reason string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.givenUp[id] = reason
 	return nil
 }
 
@@ -89,7 +110,7 @@ func TestDeliverPending_SuccessMarksDelivered(t *testing.T) {
 	}
 
 	s := newFakeJobStore()
-	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload}}
+	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload, CreatedAt: time.Now()}}
 	s.apps[appID] = store.Application{ID: appID, Hostname: "app-a.example.test", DisplayName: "App A", NotifyWebhookURL: strPtr(srv.URL)}
 
 	d := notify.New(notify.Config{})
@@ -119,7 +140,7 @@ func TestDeliverPending_FailureIncrementsAttemptsAndBacksOff(t *testing.T) {
 	payload, _ := json.Marshal(notify.RequestCreatedPayload{RequestID: "req-2", VerificationCode: "AAA111", RequestedAt: time.Now()})
 
 	s := newFakeJobStore()
-	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload, Attempts: 0}}
+	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload, Attempts: 0, CreatedAt: time.Now()}}
 	s.apps[appID] = store.Application{ID: appID, Hostname: "app-a.example.test", DisplayName: "App A", NotifyWebhookURL: strPtr(srv.URL)}
 
 	d := notify.New(notify.Config{})
@@ -148,7 +169,7 @@ func TestDeliverPending_NothingConfiguredStillMarksDelivered(t *testing.T) {
 	payload, _ := json.Marshal(notify.RequestCreatedPayload{RequestID: "req-3", VerificationCode: "BBB222", RequestedAt: time.Now()})
 
 	s := newFakeJobStore()
-	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload}}
+	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload, CreatedAt: time.Now()}}
 	// No NotifyEmail/NotifyWebhookURL override on the app, and no
 	// global default configured on the Dispatcher either.
 	s.apps[appID] = store.Application{ID: appID, Hostname: "app-a.example.test", DisplayName: "App A"}
@@ -175,7 +196,7 @@ func TestDeliverPending_AppOverrideTakesPriorityOverGlobalDefault(t *testing.T) 
 	payload, _ := json.Marshal(notify.RequestCreatedPayload{RequestID: "req-4", VerificationCode: "CCC333", RequestedAt: time.Now()})
 
 	s := newFakeJobStore()
-	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload}}
+	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload, CreatedAt: time.Now()}}
 	s.apps[appID] = store.Application{ID: appID, Hostname: "app-a.example.test", DisplayName: "App A", NotifyWebhookURL: strPtr(overrideSrv.URL)}
 	s.settings = store.GlobalSettings{NotifyDefaultWebhookURL: strPtr(defaultSrv.URL)}
 
@@ -188,5 +209,98 @@ func TestDeliverPending_AppOverrideTakesPriorityOverGlobalDefault(t *testing.T) 
 	}
 	if hitDefault {
 		t.Error("expected the global default webhook to be skipped when an override exists")
+	}
+}
+
+// TestDeliverPending_SkipsAlreadyDeliveredChannel covers endpoint-
+// review.md F4: a channel already recorded delivered on a prior
+// attempt must never be re-attempted, even while the row as a whole is
+// still pending because another channel keeps failing.
+func TestDeliverPending_SkipsAlreadyDeliveredChannel(t *testing.T) {
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer webhookSrv.Close()
+
+	appID := uuid.New()
+	itemID := uuid.New()
+	payload, _ := json.Marshal(notify.RequestCreatedPayload{RequestID: "req-5", VerificationCode: "DDD444", RequestedAt: time.Now()})
+	alreadyDelivered := time.Now().Add(-time.Hour)
+
+	s := newFakeJobStore()
+	s.items = []store.NotificationOutboxItem{{
+		ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload,
+		CreatedAt: time.Now(), EmailDeliveredAt: &alreadyDelivered,
+	}}
+	// SMTPHost points at an address nothing listens on -- if the
+	// delivery job re-attempts email despite EmailDeliveredAt already
+	// being set, this dial fails and the row would not end up fully
+	// delivered below.
+	s.apps[appID] = store.Application{ID: appID, Hostname: "app-a.example.test", DisplayName: "App A", NotifyEmail: strPtr("ops@example.test"), NotifyWebhookURL: strPtr(webhookSrv.URL)}
+	s.settings = store.GlobalSettings{NotifyEmailFrom: strPtr("approve-auth@example.test")}
+
+	d := notify.New(notify.Config{SMTPHost: "127.0.0.1", SMTPPort: 1})
+	delivered, err := d.DeliverPending(context.Background(), s, 10)
+	if err != nil {
+		t.Fatalf("DeliverPending: %v", err)
+	}
+	if delivered != 1 {
+		t.Errorf("delivered = %d, want 1 -- the already-delivered email channel must not be re-attempted", delivered)
+	}
+	if !s.channelDelivered[itemID]["webhook"] {
+		t.Error("expected the webhook channel to be recorded delivered")
+	}
+	if s.channelDelivered[itemID]["email"] {
+		t.Error("email channel should not have been re-attempted -- it was already delivered")
+	}
+}
+
+// TestDeliverPending_GivesUpAfterMaxAttempts and
+// TestDeliverPending_GivesUpAfterMaxAge cover endpoint-review.md F4:
+// "apply maximum retry age, queue size, and terminal-failure handling."
+func TestDeliverPending_GivesUpAfterMaxAttempts(t *testing.T) {
+	appID := uuid.New()
+	itemID := uuid.New()
+	payload, _ := json.Marshal(notify.RequestCreatedPayload{RequestID: "req-6", VerificationCode: "EEE555", RequestedAt: time.Now()})
+
+	s := newFakeJobStore()
+	s.items = []store.NotificationOutboxItem{{
+		ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload,
+		Attempts: 999, CreatedAt: time.Now(),
+	}}
+	s.apps[appID] = store.Application{ID: appID, Hostname: "app-a.example.test", DisplayName: "App A", NotifyWebhookURL: strPtr("http://127.0.0.1:1")}
+
+	d := notify.New(notify.Config{})
+	delivered, err := d.DeliverPending(context.Background(), s, 10)
+	if err != nil {
+		t.Fatalf("DeliverPending: %v", err)
+	}
+	if delivered != 0 {
+		t.Errorf("delivered = %d, want 0", delivered)
+	}
+	if s.givenUp[itemID] == "" {
+		t.Error("expected the row to be given up on after exceeding the max attempt count")
+	}
+	if s.failed[itemID] != "" {
+		t.Error("a given-up row should not also be recorded as an ordinary retry failure")
+	}
+}
+
+func TestDeliverPending_GivesUpAfterMaxAge(t *testing.T) {
+	appID := uuid.New()
+	itemID := uuid.New()
+	payload, _ := json.Marshal(notify.RequestCreatedPayload{RequestID: "req-7", VerificationCode: "FFF666", RequestedAt: time.Now()})
+
+	s := newFakeJobStore()
+	s.items = []store.NotificationOutboxItem{{
+		ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload,
+		CreatedAt: time.Now().Add(-48 * time.Hour),
+	}}
+	s.apps[appID] = store.Application{ID: appID, Hostname: "app-a.example.test", DisplayName: "App A", NotifyWebhookURL: strPtr("http://127.0.0.1:1")}
+
+	d := notify.New(notify.Config{})
+	if _, err := d.DeliverPending(context.Background(), s, 10); err != nil {
+		t.Fatalf("DeliverPending: %v", err)
+	}
+	if s.givenUp[itemID] == "" {
+		t.Error("expected the row to be given up on after exceeding the max retry age")
 	}
 }

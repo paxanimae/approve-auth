@@ -87,3 +87,88 @@ func TestNotificationOutbox_EnqueueListMarkDeliveredFailedAndPurge(t *testing.T)
 		t.Errorf("PurgeDeliveredNotifications purged %d rows, want at least 1", purged)
 	}
 }
+
+// TestNotificationOutbox_ChannelTrackingAndGiveUp covers endpoint-
+// review.md F4: per-channel delivery is tracked independently of the
+// row's own overall delivered_at, and a given-up row is excluded from
+// ListPendingNotifications with its payload redacted.
+func TestNotificationOutbox_ChannelTrackingAndGiveUp(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+
+	appID := insertApplication(t, ctx, conn, "notify-outbox-channels.example.test")
+	appUUID := uuid.MustParse(appID)
+
+	if err := db.EnqueueNotification(ctx, appUUID, "request.created", []byte(`{"request_id":"r-2"}`)); err != nil {
+		t.Fatalf("EnqueueNotification: %v", err)
+	}
+	pending, err := db.ListPendingNotifications(ctx, 100)
+	if err != nil {
+		t.Fatalf("ListPendingNotifications: %v", err)
+	}
+	var itemID uuid.UUID
+	for _, p := range pending {
+		if p.ApplicationID == appUUID {
+			itemID = p.ID
+			if p.EmailDeliveredAt != nil || p.WebhookDeliveredAt != nil {
+				t.Errorf("a fresh row must not already have a per-channel delivery time: %+v", p)
+			}
+		}
+	}
+	if itemID == uuid.Nil {
+		t.Fatal("enqueued notification did not appear in ListPendingNotifications")
+	}
+
+	if err := db.MarkNotificationChannelDelivered(ctx, itemID, "email"); err != nil {
+		t.Fatalf("MarkNotificationChannelDelivered(email): %v", err)
+	}
+	afterEmail, err := db.ListPendingNotifications(ctx, 100)
+	if err != nil {
+		t.Fatalf("ListPendingNotifications (after email delivered): %v", err)
+	}
+	var sawEmailDeliveredAt bool
+	for _, p := range afterEmail {
+		if p.ID == itemID {
+			sawEmailDeliveredAt = p.EmailDeliveredAt != nil
+			if p.WebhookDeliveredAt != nil {
+				t.Error("webhook channel must not be marked delivered by marking email delivered")
+			}
+		}
+	}
+	if !sawEmailDeliveredAt {
+		t.Error("expected email_delivered_at to be set, and the row to still be pending overall (webhook not yet done)")
+	}
+
+	if err := db.GiveUpOnNotification(ctx, itemID, "exceeded max retry budget"); err != nil {
+		t.Fatalf("GiveUpOnNotification: %v", err)
+	}
+	afterGiveUp, err := db.ListPendingNotifications(ctx, 100)
+	if err != nil {
+		t.Fatalf("ListPendingNotifications (after giveup): %v", err)
+	}
+	for _, p := range afterGiveUp {
+		if p.ID == itemID {
+			t.Error("a given-up row must not appear as pending any longer")
+		}
+	}
+
+	var payload []byte
+	if err := conn.QueryRow(ctx, `SELECT payload FROM notification_outbox WHERE id = $1`, itemID).Scan(&payload); err != nil {
+		t.Fatalf("reading payload after giveup: %v", err)
+	}
+	if string(payload) != "{}" {
+		t.Errorf("payload after giveup = %s, want the redacted empty object", payload)
+	}
+
+	// A given-up row is as terminal as a delivered one for retention
+	// purposes.
+	purged, err := db.PurgeDeliveredNotifications(ctx, 0, 100)
+	if err != nil {
+		t.Fatalf("PurgeDeliveredNotifications: %v", err)
+	}
+	if purged < 1 {
+		t.Errorf("PurgeDeliveredNotifications purged %d rows, want at least 1 (the given-up row)", purged)
+	}
+}

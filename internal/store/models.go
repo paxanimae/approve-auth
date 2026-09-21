@@ -62,6 +62,15 @@ type NotificationOutboxItem struct {
 	EventType     string
 	Payload       []byte
 	Attempts      int
+	CreatedAt     time.Time
+	// EmailDeliveredAt/WebhookDeliveredAt (migration 000021,
+	// endpoint-review.md F4): non-nil once that specific channel has
+	// already succeeded on a prior attempt -- the delivery job must
+	// never re-attempt a channel that's already done, even while the
+	// row as a whole is still pending because another channel keeps
+	// failing.
+	EmailDeliveredAt   *time.Time
+	WebhookDeliveredAt *time.Time
 }
 
 type EnrollmentContext struct {

@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/smtp"
 	"strings"
@@ -77,53 +79,122 @@ func New(cfg Config) *Dispatcher {
 	return &Dispatcher{cfg: cfg, httpClient: &http.Client{Timeout: deliveryTimeout}}
 }
 
-// Deliver attempts every channel Destination names, returning a joined
-// error if any of them failed (errors.Join of zero errors is nil, so
-// "nothing configured at all" and "everything configured succeeded"
-// both correctly report success). emailFrom is resolved by the caller
+// DeliverResult reports each channel's own outcome (endpoint-review.md
+// F4: "track successful delivery separately for each channel and avoid
+// replaying completed channels") -- Attempted is false for a channel
+// Deliver never tried at all (Destination left it empty, or -- for
+// email specifically -- SMTPHost isn't configured or emailFrom didn't
+// resolve), distinct from Attempted-true-with-a-nil-error, which means
+// it was tried and succeeded.
+type DeliverResult struct {
+	EmailAttempted   bool
+	EmailErr         error
+	WebhookAttempted bool
+	WebhookErr       error
+}
+
+// Err joins both channels' errors (errors.Join of zero errors is nil),
+// matching Deliver's old combined-error return for callers that don't
+// need per-channel detail.
+func (r DeliverResult) Err() error {
+	return errors.Join(r.EmailErr, r.WebhookErr)
+}
+
+// Deliver attempts every channel Destination names, reporting each
+// channel's own outcome so a caller can persist per-channel success
+// and never re-attempt a channel that already succeeded on a prior
+// call (endpoint-review.md F4). emailFrom is resolved by the caller
 // from global_settings (DeliverPending, once per batch) -- if
 // SMTPHost is configured but emailFrom resolves empty (nobody has set
 // it on the Settings page yet), email is skipped with a log line
 // rather than attempted with a malformed From address; this isn't
 // treated as a delivery failure to retry, since retrying can't fix a
 // missing setting.
-func (d *Dispatcher) Deliver(ctx context.Context, emailFrom string, dest Destination, e Event) error {
-	var errs []error
+func (d *Dispatcher) Deliver(ctx context.Context, emailFrom string, dest Destination, e Event) DeliverResult {
+	var result DeliverResult
 	if dest.Email != "" && d.cfg.SMTPHost != "" {
 		if emailFrom == "" {
 			log.Printf("notify: skipping email to %s: notify_email_from is not set (admin console Settings page)", dest.Email)
-		} else if err := d.sendEmail(ctx, emailFrom, dest.Email, e); err != nil {
-			errs = append(errs, fmt.Errorf("email: %w", err))
+		} else {
+			result.EmailAttempted = true
+			if err := d.sendEmail(ctx, emailFrom, dest.Email, e); err != nil {
+				result.EmailErr = fmt.Errorf("email: %w", err)
+			}
 		}
 	}
 	if dest.WebhookURL != "" {
+		result.WebhookAttempted = true
 		if err := d.sendWebhook(ctx, dest.WebhookURL, e); err != nil {
-			errs = append(errs, fmt.Errorf("webhook: %w", err))
+			result.WebhookErr = fmt.Errorf("webhook: %w", err)
 		}
 	}
-	return errors.Join(errs...)
+	return result
 }
 
+// sendEmail replicates net/smtp.SendMail's own connect/STARTTLS/AUTH/
+// MAIL/RCPT/DATA sequence manually rather than calling SendMail
+// directly (endpoint-review.md F1/F4: "the inspected SMTP path ignores
+// the provided context") -- SendMail has no context-aware entry point
+// and no way to bound its dial or protocol exchange at all, so a
+// hanging SMTP server could otherwise stall a delivery-job tick
+// indefinitely. Dialing via ctx and setting a connection deadline from
+// it (falling back to deliveryTimeout when ctx carries none) bounds the
+// whole exchange the same way sendWebhook's http.Client timeout does.
 func (d *Dispatcher) sendEmail(ctx context.Context, from, to string, e Event) error {
 	msg := buildEmailMessage(from, to, e)
-
-	var auth smtp.Auth
-	if d.cfg.SMTPUsername != "" {
-		auth = smtp.PlainAuth("", d.cfg.SMTPUsername, d.cfg.SMTPPassword, d.cfg.SMTPHost)
-	}
 	addr := fmt.Sprintf("%s:%d", d.cfg.SMTPHost, d.cfg.SMTPPort)
 
-	// net/smtp has no context-aware entry point; deliveryTimeout still
-	// bounds the whole attempt via a deadline on the underlying dial
-	// this package doesn't control directly, so we accept ctx here for
-	// interface consistency with sendWebhook and future-proofing, but
-	// the actual bound is smtp.SendMail's own (unconfigurable) dial +
-	// protocol timeouts.
-	_ = ctx
-	if err := smtp.SendMail(addr, auth, from, []string{to}, msg); err != nil {
-		return fmt.Errorf("sending mail via %s: %w", addr, err)
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("dialing %s: %w", addr, err)
 	}
-	return nil
+	defer func() { _ = conn.Close() }()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(deliveryTimeout)
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return fmt.Errorf("setting connection deadline for %s: %w", addr, err)
+	}
+
+	client, err := smtp.NewClient(conn, d.cfg.SMTPHost)
+	if err != nil {
+		return fmt.Errorf("starting SMTP session with %s: %w", addr, err)
+	}
+	defer func() { _ = client.Close() }()
+
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: d.cfg.SMTPHost}); err != nil {
+			return fmt.Errorf("STARTTLS with %s: %w", addr, err)
+		}
+	}
+	if d.cfg.SMTPUsername != "" {
+		if ok, _ := client.Extension("AUTH"); ok {
+			auth := smtp.PlainAuth("", d.cfg.SMTPUsername, d.cfg.SMTPPassword, d.cfg.SMTPHost)
+			if err := client.Auth(auth); err != nil {
+				return fmt.Errorf("authenticating to %s: %w", addr, err)
+			}
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("MAIL FROM to %s: %w", addr, err)
+	}
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("RCPT TO %s via %s: %w", to, addr, err)
+	}
+	wc, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("DATA to %s: %w", addr, err)
+	}
+	if _, err := wc.Write(msg); err != nil {
+		_ = wc.Close()
+		return fmt.Errorf("writing message body to %s: %w", addr, err)
+	}
+	if err := wc.Close(); err != nil {
+		return fmt.Errorf("closing message body to %s: %w", addr, err)
+	}
+	return client.Quit()
 }
 
 // buildEmailMessage is a pure function (no I/O) so it can be unit
