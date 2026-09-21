@@ -3,14 +3,17 @@ package enrollment
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/frid-iks/approve-auth/internal/geoip"
 	"github.com/frid-iks/approve-auth/internal/metrics"
+	"github.com/frid-iks/approve-auth/internal/notify"
 	"github.com/frid-iks/approve-auth/internal/store"
 )
 
@@ -177,6 +180,7 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 
 		req, err := s.store.CreateApprovalRequest(ctx, params)
 		if err == nil {
+			s.enqueueRequestCreatedNotification(ctx, req)
 			return SubmitRequestResult{RequestID: req.ID.String(), VerificationCode: req.VerificationCode}, nil
 		}
 
@@ -194,6 +198,36 @@ func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (Sub
 		}
 	}
 	return SubmitRequestResult{}, fmt.Errorf("enrollment: submit: exhausted verification code attempts")
+}
+
+// enqueueRequestCreatedNotification is best-effort, mirroring
+// TouchAdminSessionLastSeen's own "advisory" pattern elsewhere in this
+// codebase: a failure to queue a notification must never fail the
+// browser's own request submission, so it's logged and swallowed, not
+// propagated. Called exactly once, only on the branch that actually
+// created req -- SubmitRequest's other return paths all resolve an
+// existing request (idempotent replay or a lost creation race), which
+// already got its own notification queued the first time.
+func (s *Service) enqueueRequestCreatedNotification(ctx context.Context, req store.ApprovalRequest) {
+	label := ""
+	if req.Label != nil {
+		label = *req.Label
+	}
+	message := ""
+	if req.Message != nil {
+		message = *req.Message
+	}
+	payload, err := json.Marshal(notify.RequestCreatedPayload{
+		RequestID: req.ID.String(), VerificationCode: req.VerificationCode,
+		Label: label, Message: message, RequestedAt: req.RequestedAt,
+	})
+	if err != nil {
+		log.Printf("enrollment: submit: marshaling notification payload for request %s: %v", req.ID, err)
+		return
+	}
+	if err := s.store.EnqueueNotification(ctx, req.ApplicationID, notify.EventRequestCreated, payload); err != nil {
+		log.Printf("enrollment: submit: enqueuing notification for request %s: %v", req.ID, err)
+	}
 }
 
 func (s *Service) Status(ctx context.Context, pendingTokenRaw string) (StatusResult, error) {

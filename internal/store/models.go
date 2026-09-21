@@ -28,6 +28,25 @@ type Application struct {
 	// contact_info config default instead of its own -- see migration
 	// 000014.
 	ContactInfo *string
+
+	// NotifyEmail/NotifyWebhookURL are nil when this application uses
+	// the global notification config defaults instead of its own --
+	// see migration 000017.
+	NotifyEmail      *string
+	NotifyWebhookURL *string
+}
+
+// NotificationOutboxItem is one pending row from notification_outbox
+// (migration 000017), as internal/notify's delivery job reads it.
+// Payload is the raw JSON internal/enrollment (or a future producer)
+// enqueued -- this package has no opinion on its shape, it just stores
+// and returns bytes.
+type NotificationOutboxItem struct {
+	ID            uuid.UUID
+	ApplicationID uuid.UUID
+	EventType     string
+	Payload       []byte
+	Attempts      int
 }
 
 type EnrollmentContext struct {

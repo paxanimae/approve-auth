@@ -33,6 +33,11 @@ export interface Application {
   // Absent means this application uses the global contact_info config
   // default instead of an override of its own.
   contact_info?: string;
+  // Absent means this application uses the global notify_default_email/
+  // notify_default_webhook_url config defaults instead of overrides of
+  // its own.
+  notify_email?: string;
+  notify_webhook_url?: string;
 }
 
 export interface ApprovalRequest {

@@ -18,6 +18,7 @@ type Store interface {
 	RedactOldClientMetadata(ctx context.Context, maxAge time.Duration, limit int) (int, error)
 	RedactOldReturnPaths(ctx context.Context, maxAge time.Duration, limit int) (int, error)
 	PurgeResolvedRecords(ctx context.Context, maxAge time.Duration, limit int) (int, error)
+	PurgeDeliveredNotifications(ctx context.Context, maxAge time.Duration, limit int) (int, error)
 }
 
 // Config is the subset of internal/config.Config these jobs need.
@@ -25,6 +26,7 @@ type Config struct {
 	ResolvedRequestsRetention time.Duration
 	IPAndUserAgentRetention   time.Duration
 	ReturnPathsRetention      time.Duration
+	NotificationsRetention    time.Duration
 	// TickInterval governs how often each job runs. Spec section 12
 	// doesn't mandate a specific cadence, only bounded batches -- five
 	// minutes (the caller's usual choice) keeps an ordinary backlog (a
@@ -98,6 +100,14 @@ func Jobs(store Store, cfg Config) []Job {
 			Run: func(ctx context.Context) error {
 				return drainBatches(ctx, batchSize, maxBatchesPerTick, func(ctx context.Context, limit int) (int, error) {
 					return store.PurgeResolvedRecords(ctx, cfg.ResolvedRequestsRetention, limit)
+				})
+			},
+		},
+		{
+			Name: "purge_delivered_notifications", Interval: cfg.TickInterval,
+			Run: func(ctx context.Context) error {
+				return drainBatches(ctx, batchSize, maxBatchesPerTick, func(ctx context.Context, limit int) (int, error) {
+					return store.PurgeDeliveredNotifications(ctx, cfg.NotificationsRetention, limit)
 				})
 			},
 		},

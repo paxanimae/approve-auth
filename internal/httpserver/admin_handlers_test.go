@@ -283,6 +283,38 @@ func TestCreateApplication_ContactInfoTooLongMapsTo422(t *testing.T) {
 	}
 }
 
+func TestCreateApplication_InvalidNotifyWebhookURLMapsTo422(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"hostname":"a.example.test","display_name":"A","notify_webhook_url":"not-a-url"}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/applications", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("got status %d, want 422 (notify_webhook_url must be an absolute http(s) URL)", resp.StatusCode)
+	}
+}
+
+func TestUpdateApplication_InvalidNotifyWebhookURLMapsTo422(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"version":1,"notify_webhook_url":"ftp://wrong-scheme.example.test"}`)
+	req := adminRequest(t, http.MethodPatch, srv.URL+"/api/v1/applications/"+uuid.New().String(), "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("got status %d, want 422 (notify_webhook_url must be an absolute http(s) URL)", resp.StatusCode)
+	}
+}
+
 func TestGetApplication_ContactInfoOmittedWhenNoOverride(t *testing.T) {
 	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
 	appID := uuid.New()

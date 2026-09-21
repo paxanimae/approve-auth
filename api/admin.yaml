@@ -999,6 +999,18 @@ components:
             Absent means this application uses the deployment-wide
             contact_info config default instead of an override of its
             own.
+        notify_email:
+          type: string
+          description: >-
+            Absent means this application uses the deployment-wide
+            notify_default_email config default instead of an override
+            of its own.
+        notify_webhook_url:
+          type: string
+          description: >-
+            Absent means this application uses the deployment-wide
+            notify_default_webhook_url config default instead of an
+            override of its own.
       required: [id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, version]
       additionalProperties: false
 
@@ -1022,6 +1034,15 @@ components:
           type: string
           maxLength: 500
           description: Omit to use the deployment-wide contact_info config default
+        notify_email:
+          type: string
+          maxLength: 320
+          description: Omit to use the deployment-wide notify_default_email config default
+        notify_webhook_url:
+          type: string
+          description: >-
+            Must be an absolute http(s) URL if set. Omit to use the
+            deployment-wide notify_default_webhook_url config default.
       required: [hostname, display_name]
       additionalProperties: false
 
@@ -1042,6 +1063,15 @@ components:
           type: string
           maxLength: 500
           description: An empty string clears the override back to the global default
+        notify_email:
+          type: string
+          maxLength: 320
+          description: An empty string clears the override back to the global default
+        notify_webhook_url:
+          type: string
+          description: >-
+            Must be an absolute http(s) URL if set. An empty string
+            clears the override back to the global default.
       required: [version]
       additionalProperties: false
 

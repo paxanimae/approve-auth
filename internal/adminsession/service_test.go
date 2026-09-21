@@ -182,7 +182,7 @@ func TestHandleCallback_FallsBackToApplicationOwnerRole(t *testing.T) {
 	ctx := context.Background()
 	fake.exchangeIdentity = oidc.Identity{Issuer: "https://idp.example.test/", Subject: "user-owner-1", Groups: []string{"grp-unrelated"}}
 
-	app, err := db.CreateApplication(ctx, "adminsession-owner-fallback.example.test", "Owner Fallback Test", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	app, err := db.CreateApplication(ctx, "adminsession-owner-fallback.example.test", "Owner Fallback Test", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}

@@ -136,6 +136,17 @@ services:
       # that config doesn't exist makes Swarm refuse to deploy the
       # service at all.
       # SSL_CERT_FILE: /certs/ca-bundle.pem
+      # OPTIONAL -- approval-flow notifications (email/webhook, see
+      # approve-auth-config.example.yaml's notify_* keys). Only needed
+      # if notify_smtp_username / notify_default_webhook_url with a
+      # signing secret are actually used; uncomment together with the
+      # matching entries under secrets: below and
+      # `docker secret create notify_smtp_password ...` /
+      # `docker secret create notify_webhook_secret ...` -- same
+      # "Swarm refuses to deploy a reference to a secret that doesn't
+      # exist yet" rule as everything else here.
+      # NOTIFY_SMTP_PASSWORD_FILE: /run/secrets/notify_smtp_password
+      # NOTIFY_WEBHOOK_SECRET_FILE: /run/secrets/notify_webhook_secret
     secrets:
       - database_url
       - oidc_client_secret
@@ -144,6 +155,9 @@ services:
       - auth_tls_cert
       - auth_tls_key
       - auth_client_ca
+      # OPTIONAL -- see NOTIFY_SMTP_PASSWORD_FILE/NOTIFY_WEBHOOK_SECRET_FILE above.
+      # - notify_smtp_password
+      # - notify_webhook_secret
     configs:
       - source: approve-auth-config
         target: /config/approve-auth.yaml
@@ -285,3 +299,10 @@ secrets:
     external: true
   auth_client_ca:
     external: true
+  # OPTIONAL -- see the approve-auth service's NOTIFY_SMTP_PASSWORD_FILE/
+  # NOTIFY_WEBHOOK_SECRET_FILE comment above. Uncomment only after
+  # creating both with `docker secret create`.
+  # notify_smtp_password:
+  #   external: true
+  # notify_webhook_secret:
+  #   external: true

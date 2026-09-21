@@ -102,6 +102,42 @@ func TestValidate_RejectsBadClaimEncryptionKeyLength(t *testing.T) {
 	}
 }
 
+func TestValidate_NotifySMTPHostRequiresEmailFromAndValidPort(t *testing.T) {
+	setSecretEnv(t)
+	t.Setenv("NOTIFY_SMTP_HOST", "smtp.example.test")
+	// NOTIFY_EMAIL_FROM deliberately left unset, and the port left at
+	// its zero value -- both should be flagged since NotifySMTPHost
+	// alone is what turns email notifications on.
+
+	cfg, err := config.Load("testdata/valid.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate: expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "NOTIFY_EMAIL_FROM") {
+		t.Errorf("Validate error = %v, want it to mention NOTIFY_EMAIL_FROM", err)
+	}
+	if !strings.Contains(err.Error(), "NOTIFY_SMTP_PORT") {
+		t.Errorf("Validate error = %v, want it to mention NOTIFY_SMTP_PORT", err)
+	}
+}
+
+func TestValidate_NotifyDefaultWebhookURLMustBeAbsoluteHTTPURL(t *testing.T) {
+	setSecretEnv(t)
+	t.Setenv("NOTIFY_DEFAULT_WEBHOOK_URL", "not-a-url")
+
+	cfg, err := config.Load("testdata/valid.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate: expected an error for a non-absolute webhook URL, got nil")
+	}
+}
+
 func TestLoadAndValidate_AnonymousAdminModeSkipsOIDCRequirements(t *testing.T) {
 	// Deliberately not setSecretEnv(t) -- anonymous mode must not require
 	// OIDC_CLIENT_SECRET_FILE or OIDC_STATE_ENCRYPTION_KEY_FILE at all.

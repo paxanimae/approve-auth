@@ -42,6 +42,11 @@ type Store interface {
 	GetApprovalRequestByTokenHash(ctx context.Context, hash []byte) (store.ApprovalRequest, bool, error)
 	CancelApprovalRequest(ctx context.Context, requestID uuid.UUID) error
 
+	// EnqueueNotification backs the "a new request needs approval"
+	// notification (internal/notify) -- best-effort, see SubmitRequest's
+	// own comment on why a failure here doesn't fail the request itself.
+	EnqueueNotification(ctx context.Context, applicationID uuid.UUID, eventType string, payload []byte) error
+
 	ClaimApproved(ctx context.Context, requestID uuid.UUID, tokenHash []byte, credentialMaxAge time.Duration) (credentialID, applicationID uuid.UUID, alreadyClaimed bool, err error)
 	SaveClaimEnvelope(ctx context.Context, requestID, credentialID uuid.UUID, encryptionKeyID string, nonce, ciphertext []byte, expiresAt time.Time) error
 	GetLiveClaimEnvelope(ctx context.Context, requestID uuid.UUID) (store.ClaimResult, bool, error)

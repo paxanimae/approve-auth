@@ -69,6 +69,37 @@
     }
   }
 
+  // editNotifications edits both notify_email and notify_webhook_url as
+  // two sequential prompts (matching this component's existing single-
+  // field prompt() convention, just applied twice) since a browser
+  // prompt() can only collect one value at a time.
+  async function editNotifications(a: Application) {
+    const currentEmail = a.notify_email ?? "";
+    const nextEmail = prompt(
+      `Notification email for ${a.hostname} (sent when a new request needs approval).\nLeave blank to use the global default instead of an override.`,
+      currentEmail,
+    );
+    if (nextEmail === null) return;
+
+    const currentWebhook = a.notify_webhook_url ?? "";
+    const nextWebhook = prompt(
+      `Notification webhook URL for ${a.hostname}.\nMust be an absolute http(s) URL. Leave blank to use the global default instead of an override.`,
+      currentWebhook,
+    );
+    if (nextWebhook === null) return;
+
+    if (nextEmail === currentEmail && nextWebhook === currentWebhook) return;
+    busyId = a.id;
+    try {
+      await api.updateApplication(a.id, { version: a.version, notify_email: nextEmail, notify_webhook_url: nextWebhook });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      busyId = null;
+    }
+  }
+
   async function disable(a: Application) {
     const reason = prompt(`Reason for disabling ${a.hostname} (this cancels its pending requests and revokes all active sessions):`);
     if (reason === null || reason.trim() === "") return;
@@ -173,6 +204,7 @@
                 <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => enable(a)}>Enable</button>
               {/if}
               <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editContactInfo(a)}>Edit contact info</button>
+              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editNotifications(a)}>Notifications</button>
               <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => manageOwners(a)}>Owners</button>
             </td>
           </tr>

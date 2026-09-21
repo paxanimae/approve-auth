@@ -58,7 +58,7 @@ func setup(t *testing.T) (*store.DB, *admin.Service, store.ApprovalRequest) {
 	t.Cleanup(db.Close)
 
 	hostname := "admin-test-" + randomSuffix(t) + ".example.test"
-	app, err := db.CreateApplication(ctx, hostname, "Admin Test", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	app, err := db.CreateApplication(ctx, hostname, "Admin Test", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/frid-iks/approve-auth/internal/enrollment"
 	"github.com/frid-iks/approve-auth/internal/geoip"
+	"github.com/frid-iks/approve-auth/internal/notify"
 	"github.com/frid-iks/approve-auth/internal/store"
 )
 
@@ -55,7 +57,7 @@ func setup(t *testing.T) (*store.DB, *enrollment.Service, string) {
 	t.Cleanup(db.Close)
 
 	hostname := "enrollment-test-" + randomSuffix(t) + ".example.test"
-	app, err := db.CreateApplication(ctx, hostname, "Enrollment Test", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	app, err := db.CreateApplication(ctx, hostname, "Enrollment Test", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -125,7 +127,7 @@ func TestBootstrap_ContactInfoUsesApplicationOverride(t *testing.T) {
 	ctx := context.Background()
 
 	hostname := "enrollment-contact-" + randomSuffix(t) + ".example.test"
-	app, err := db.CreateApplication(ctx, hostname, "Contact Override Test", "", 30*24*time.Hour, 365*24*time.Hour, "app-specific contact")
+	app, err := db.CreateApplication(ctx, hostname, "Contact Override Test", "", 30*24*time.Hour, 365*24*time.Hour, "app-specific contact", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -232,6 +234,82 @@ func TestSubmitRequest_IsIdempotentForTheSamePendingProof(t *testing.T) {
 	}
 	if first.RequestID != second.RequestID || first.VerificationCode != second.VerificationCode {
 		t.Errorf("resubmission did not reuse the existing request: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestSubmitRequest_EnqueuesRequestCreatedNotification(t *testing.T) {
+	db, svc, hostname := setup(t)
+	ctx := context.Background()
+
+	boot, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	submitted, err := svc.SubmitRequest(ctx, enrollment.SubmitRequestInput{
+		PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken, Label: "Lobby TV", ClientIP: "203.0.113.20",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest: %v", err)
+	}
+
+	pending, err := db.ListPendingNotifications(ctx, 100)
+	if err != nil {
+		t.Fatalf("ListPendingNotifications: %v", err)
+	}
+	var found bool
+	for _, p := range pending {
+		var decoded struct {
+			RequestID string `json:"request_id"`
+			Label     string `json:"label"`
+		}
+		if err := json.Unmarshal(p.Payload, &decoded); err == nil && decoded.RequestID == submitted.RequestID {
+			found = true
+			if decoded.Label != "Lobby TV" {
+				t.Errorf("payload label = %q, want Lobby TV", decoded.Label)
+			}
+			if p.EventType != notify.EventRequestCreated {
+				t.Errorf("event_type = %q, want %q", p.EventType, notify.EventRequestCreated)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no pending notification found for request %s", submitted.RequestID)
+	}
+}
+
+func TestSubmitRequest_IdempotentResubmissionDoesNotEnqueueASecondNotification(t *testing.T) {
+	db, svc, hostname := setup(t)
+	ctx := context.Background()
+
+	app, found, err := db.GetApplicationByHostname(ctx, hostname)
+	if err != nil || !found {
+		t.Fatalf("GetApplicationByHostname: found=%v err=%v", found, err)
+	}
+
+	boot, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	in := enrollment.SubmitRequestInput{PendingTokenRaw: boot.RawPendingToken, CSRFToken: boot.CSRFToken, ClientIP: "203.0.113.21"}
+	if _, err := svc.SubmitRequest(ctx, in); err != nil {
+		t.Fatalf("SubmitRequest (first): %v", err)
+	}
+	if _, err := svc.SubmitRequest(ctx, in); err != nil {
+		t.Fatalf("SubmitRequest (resubmit): %v", err)
+	}
+
+	pending, err := db.ListPendingNotifications(ctx, 200)
+	if err != nil {
+		t.Fatalf("ListPendingNotifications: %v", err)
+	}
+	count := 0
+	for _, p := range pending {
+		if p.ApplicationID == app.ID {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("found %d pending notifications for this application after an idempotent resubmit, want exactly 1", count)
 	}
 }
 

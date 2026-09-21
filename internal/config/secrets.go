@@ -53,6 +53,23 @@ func secretBases(cfg *Config) []secretBase {
 				return nil
 			},
 		},
+		{
+			// Optional: unset means no SMTP auth, not an error --
+			// unlike the secrets above, notifications are an entirely
+			// opt-in feature (NotifySMTPHost empty disables email).
+			envBase: "NOTIFY_SMTP_PASSWORD",
+			file:    func(c *Config) string { return c.NotifySMTPPasswordFile },
+			assign:  func(c *Config, raw string) error { c.NotifySMTPPassword = raw; return nil },
+		},
+		{
+			// Optional: unset means outbound webhooks are sent
+			// unsigned, not an error -- an operator pointing this at an
+			// endpoint that doesn't verify signatures (e.g. an internal
+			// n8n workflow) is a deliberate, valid choice.
+			envBase: "NOTIFY_WEBHOOK_SECRET",
+			file:    func(c *Config) string { return c.NotifyWebhookSecretFile },
+			assign:  func(c *Config, raw string) error { c.NotifyWebhookSecret = raw; return nil },
+		},
 	}
 }
 

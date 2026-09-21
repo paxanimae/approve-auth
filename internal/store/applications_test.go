@@ -16,7 +16,7 @@ func TestCreateAndGetApplication(t *testing.T) {
 	ctx := context.Background()
 	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
-	created, err := db.CreateApplication(ctx, "Repo-Test.example.test", "Repo Test App", "created by applications_test.go", 30*24*time.Hour, 365*24*time.Hour, "")
+	created, err := db.CreateApplication(ctx, "Repo-Test.example.test", "Repo Test App", "created by applications_test.go", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestGetApplicationByID(t *testing.T) {
 	ctx := context.Background()
 	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
-	created, err := db.CreateApplication(ctx, "by-id.example.test", "By ID App", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	created, err := db.CreateApplication(ctx, "by-id.example.test", "By ID App", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -88,12 +88,12 @@ func TestListApplications(t *testing.T) {
 	ctx := context.Background()
 	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
-	a, err := db.CreateApplication(ctx, "list-a.example.test", "List A", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	a, err := db.CreateApplication(ctx, "list-a.example.test", "List A", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication a: %v", err)
 	}
 	t.Cleanup(func() { _, _ = db.Pool.Exec(ctx, `DELETE FROM applications WHERE id = $1`, a.ID) })
-	b, err := db.CreateApplication(ctx, "list-b.example.test", "List B", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	b, err := db.CreateApplication(ctx, "list-b.example.test", "List B", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication b: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestUpdateApplication_AppliesPartialChangesAndDetectsConflict(t *testing.T)
 	ctx := context.Background()
 	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
-	created, err := db.CreateApplication(ctx, "update.example.test", "Original Name", "original description", 30*24*time.Hour, 365*24*time.Hour, "")
+	created, err := db.CreateApplication(ctx, "update.example.test", "Original Name", "original description", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestEnableApplication(t *testing.T) {
 	ctx := context.Background()
 	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
-	created, err := db.CreateApplication(ctx, "enable.example.test", "Enable Test", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	created, err := db.CreateApplication(ctx, "enable.example.test", "Enable Test", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestApplication_ContactInfo(t *testing.T) {
 	ctx := context.Background()
 	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
 
-	withOverride, err := db.CreateApplication(ctx, "contact-override.example.test", "Has Override", "", 30*24*time.Hour, 365*24*time.Hour, "call +1-555-0100")
+	withOverride, err := db.CreateApplication(ctx, "contact-override.example.test", "Has Override", "", 30*24*time.Hour, 365*24*time.Hour, "call +1-555-0100", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestApplication_ContactInfo(t *testing.T) {
 		t.Errorf("ContactInfo = %v, want \"call +1-555-0100\"", withOverride.ContactInfo)
 	}
 
-	noOverride, err := db.CreateApplication(ctx, "contact-default.example.test", "No Override", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	noOverride, err := db.CreateApplication(ctx, "contact-default.example.test", "No Override", "", 30*24*time.Hour, 365*24*time.Hour, "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}

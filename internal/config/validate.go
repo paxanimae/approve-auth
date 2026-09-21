@@ -91,6 +91,16 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Errorf("LOG_LEVEL: must be one of debug/info/warn/error, got %q", c.LogLevel))
 	}
 
+	if c.NotifySMTPHost != "" {
+		errs = append(errs, requireNonEmpty("NOTIFY_EMAIL_FROM", c.NotifyEmailFrom))
+		if c.NotifySMTPPort <= 0 || c.NotifySMTPPort > 65535 {
+			errs = append(errs, fmt.Errorf("NOTIFY_SMTP_PORT: must be between 1 and 65535, got %d", c.NotifySMTPPort))
+		}
+	}
+	if c.NotifyDefaultWebhookURL != "" {
+		errs = append(errs, requireAbsoluteHTTPURL("NOTIFY_DEFAULT_WEBHOOK_URL", c.NotifyDefaultWebhookURL))
+	}
+
 	errs = append(errs, distinctListenerAddrs(c))
 
 	return errors.Join(errs...)
@@ -126,6 +136,17 @@ func requireHTTPSOrigin(field, value string) error {
 	}
 	if u.Path != "" && u.Path != "/" {
 		return fmt.Errorf("%s: must be an origin with no path, got %q", field, value)
+	}
+	return nil
+}
+
+func requireAbsoluteHTTPURL(field, value string) error {
+	u, err := url.ParseRequestURI(value)
+	if err != nil {
+		return fmt.Errorf("%s: invalid URL %q: %w", field, value, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%s: must be an http(s) URL, got %q", field, value)
 	}
 	return nil
 }

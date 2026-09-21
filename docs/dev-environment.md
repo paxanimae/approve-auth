@@ -242,3 +242,35 @@ to register their own account, even for the free tier:
 4. Leave it unset entirely to skip this -- every lookup then reports
    "unresolved" (`geoip.Noop`) and no request is ever blocked or slowed
    down by its absence.
+
+## Optional: approval-flow notifications
+
+`internal/notify` delivers a "new request needs approval" event by
+email and/or a generic outbound webhook, driven by a durable
+`notification_outbox` table and a retention-worker-style delivery job
+(same advisory-lock-per-job pattern as `internal/worker`'s other jobs).
+Every setting is optional and independent:
+
+- Email is entirely off unless `notify_smtp_host` (nonsecret config) is
+  set, in which case `notify_email_from` becomes required too (`cmd/server`
+  refuses to start otherwise). `notify_smtp_username`/
+  `NOTIFY_SMTP_PASSWORD_FILE` (a secret, like every other `_FILE`
+  setting) are only needed if the relay requires auth.
+- The webhook is off for a given application unless
+  `notify_default_webhook_url` (nonsecret config) or that application's
+  own `notify_webhook_url` override (set via the admin console's
+  Applications view -> Notifications) is set. `NOTIFY_WEBHOOK_SECRET_FILE`
+  (also a secret), if set, HMAC-SHA256-signs every outbound webhook body
+  in an `X-Approve-Auth-Signature: sha256=...` header -- global only,
+  shared across every application's webhook.
+- To test the webhook locally without standing up a real receiver, point
+  `notify_default_webhook_url` at something like
+  [webhook.site](https://webhook.site) or a local `python -m http.server`
+  and watch what arrives -- the delivery job runs every
+  `workerTickInterval` (5 minutes in `cmd/server/main.go`), so a locally
+  submitted request's notification shows up within that window, not
+  instantly.
+- Leave everything unset entirely to skip this: `EnqueueNotification`
+  still writes a row on every new request, `DeliverPending` still marks
+  it delivered (nothing to send to is a vacuous success, not a stuck
+  retry), and nothing is ever actually sent.

@@ -36,6 +36,25 @@ admin_origin: https://approval-admin.example.com
 # docs/dev-environment.md for how to get your own free copy).
 # geoip_database_path: /geoip/GeoLite2-City.mmdb
 
+# Approval-flow notifications: email and/or a generic outbound webhook,
+# sent when a new request needs approval (deliberately not SMS/MQTT --
+# see docs/threat-model.md). Every field below is optional and
+# independent: leaving notify_smtp_host unset disables email entirely;
+# leaving notify_default_webhook_url unset (with no per-application
+# override either, set via the admin console's Applications ->
+# Notifications) disables the webhook. An application's own
+# notify_email/notify_webhook_url overrides these defaults, the same
+# nullable-override pattern as contact_info above.
+# notify_smtp_host: smtp.example.com
+# notify_smtp_port: 587
+# notify_smtp_username: approve-auth@example.com
+# notify_email_from: approve-auth@example.com
+# notify_default_email: it@example.com
+# notify_default_webhook_url: https://hooks.example.com/approve-auth
+# SMTP password and webhook signing secret are secrets, not YAML keys --
+# see NOTIFY_SMTP_PASSWORD_FILE/NOTIFY_WEBHOOK_SECRET_FILE in
+# deploy/stack.yml.
+
 # admin_auth_mode: "oidc" (default, shown here) or "anonymous".
 # Anonymous mode skips this service's own login entirely -- every
 # caller is treated as one fixed identity, for a deployment that
@@ -95,3 +114,4 @@ retention:
   return_paths: 168h # 7 days
   idempotency_records: 24h
   claim_envelopes: 10m
+  notifications: 720h # 30 days -- not spec-mandated, see internal/notify

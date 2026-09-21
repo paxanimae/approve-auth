@@ -25,6 +25,7 @@ import (
 	"github.com/frid-iks/approve-auth/internal/geoip"
 	"github.com/frid-iks/approve-auth/internal/httpserver"
 	"github.com/frid-iks/approve-auth/internal/metrics"
+	"github.com/frid-iks/approve-auth/internal/notify"
 	"github.com/frid-iks/approve-auth/internal/oidc"
 	"github.com/frid-iks/approve-auth/internal/store"
 	"github.com/frid-iks/approve-auth/internal/version"
@@ -47,6 +48,12 @@ const overviewRecentWindow = 24 * time.Hour
 // settings, only "bounded batches" is specified -- five minutes keeps
 // an ordinary backlog small enough that "bounded" never matters.
 const workerTickInterval = 5 * time.Minute
+
+// notificationDeliveryBatchSize bounds one delivery-job tick the same
+// way internal/worker's own batchSize bounds its retention jobs --
+// notifications aren't spec-mandated, so there's no spec batch size to
+// match, just the same "bounded, not unbounded" principle.
+const notificationDeliveryBatchSize = 200
 
 func main() {
 	if err := run(); err != nil {
@@ -152,12 +159,28 @@ func run() error {
 		ClaimTTL:                     cfg.ClaimTTL.Std(),
 	})
 
-	retentionWorker := worker.New(db, worker.Jobs(db, worker.Config{
+	jobs := worker.Jobs(db, worker.Config{
 		ResolvedRequestsRetention: cfg.Retention.ResolvedRequests.Std(),
 		IPAndUserAgentRetention:   cfg.Retention.IPAndUserAgent.Std(),
 		ReturnPathsRetention:      cfg.Retention.ReturnPaths.Std(),
+		NotificationsRetention:    cfg.Retention.Notifications.Std(),
 		TickInterval:              workerTickInterval,
-	}))
+	})
+
+	notifier := notify.New(notify.Config{
+		SMTPHost: cfg.NotifySMTPHost, SMTPPort: cfg.NotifySMTPPort, SMTPUsername: cfg.NotifySMTPUsername, SMTPPassword: cfg.NotifySMTPPassword,
+		EmailFrom: cfg.NotifyEmailFrom, WebhookSecret: cfg.NotifyWebhookSecret,
+		DefaultEmail: cfg.NotifyDefaultEmail, DefaultWebhookURL: cfg.NotifyDefaultWebhookURL,
+	})
+	jobs = append(jobs, worker.Job{
+		Name: "deliver_notifications", Interval: workerTickInterval,
+		Run: func(ctx context.Context) error {
+			_, err := notifier.DeliverPending(ctx, db, notificationDeliveryBatchSize)
+			return err
+		},
+	})
+
+	retentionWorker := worker.New(db, jobs)
 	retentionWorker.Start(ctx)
 	go reportOverviewGauges(ctx, db, cfg.ExpiringSoonWindow.Std())
 

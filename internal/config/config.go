@@ -24,6 +24,10 @@ type Retention struct {
 	ReturnPaths        Duration `yaml:"return_paths"`
 	IdempotencyRecords Duration `yaml:"idempotency_records"`
 	ClaimEnvelopes     Duration `yaml:"claim_envelopes"`
+	// Notifications is not part of spec section 12 (notifications are
+	// not a spec-mandated feature) -- how long a delivered
+	// notification_outbox row is kept before purge.
+	Notifications Duration `yaml:"notifications"`
 }
 
 // Config is the fully loaded, environment-overridden, secret-resolved
@@ -51,6 +55,32 @@ type Config struct {
 	// and cannot bundle a database file; MaxMind requires each user to
 	// register their own free account. See docs/dev-environment.md.
 	GeoIPDatabasePath string `yaml:"geoip_database_path"`
+
+	// Notify* configures internal/notify's global defaults for the
+	// "a new request needs approval" notification (email and/or a
+	// generic outbound webhook, deliberately not SMS/MQTT -- see
+	// docs/threat-model.md). Every field is optional: leaving
+	// NotifySMTPHost empty disables email entirely; leaving
+	// NotifyDefaultWebhookURL empty (with no per-application override
+	// either) disables the webhook for that application. An
+	// application's own notify_email/notify_webhook_url (migration
+	// 000017) overrides these defaults, the same nullable-override
+	// pattern as ContactInfo above.
+	NotifySMTPHost          string `yaml:"notify_smtp_host"`
+	NotifySMTPPort          int    `yaml:"notify_smtp_port"`
+	NotifySMTPUsername      string `yaml:"notify_smtp_username"`
+	NotifyEmailFrom         string `yaml:"notify_email_from"`
+	NotifyDefaultEmail      string `yaml:"notify_default_email"`
+	NotifyDefaultWebhookURL string `yaml:"notify_default_webhook_url"`
+
+	NotifySMTPPasswordFile  string `yaml:"-"`
+	NotifyWebhookSecretFile string `yaml:"-"`
+	NotifySMTPPassword      string `yaml:"-"`
+	// NotifyWebhookSecret, if set, HMAC-SHA256-signs every outbound
+	// webhook body (global only -- every application's webhook shares
+	// one signing key, matching the scope-discipline decision to keep
+	// this a generic webhook, not a per-destination secrets vault).
+	NotifyWebhookSecret string `yaml:"-"`
 
 	// AdminAuthMode is "oidc" (default) or "anonymous". Anonymous mode
 	// skips this service's own login entirely -- every request to the
@@ -158,6 +188,7 @@ func Defaults() *Config {
 			ReturnPaths:        hours(7 * 24),
 			IdempotencyRecords: hours(24),
 			ClaimEnvelopes:     hours(1.0 / 6),
+			Notifications:      hours(30 * 24),
 		},
 
 		PublicAddr: ":8080",

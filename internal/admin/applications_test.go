@@ -115,6 +115,41 @@ func TestUpdateApplication_PartialUpdateAndConflict(t *testing.T) {
 	}
 }
 
+func TestCreateAndUpdateApplication_ThreadsNotifyFields(t *testing.T) {
+	db, svc := openService(t)
+	ctx := context.Background()
+
+	app, err := svc.CreateApplication(ctx, admin.CreateApplicationInput{
+		Hostname: "admin-notify-" + randomSuffix(t) + ".example.test", DisplayName: "Notify Test",
+		NotifyEmail: "owner@example.test", NotifyWebhookURL: "https://hooks.example.test/a",
+	})
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	cleanupApplication(t, db, ctx, app.ID)
+
+	if app.NotifyEmail == nil || *app.NotifyEmail != "owner@example.test" {
+		t.Errorf("NotifyEmail = %v, want owner@example.test", app.NotifyEmail)
+	}
+	if app.NotifyWebhookURL == nil || *app.NotifyWebhookURL != "https://hooks.example.test/a" {
+		t.Errorf("NotifyWebhookURL = %v, want https://hooks.example.test/a", app.NotifyWebhookURL)
+	}
+
+	cleared := ""
+	updated, err := svc.UpdateApplication(ctx, admin.UpdateApplicationInput{
+		ApplicationID: app.ID.String(), ExpectedVersion: app.Version, NotifyEmail: &cleared, UpdatedBy: "admin@example.test",
+	})
+	if err != nil {
+		t.Fatalf("UpdateApplication: %v", err)
+	}
+	if updated.NotifyEmail != nil {
+		t.Errorf("NotifyEmail = %v, want nil after clearing to the global default", updated.NotifyEmail)
+	}
+	if updated.NotifyWebhookURL == nil || *updated.NotifyWebhookURL != "https://hooks.example.test/a" {
+		t.Errorf("NotifyWebhookURL = %v, want it left unchanged (not passed in this update)", updated.NotifyWebhookURL)
+	}
+}
+
 func TestUpdateApplication_RejectsInvalidDuration(t *testing.T) {
 	db, svc := openService(t)
 	ctx := context.Background()

@@ -33,6 +33,10 @@ type applicationDTO struct {
 	// an empty string, distinguishes "inherits the default" from "opts
 	// out with no contact info at all" for the console to display.
 	ContactInfo *string `json:"contact_info,omitempty"`
+	// NotifyEmail/NotifyWebhookURL: same nil-means-inherits-the-global-
+	// default convention as ContactInfo above.
+	NotifyEmail      *string `json:"notify_email,omitempty"`
+	NotifyWebhookURL *string `json:"notify_webhook_url,omitempty"`
 }
 
 func newApplicationDTO(a store.Application) applicationDTO {
@@ -40,7 +44,7 @@ func newApplicationDTO(a store.Application) applicationDTO {
 		ID: a.ID.String(), Hostname: a.Hostname, DisplayName: a.DisplayName, Description: a.Description,
 		Enabled: a.Enabled, DefaultDurationSeconds: a.DefaultDurationSeconds, MaxDurationSeconds: a.MaxDurationSeconds,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt, ArchivedAt: a.ArchivedAt, Version: a.Version,
-		ContactInfo: a.ContactInfo,
+		ContactInfo: a.ContactInfo, NotifyEmail: a.NotifyEmail, NotifyWebhookURL: a.NotifyWebhookURL,
 	}
 }
 

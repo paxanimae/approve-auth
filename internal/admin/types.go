@@ -25,7 +25,7 @@ type Store interface {
 	RenewAuthorization(ctx context.Context, authorizationID uuid.UUID, expectedVersion int32, newExpiresAt time.Time, renewedBy string) error
 	GetAuthorizationByID(ctx context.Context, id uuid.UUID) (store.Authorization, bool, error)
 
-	CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration, contactInfo string) (store.Application, error)
+	CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration, contactInfo, notifyEmail, notifyWebhookURL string) (store.Application, error)
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (store.Application, bool, error)
 	UpdateApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, p store.UpdateApplicationParams, updatedBy string) (store.Application, error)
 	DisableApplication(ctx context.Context, id uuid.UUID, expectedVersion int32, reason, disabledBy string) (store.Application, int, int, error)
@@ -83,24 +83,28 @@ type RenewInput struct {
 // configured default" (Config.DefaultAuthorizationDuration /
 // MaxAuthorizationDuration), the same fallback Approve uses.
 type CreateApplicationInput struct {
-	Hostname        string
-	DisplayName     string
-	Description     string
-	DefaultDuration time.Duration
-	MaxDuration     time.Duration
-	ContactInfo     string
+	Hostname         string
+	DisplayName      string
+	Description      string
+	DefaultDuration  time.Duration
+	MaxDuration      time.Duration
+	ContactInfo      string
+	NotifyEmail      string
+	NotifyWebhookURL string
 }
 
 // UpdateApplicationInput backs PATCH /api/v1/applications/{id}.
 type UpdateApplicationInput struct {
-	ApplicationID   string
-	ExpectedVersion int32
-	DisplayName     *string
-	Description     *string
-	DefaultDuration *time.Duration
-	MaxDuration     *time.Duration
-	ContactInfo     *string
-	UpdatedBy       string
+	ApplicationID    string
+	ExpectedVersion  int32
+	DisplayName      *string
+	Description      *string
+	DefaultDuration  *time.Duration
+	MaxDuration      *time.Duration
+	ContactInfo      *string
+	NotifyEmail      *string
+	NotifyWebhookURL *string
+	UpdatedBy        string
 }
 
 // DisableApplicationInput backs POST /api/v1/applications/{id}/disable.

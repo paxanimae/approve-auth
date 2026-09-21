@@ -2,10 +2,23 @@ package httpserver
 
 import (
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/frid-iks/approve-auth/internal/admin"
 )
+
+// validateNotifyWebhookURL rejects a non-empty webhook URL that isn't
+// an absolute http(s) URL -- the delivery job would otherwise fail
+// silently (as a delivery error, retried forever) on every attempt for
+// something a synchronous check can catch immediately at config time.
+func validateNotifyWebhookURL(raw string) bool {
+	if raw == "" {
+		return true
+	}
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
 
 // --- GET /api/v1/applications ---
 
@@ -33,6 +46,8 @@ type createApplicationRequest struct {
 	DefaultDurationSeconds int64  `json:"default_duration_seconds"`
 	MaxDurationSeconds     int64  `json:"max_duration_seconds"`
 	ContactInfo            string `json:"contact_info"`
+	NotifyEmail            string `json:"notify_email"`
+	NotifyWebhookURL       string `json:"notify_webhook_url"`
 }
 
 func createApplicationHandler(actions AdminActions) http.HandlerFunc {
@@ -49,12 +64,20 @@ func createApplicationHandler(actions AdminActions) http.HandlerFunc {
 			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "contact_info must be at most 500 characters")
 			return
 		}
+		if len(body.NotifyEmail) > 320 {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "notify_email must be at most 320 characters")
+			return
+		}
+		if !validateNotifyWebhookURL(body.NotifyWebhookURL) {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "notify_webhook_url must be an absolute http(s) URL")
+			return
+		}
 
 		app, err := actions.CreateApplication(r.Context(), admin.CreateApplicationInput{
 			Hostname: body.Hostname, DisplayName: body.DisplayName, Description: body.Description,
 			DefaultDuration: time.Duration(body.DefaultDurationSeconds) * time.Second,
 			MaxDuration:     time.Duration(body.MaxDurationSeconds) * time.Second,
-			ContactInfo:     body.ContactInfo,
+			ContactInfo:     body.ContactInfo, NotifyEmail: body.NotifyEmail, NotifyWebhookURL: body.NotifyWebhookURL,
 		})
 		if err != nil {
 			mapAdminError(w, err)
@@ -94,6 +117,8 @@ type updateApplicationRequest struct {
 	DefaultDurationSeconds *int64  `json:"default_duration_seconds"`
 	MaxDurationSeconds     *int64  `json:"max_duration_seconds"`
 	ContactInfo            *string `json:"contact_info"`
+	NotifyEmail            *string `json:"notify_email"`
+	NotifyWebhookURL       *string `json:"notify_webhook_url"`
 }
 
 func updateApplicationHandler(actions AdminActions) http.HandlerFunc {
@@ -110,10 +135,19 @@ func updateApplicationHandler(actions AdminActions) http.HandlerFunc {
 			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "contact_info must be at most 500 characters")
 			return
 		}
+		if body.NotifyEmail != nil && len(*body.NotifyEmail) > 320 {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "notify_email must be at most 320 characters")
+			return
+		}
+		if body.NotifyWebhookURL != nil && !validateNotifyWebhookURL(*body.NotifyWebhookURL) {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "notify_webhook_url must be an absolute http(s) URL")
+			return
+		}
 
 		in := admin.UpdateApplicationInput{
 			ApplicationID: id.String(), ExpectedVersion: body.Version,
 			DisplayName: body.DisplayName, Description: body.Description, ContactInfo: body.ContactInfo, UpdatedBy: actorSubject(r),
+			NotifyEmail: body.NotifyEmail, NotifyWebhookURL: body.NotifyWebhookURL,
 		}
 		if body.DefaultDurationSeconds != nil {
 			d := time.Duration(*body.DefaultDurationSeconds) * time.Second

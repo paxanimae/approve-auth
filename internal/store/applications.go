@@ -16,7 +16,7 @@ import (
 // case value outright, but normalizing here gives a clearer error path
 // than a raw constraint violation for the common case of a caller not
 // having lowercased it themselves.
-func (db *DB) CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration, contactInfo string) (Application, error) {
+func (db *DB) CreateApplication(ctx context.Context, hostname, displayName, description string, defaultDuration, maxDuration time.Duration, contactInfo, notifyEmail, notifyWebhookURL string) (Application, error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
 		return Application{}, fmt.Errorf("store: creating application %q: begin: %w", hostname, err)
@@ -24,11 +24,11 @@ func (db *DB) CreateApplication(ctx context.Context, hostname, displayName, desc
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	app, err := scanApplication(tx.QueryRow(ctx, `
-		INSERT INTO applications (hostname, display_name, description, default_duration_seconds, max_duration_seconds, contact_info)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO applications (hostname, display_name, description, default_duration_seconds, max_duration_seconds, contact_info, notify_email, notify_webhook_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING `+applicationColumns,
 		strings.ToLower(hostname), displayName, description,
-		int32(defaultDuration.Seconds()), int32(maxDuration.Seconds()), nullableText(contactInfo),
+		int32(defaultDuration.Seconds()), int32(maxDuration.Seconds()), nullableText(contactInfo), nullableText(notifyEmail), nullableText(notifyWebhookURL),
 	))
 	if err != nil {
 		return Application{}, fmt.Errorf("store: creating application %q: %w", hostname, err)
@@ -62,7 +62,7 @@ func (db *DB) GetApplicationByHostname(ctx context.Context, hostname string) (Ap
 	return app, true, nil
 }
 
-const applicationColumns = `id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version, contact_info`
+const applicationColumns = `id, hostname, display_name, description, enabled, default_duration_seconds, max_duration_seconds, created_at, updated_at, archived_at, version, contact_info, notify_email, notify_webhook_url`
 
 func scanApplication(row scanner) (Application, error) {
 	var app Application
@@ -70,6 +70,7 @@ func scanApplication(row scanner) (Application, error) {
 		&app.ID, &app.Hostname, &app.DisplayName, &app.Description, &app.Enabled,
 		&app.DefaultDurationSeconds, &app.MaxDurationSeconds,
 		&app.CreatedAt, &app.UpdatedAt, &app.ArchivedAt, &app.Version, &app.ContactInfo,
+		&app.NotifyEmail, &app.NotifyWebhookURL,
 	)
 	return app, err
 }
@@ -125,6 +126,11 @@ type UpdateApplicationParams struct {
 	// normalizing "" to NULL (use the global default) the same way
 	// CreateApplication does.
 	ContactInfo *string
+	// NotifyEmail/NotifyWebhookURL: same nil-means-unchanged,
+	// empty-string-means-clear-to-global-default convention as
+	// ContactInfo above.
+	NotifyEmail      *string
+	NotifyWebhookURL *string
 }
 
 // UpdateApplication applies only the fields the caller set, using the
@@ -173,14 +179,28 @@ func (db *DB) UpdateApplication(ctx context.Context, id uuid.UUID, expectedVersi
 			contactInfo = nil
 		}
 	}
+	notifyEmail := current.NotifyEmail
+	if p.NotifyEmail != nil {
+		notifyEmail = p.NotifyEmail
+		if *notifyEmail == "" {
+			notifyEmail = nil
+		}
+	}
+	notifyWebhookURL := current.NotifyWebhookURL
+	if p.NotifyWebhookURL != nil {
+		notifyWebhookURL = p.NotifyWebhookURL
+		if *notifyWebhookURL == "" {
+			notifyWebhookURL = nil
+		}
+	}
 
 	app, err := scanApplication(tx.QueryRow(ctx, `
 		UPDATE applications
 		SET display_name = $1, description = $2, default_duration_seconds = $3, max_duration_seconds = $4,
-		    contact_info = $5, updated_at = now(), version = version + 1
-		WHERE id = $6
+		    contact_info = $5, notify_email = $6, notify_webhook_url = $7, updated_at = now(), version = version + 1
+		WHERE id = $8
 		RETURNING `+applicationColumns,
-		displayName, description, defaultSeconds, maxSeconds, contactInfo, id,
+		displayName, description, defaultSeconds, maxSeconds, contactInfo, notifyEmail, notifyWebhookURL, id,
 	))
 	if err != nil {
 		return Application{}, fmt.Errorf("store: updating application %s: %w", id, err)
