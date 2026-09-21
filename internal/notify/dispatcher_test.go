@@ -43,7 +43,7 @@ func TestDeliver_WebhookSendsSignedJSONBody(t *testing.T) {
 	defer srv.Close()
 
 	d := notify.New(notify.Config{WebhookSecret: secret})
-	if err := d.Deliver(context.Background(), notify.Destination{WebhookURL: srv.URL}, testEvent()); err != nil {
+	if err := d.Deliver(context.Background(), "", notify.Destination{WebhookURL: srv.URL}, testEvent()); err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
 
@@ -73,7 +73,7 @@ func TestDeliver_WebhookOmitsSignatureWhenNoSecretConfigured(t *testing.T) {
 	defer srv.Close()
 
 	d := notify.New(notify.Config{})
-	if err := d.Deliver(context.Background(), notify.Destination{WebhookURL: srv.URL}, testEvent()); err != nil {
+	if err := d.Deliver(context.Background(), "", notify.Destination{WebhookURL: srv.URL}, testEvent()); err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
 	if sawHeader {
@@ -88,14 +88,14 @@ func TestDeliver_WebhookNon2xxIsAnError(t *testing.T) {
 	defer srv.Close()
 
 	d := notify.New(notify.Config{})
-	if err := d.Deliver(context.Background(), notify.Destination{WebhookURL: srv.URL}, testEvent()); err == nil {
+	if err := d.Deliver(context.Background(), "", notify.Destination{WebhookURL: srv.URL}, testEvent()); err == nil {
 		t.Fatal("Deliver: expected an error for a 500 response, got nil")
 	}
 }
 
 func TestDeliver_NothingConfiguredIsNotAnError(t *testing.T) {
 	d := notify.New(notify.Config{})
-	if err := d.Deliver(context.Background(), notify.Destination{}, testEvent()); err != nil {
+	if err := d.Deliver(context.Background(), "", notify.Destination{}, testEvent()); err != nil {
 		t.Errorf("Deliver with no destination configured: got %v, want nil (vacuous success)", err)
 	}
 }
@@ -105,8 +105,19 @@ func TestDeliver_EmailSkippedWhenSMTPHostNotConfigured(t *testing.T) {
 	// skipped (feature is opt-in via NotifySMTPHost), not attempted and
 	// not an error.
 	d := notify.New(notify.Config{})
-	if err := d.Deliver(context.Background(), notify.Destination{Email: "ops@example.test"}, testEvent()); err != nil {
+	if err := d.Deliver(context.Background(), "", notify.Destination{Email: "ops@example.test"}, testEvent()); err != nil {
 		t.Errorf("Deliver with email destination but no SMTP host: got %v, want nil", err)
+	}
+}
+
+func TestDeliver_EmailSkippedWhenEmailFromUnresolved(t *testing.T) {
+	// SMTPHost IS configured (email is "on"), but the caller resolved
+	// an empty emailFrom (notify_email_from unset in global_settings) --
+	// must skip cleanly, not attempt smtp.SendMail with a blank From
+	// and not report this as a delivery error to retry.
+	d := notify.New(notify.Config{SMTPHost: "smtp.example.test", SMTPPort: 587})
+	if err := d.Deliver(context.Background(), "", notify.Destination{Email: "ops@example.test"}, testEvent()); err != nil {
+		t.Errorf("Deliver with SMTPHost set but no resolved emailFrom: got %v, want nil", err)
 	}
 }
 

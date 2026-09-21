@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"testing"
 	"time"
+
+	"github.com/frid-iks/approve-auth/internal/store"
 )
 
 func testTokenHash(seed string) []byte {
@@ -192,6 +194,57 @@ func TestGetAccessSnapshot_IncludesLastSeenAndRevokePolicyOverrides(t *testing.T
 	}
 	if snap.RevokePolicyUserAgentChangedSession == nil || *snap.RevokePolicyUserAgentChangedSession != "revoke" {
 		t.Errorf("RevokePolicyUserAgentChangedSession = %v, want revoke", snap.RevokePolicyUserAgentChangedSession)
+	}
+}
+
+// TestGetAccessSnapshot_ReflectsLiveGlobalSettingsChange is this
+// session's settings overhaul's actual point: global_settings
+// (migration 000019) is read fresh by GetAccessSnapshot's own query on
+// every call, never cached in a startup-loaded Config, so an
+// administrator's edit via the Settings page takes effect on the very
+// next authz.Decide call with no restart.
+func TestGetAccessSnapshot_ReflectsLiveGlobalSettingsChange(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	withGlobalSettingsRestore(t, db, ctx)
+
+	appID := insertApplication(t, ctx, conn, "snapshot-global-settings.example.test")
+	reqID := insertApprovalRequest(t, ctx, conn, appID, t.Name())
+	activatedAt := time.Now().Add(-time.Hour)
+	authID := insertAuthorization(t, ctx, conn, appID, reqID, authorizationOpts{
+		ExpiresAt:   time.Now().Add(30 * 24 * time.Hour),
+		ActivatedAt: &activatedAt,
+	})
+	tokenHash := testTokenHash(t.Name())
+	insertCredential(t, ctx, conn, authID, appID, tokenHash, credentialOpts{
+		AbsoluteExpiresAt: time.Now().Add(365 * 24 * time.Hour),
+	})
+
+	original, err := db.GetGlobalSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetGlobalSettings: %v", err)
+	}
+	ipAction, uaAction := "revoke", "flag_for_review"
+	if _, err := db.UpdateGlobalSettings(ctx, original.Version, store.UpdateGlobalSettingsParams{
+		RevokePolicyIPChanged: &ipAction, RevokePolicyUserAgentChanged: &uaAction,
+	}, "test"); err != nil {
+		t.Fatalf("UpdateGlobalSettings: %v", err)
+	}
+
+	snap, err := db.GetAccessSnapshot(ctx, "snapshot-global-settings.example.test", tokenHash)
+	if err != nil {
+		t.Fatalf("GetAccessSnapshot: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("expected a non-nil snapshot")
+	}
+	if snap.RevokePolicyIPChangedGlobal != "revoke" {
+		t.Errorf("RevokePolicyIPChangedGlobal = %q, want revoke (the value just written via UpdateGlobalSettings)", snap.RevokePolicyIPChangedGlobal)
+	}
+	if snap.RevokePolicyUserAgentChangedGlobal != "flag_for_review" {
+		t.Errorf("RevokePolicyUserAgentChangedGlobal = %q, want flag_for_review (the value just written via UpdateGlobalSettings)", snap.RevokePolicyUserAgentChangedGlobal)
 	}
 }
 

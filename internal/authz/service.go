@@ -40,11 +40,10 @@ const revokePolicyActor = "system:revoke-policy"
 
 type Service struct {
 	store Store
-	cfg   Config
 }
 
-func New(s Store, cfg Config) *Service {
-	return &Service{store: s, cfg: cfg}
+func New(s Store) *Service {
+	return &Service{store: s}
 }
 
 // Decide implements the authoritative check (spec section 3). It assumes
@@ -162,14 +161,14 @@ func (s *Service) resolveChangeSignal(snap *store.AccessSnapshot, req AuthReques
 
 	if snap.LastSeenIP != nil && req.ClientAddr != "" {
 		if current := net.ParseIP(req.ClientAddr); current != nil && !current.Equal(*snap.LastSeenIP) {
-			action := revokepolicy.Resolve(snap.RevokePolicyIPChangedSession, snap.RevokePolicyIPChangedApp, s.cfg.RevokePolicyIPChanged)
+			action := revokepolicy.Resolve(snap.RevokePolicyIPChangedSession, snap.RevokePolicyIPChangedApp, revokepolicy.Action(snap.RevokePolicyIPChangedGlobal))
 			if action.MoreSevere(best) {
 				best, bestSignal = action, revokepolicy.SignalIPChanged
 			}
 		}
 	}
 	if snap.LastSeenUserAgent != nil && req.UserAgent != "" && *snap.LastSeenUserAgent != req.UserAgent {
-		action := revokepolicy.Resolve(snap.RevokePolicyUserAgentChangedSession, snap.RevokePolicyUserAgentChangedApp, s.cfg.RevokePolicyUserAgentChanged)
+		action := revokepolicy.Resolve(snap.RevokePolicyUserAgentChangedSession, snap.RevokePolicyUserAgentChangedApp, revokepolicy.Action(snap.RevokePolicyUserAgentChangedGlobal))
 		if action.MoreSevere(best) {
 			best, bestSignal = action, revokepolicy.SignalUserAgentChanged
 		}

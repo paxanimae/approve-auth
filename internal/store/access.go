@@ -50,6 +50,15 @@ type AccessSnapshot struct {
 	RevokePolicyUserAgentChangedApp     *string
 	RevokePolicyUserAgentChangedSession *string
 
+	// RevokePolicy{IPChanged,UserAgentChanged}Global are the current
+	// deployment-wide defaults (migration 000019's global_settings,
+	// live-editable from the admin console -- see
+	// internal/revokepolicy.Resolve's own comment on why these can't
+	// be fixed at Decide's construction time). Pulled in via a cross
+	// join against that table's single row, so this stays one query.
+	RevokePolicyIPChangedGlobal        string
+	RevokePolicyUserAgentChangedGlobal string
+
 	DatabaseNow time.Time
 }
 
@@ -77,8 +86,11 @@ func (db *DB) GetAccessSnapshot(ctx context.Context, hostname string, credential
 			z.revoke_policy_ip_changed,
 			a.revoke_policy_user_agent_changed,
 			z.revoke_policy_user_agent_changed,
+			gs.revoke_policy_ip_changed,
+			gs.revoke_policy_user_agent_changed,
 			now()
 		FROM applications a
+		CROSS JOIN global_settings gs
 		LEFT JOIN credentials c ON c.token_hash = $2
 		LEFT JOIN authorizations z ON z.id = c.authorization_id
 		WHERE a.hostname = $1`,
@@ -110,6 +122,8 @@ func (db *DB) GetAccessSnapshot(ctx context.Context, hostname string, credential
 		&snap.RevokePolicyIPChangedSession,
 		&snap.RevokePolicyUserAgentChangedApp,
 		&snap.RevokePolicyUserAgentChangedSession,
+		&snap.RevokePolicyIPChangedGlobal,
+		&snap.RevokePolicyUserAgentChangedGlobal,
 		&snap.DatabaseNow,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

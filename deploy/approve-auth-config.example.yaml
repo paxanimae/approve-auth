@@ -22,11 +22,12 @@ admin_origin: https://approval-admin.example.com
 # deployment setup.
 # instance_name: prod-eu-west
 
-# Shown on every application's request page ("Need help? ..."), unless
-# that specific application has its own contact_info set via the admin
-# console (Applications -> Edit contact info), which takes precedence.
-# Leave unset to show nothing by default.
-# contact_info: "IT helpdesk: it@example.com"
+# contact_info, the notification default destinations/from-address,
+# and the deployment-wide revocation policy all moved off this static
+# file into a live, database-backed row -- edit them from the admin
+# console's Settings page instead (takes effect immediately, no
+# redeploy needed). See internal/store.GlobalSettings (migration
+# 000019).
 
 # Path to a MaxMind GeoLite2-City (or commercial GeoIP2-City) .mmdb
 # file, mounted into the container -- enables best-effort country/city
@@ -38,39 +39,35 @@ admin_origin: https://approval-admin.example.com
 
 # Approval-flow notifications: email and/or a generic outbound webhook,
 # sent when a new request needs approval (deliberately not SMS/MQTT --
-# see docs/threat-model.md). Every field below is optional and
-# independent: leaving notify_smtp_host unset disables email entirely;
-# leaving notify_default_webhook_url unset (with no per-application
-# override either, set via the admin console's Applications ->
-# Notifications) disables the webhook. An application's own
-# notify_email/notify_webhook_url overrides these defaults, the same
-# nullable-override pattern as contact_info above.
+# see docs/threat-model.md). This section is transport/credentials
+# only -- the SMTP relay identity Approve-Auth authenticates as.
+# Leaving notify_smtp_host unset disables email entirely. The
+# from-address, the default email/webhook destinations, and every
+# application's own override are all set from the admin console
+# (Settings page for the defaults, Applications -> Notifications for a
+# per-application override) -- see internal/store.GlobalSettings.
 # notify_smtp_host: smtp.example.com
 # notify_smtp_port: 587
 # notify_smtp_username: approve-auth@example.com
-# notify_email_from: approve-auth@example.com
-# notify_default_email: it@example.com
-# notify_default_webhook_url: https://hooks.example.com/approve-auth
 # SMTP password and webhook signing secret are secrets, not YAML keys --
 # see NOTIFY_SMTP_PASSWORD_FILE/NOTIFY_WEBHOOK_SECRET_FILE in
 # deploy/stack.yml.
 
 # Revocation policy (not spec-mandated; see docs/threat-model.md): the
 # deployment-wide default action for each named signal, one of
-# off/warn/flag_for_review/revoke. An application's own override (admin
-# console: Applications -> Revocation policy) or a session's own
-# override (set at approval time) takes priority over these -- see
-# internal/revokepolicy.Resolve. Shown here at their own built-in
-# defaults: IP changes are flagged for a human to review rather than
-# either ignored or silently revoked (an unattended display going dark
-# with no one around to notice is the exact failure mode this exists to
-# avoid); User-Agent changes (routine browser auto-updates included)
-# are merely logged; inactivity enforcement is off until you pick a
-# threshold that makes sense for your own devices.
-# revoke_policy_ip_changed: flag_for_review
-# revoke_policy_user_agent_changed: warn
-# revoke_policy_inactivity_exceeded: off
-# revocation_inactivity_threshold: 2160h # 90 days -- global only, not layered (see internal/config.Config's own comment)
+# off/warn/flag_for_review/revoke, is set from the admin console's
+# Settings page (click-to-define dropdowns, live, no redeploy needed --
+# see internal/store.GlobalSettings). An application's own override
+# (admin console: Applications -> Revocation policy) or a session's
+# own override (set at approval time) takes priority over the
+# deployment-wide default -- see internal/revokepolicy.Resolve. The
+# built-in seeded defaults (migration 000019) are: IP changes flagged
+# for a human to review rather than either ignored or silently revoked
+# (an unattended display going dark with no one around to notice is
+# the exact failure mode this exists to avoid); User-Agent changes
+# (routine browser auto-updates included) merely logged; inactivity
+# enforcement off until an administrator picks a threshold that makes
+# sense for their own devices.
 
 # admin_auth_mode: "oidc" (default, shown here) or "anonymous".
 # Anonymous mode skips this service's own login entirely -- every

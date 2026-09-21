@@ -72,10 +72,14 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (BootstrapRe
 			return BootstrapResult{}, fmt.Errorf("enrollment: bootstrap: %w", err)
 		}
 		if found && ec.ApplicationID == app.ID {
+			contactInfo, err := s.resolveContactInfo(ctx, app)
+			if err != nil {
+				return BootstrapResult{}, fmt.Errorf("enrollment: bootstrap: %w", err)
+			}
 			return BootstrapResult{
 				ApplicationDisplayName: app.DisplayName,
 				ApplicationHostname:    app.Hostname,
-				ContactInfo:            s.resolveContactInfo(app),
+				ContactInfo:            contactInfo,
 				CSRFToken:              csrfToken(ec.CSRFSecret),
 			}, nil
 		}
@@ -94,22 +98,36 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (BootstrapRe
 		return BootstrapResult{}, fmt.Errorf("enrollment: bootstrap: creating context: %w", err)
 	}
 
+	contactInfo, err := s.resolveContactInfo(ctx, app)
+	if err != nil {
+		return BootstrapResult{}, fmt.Errorf("enrollment: bootstrap: %w", err)
+	}
 	return BootstrapResult{
 		ApplicationDisplayName: app.DisplayName,
 		ApplicationHostname:    app.Hostname,
-		ContactInfo:            s.resolveContactInfo(app),
+		ContactInfo:            contactInfo,
 		RawPendingToken:        rawToken,
 		CSRFToken:              csrfToken(ec.CSRFSecret),
 	}, nil
 }
 
 // resolveContactInfo returns app's own contact_info override if it has
-// one, otherwise the service-wide default.
-func (s *Service) resolveContactInfo(app store.Application) string {
+// one, otherwise the deployment-wide global_settings default -- read
+// fresh on every call (migration 000019), never cached, so an
+// administrator's edit via the Settings page takes effect on the very
+// next request.
+func (s *Service) resolveContactInfo(ctx context.Context, app store.Application) (string, error) {
 	if app.ContactInfo != nil {
-		return *app.ContactInfo
+		return *app.ContactInfo, nil
 	}
-	return s.cfg.DefaultContactInfo
+	settings, err := s.store.GetGlobalSettings(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolving contact info: %w", err)
+	}
+	if settings.ContactInfo == nil {
+		return "", nil
+	}
+	return *settings.ContactInfo, nil
 }
 
 func (s *Service) SubmitRequest(ctx context.Context, in SubmitRequestInput) (SubmitRequestResult, error) {

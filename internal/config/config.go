@@ -5,8 +5,6 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/frid-iks/approve-auth/internal/revokepolicy"
 )
 
 // RateLimits mirrors the atomic distributed limits from spec section 11.
@@ -44,12 +42,6 @@ type Config struct {
 	// in any decision. Empty by default; unset is valid.
 	InstanceName string `yaml:"instance_name"`
 
-	// ContactInfo is the global default shown on every application's
-	// request page (who to contact about access), unless that specific
-	// application has its own override (see migration 000014). Empty by
-	// default -- unset means no contact info is shown at all.
-	ContactInfo string `yaml:"contact_info"`
-
 	// GeoIPDatabasePath is a MaxMind GeoLite2-City (or commercial
 	// GeoIP2-City) .mmdb file, used for best-effort country/city
 	// enrichment of a new request's source_ip (internal/geoip). Empty
@@ -58,22 +50,18 @@ type Config struct {
 	// register their own free account. See docs/dev-environment.md.
 	GeoIPDatabasePath string `yaml:"geoip_database_path"`
 
-	// Notify* configures internal/notify's global defaults for the
-	// "a new request needs approval" notification (email and/or a
-	// generic outbound webhook, deliberately not SMS/MQTT -- see
-	// docs/threat-model.md). Every field is optional: leaving
-	// NotifySMTPHost empty disables email entirely; leaving
-	// NotifyDefaultWebhookURL empty (with no per-application override
-	// either) disables the webhook for that application. An
-	// application's own notify_email/notify_webhook_url (migration
-	// 000017) overrides these defaults, the same nullable-override
-	// pattern as ContactInfo above.
-	NotifySMTPHost          string `yaml:"notify_smtp_host"`
-	NotifySMTPPort          int    `yaml:"notify_smtp_port"`
-	NotifySMTPUsername      string `yaml:"notify_smtp_username"`
-	NotifyEmailFrom         string `yaml:"notify_email_from"`
-	NotifyDefaultEmail      string `yaml:"notify_default_email"`
-	NotifyDefaultWebhookURL string `yaml:"notify_default_webhook_url"`
+	// Notify* here is transport/credential config only -- SMTP relay
+	// identity and the webhook signing secret. EmailFrom, the default
+	// notification destinations, contact_info, and every
+	// revocation-policy setting all moved to migration 000019's
+	// global_settings table (live-editable from the admin console's
+	// Settings page) -- see internal/store.GlobalSettings. Business
+	// rules don't belong in a static config file that needs a redeploy
+	// to change; this is deliberately the boundary: transport/
+	// credentials stay here, business rules don't.
+	NotifySMTPHost     string `yaml:"notify_smtp_host"`
+	NotifySMTPPort     int    `yaml:"notify_smtp_port"`
+	NotifySMTPUsername string `yaml:"notify_smtp_username"`
 
 	NotifySMTPPasswordFile  string `yaml:"-"`
 	NotifyWebhookSecretFile string `yaml:"-"`
@@ -83,23 +71,6 @@ type Config struct {
 	// one signing key, matching the scope-discipline decision to keep
 	// this a generic webhook, not a per-destination secrets vault).
 	NotifyWebhookSecret string `yaml:"-"`
-
-	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded} are
-	// the deployment-wide revocation-policy defaults
-	// (internal/revokepolicy) -- each must be one of off/warn/
-	// flag_for_review/revoke. An application or session-level override
-	// (migration 000018) takes priority over these; see
-	// internal/revokepolicy.Resolve.
-	RevokePolicyIPChanged          string `yaml:"revoke_policy_ip_changed"`
-	RevokePolicyUserAgentChanged   string `yaml:"revoke_policy_user_agent_changed"`
-	RevokePolicyInactivityExceeded string `yaml:"revoke_policy_inactivity_exceeded"`
-	// RevocationInactivityThreshold is InactivityExceeded's "how long
-	// is idle" definition -- deliberately global-only, not layered per
-	// application/session like the action itself, to bound this
-	// feature's scope (a per-session inactivity window is a much rarer
-	// need than a per-session action override, e.g. "revoke this one
-	// TV's session on IP change but only flag its User-Agent change").
-	RevocationInactivityThreshold Duration `yaml:"revocation_inactivity_threshold"`
 
 	// AdminAuthMode is "oidc" (default) or "anonymous". Anonymous mode
 	// skips this service's own login entirely -- every request to the
@@ -179,19 +150,6 @@ func Defaults() *Config {
 		AdminAnonymousRole:        "administrator",
 
 		ClaimEncryptionKeyID: "primary",
-
-		// A roaming laptop and a stationary digital sign warrant
-		// different defaults, but *some* default must exist: an IP
-		// change is flagged for human review rather than either
-		// silently ignored or an unattended display going dark with
-		// no one around to notice; a User-Agent change (routine
-		// browser auto-updates included) is merely logged; inactivity
-		// enforcement is off until an operator picks a threshold that
-		// makes sense for their own devices.
-		RevokePolicyIPChanged:          string(revokepolicy.ActionFlagForReview),
-		RevokePolicyUserAgentChanged:   string(revokepolicy.ActionWarn),
-		RevokePolicyInactivityExceeded: string(revokepolicy.ActionOff),
-		RevocationInactivityThreshold:  hours(90 * 24),
 
 		DefaultAuthorizationDuration: hours(30 * 24),
 		MaxAuthorizationDuration:     hours(365 * 24),

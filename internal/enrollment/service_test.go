@@ -41,8 +41,34 @@ func testConfig() enrollment.Config {
 		PendingRequestsPerHourPerAppIP: 5,
 		BootstrapPerMinutePerIP:        5,
 		StatusPerMinutePerPendingProof: 5,
-		DefaultContactInfo:             "global default contact",
 	}
+}
+
+// withGlobalContactInfo sets global_settings.contact_info for the
+// duration of one test and restores whatever it was before -- that
+// row is a genuine singleton, shared by every test (and the live dev
+// stack, if pointed at the same database), so a test that mutates it
+// must always put it back.
+func withGlobalContactInfo(t *testing.T, db *store.DB, ctx context.Context, contactInfo string) {
+	t.Helper()
+	original, err := db.GetGlobalSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetGlobalSettings: %v", err)
+	}
+	if _, err := db.UpdateGlobalSettings(ctx, original.Version, store.UpdateGlobalSettingsParams{ContactInfo: &contactInfo}, "test"); err != nil {
+		t.Fatalf("UpdateGlobalSettings: %v", err)
+	}
+	t.Cleanup(func() {
+		current, err := db.GetGlobalSettings(ctx)
+		if err != nil {
+			return
+		}
+		restore := ""
+		if original.ContactInfo != nil {
+			restore = *original.ContactInfo
+		}
+		_, _ = db.UpdateGlobalSettings(ctx, current.Version, store.UpdateGlobalSettingsParams{ContactInfo: &restore}, "test")
+	})
 }
 
 func setup(t *testing.T) (*store.DB, *enrollment.Service, string) {
@@ -110,8 +136,9 @@ func TestBootstrap_CreatesThenReusesContext(t *testing.T) {
 }
 
 func TestBootstrap_ContactInfoFallsBackToGlobalDefault(t *testing.T) {
-	_, svc, hostname := setup(t)
+	db, svc, hostname := setup(t)
 	ctx := context.Background()
+	withGlobalContactInfo(t, db, ctx, "global default contact")
 
 	result, err := svc.Bootstrap(ctx, enrollment.BootstrapInput{Hostname: hostname})
 	if err != nil {

@@ -252,19 +252,22 @@ email and/or a generic outbound webhook, driven by a durable
 Every setting is optional and independent:
 
 - Email is entirely off unless `notify_smtp_host` (nonsecret config) is
-  set, in which case `notify_email_from` becomes required too (`cmd/server`
-  refuses to start otherwise). `notify_smtp_username`/
-  `NOTIFY_SMTP_PASSWORD_FILE` (a secret, like every other `_FILE`
-  setting) are only needed if the relay requires auth.
-- The webhook is off for a given application unless
-  `notify_default_webhook_url` (nonsecret config) or that application's
-  own `notify_webhook_url` override (set via the admin console's
+  set. `notify_smtp_username`/`NOTIFY_SMTP_PASSWORD_FILE` (a secret,
+  like every other `_FILE` setting) are only needed if the relay
+  requires auth. The from-address (`notify_email_from`) is set from
+  the admin console's Settings page (migration 000019's
+  `global_settings`, live-editable, no redeploy needed) -- if
+  `notify_smtp_host` is set but the Settings page's from-address isn't,
+  email delivery is skipped and logged rather than sent malformed.
+- The webhook is off for a given application unless the Settings
+  page's `notify_default_webhook_url` or that application's own
+  `notify_webhook_url` override (set via the admin console's
   Applications view -> Notifications) is set. `NOTIFY_WEBHOOK_SECRET_FILE`
-  (also a secret), if set, HMAC-SHA256-signs every outbound webhook body
+  (a secret), if set, HMAC-SHA256-signs every outbound webhook body
   in an `X-Approve-Auth-Signature: sha256=...` header -- global only,
   shared across every application's webhook.
-- To test the webhook locally without standing up a real receiver, point
-  `notify_default_webhook_url` at something like
+- To test the webhook locally without standing up a real receiver, set
+  the Settings page's default webhook URL to something like
   [webhook.site](https://webhook.site) or a local `python -m http.server`
   and watch what arrives -- the delivery job runs every
   `workerTickInterval` (5 minutes in `cmd/server/main.go`), so a locally
@@ -280,21 +283,22 @@ Every setting is optional and independent:
 `internal/revokepolicy` resolves a small, fixed enumerated action
 (`off`/`warn`/`flag_for_review`/`revoke`) for each of three named
 signals -- IP changed, User-Agent changed, inactivity exceeded --
-layered global config default -> application override -> session
-override (`internal/authz.Decide`'s own comment on why IP/UA-change
-must be checked synchronously, not as a background job). Ships with
-sane, non-silent-by-default settings (see
-`deploy/approve-auth-config.example.yaml`): IP changes are flagged for
-a human to review, User-Agent changes are logged, inactivity
-enforcement is off until you pick a threshold. To exercise this
-locally:
+layered deployment-wide default (the admin console's Settings page,
+migration 000019's `global_settings`, live-editable, no redeploy
+needed) -> application override -> session override
+(`internal/authz.Decide`'s own comment on why IP/UA-change must be
+checked synchronously, not as a background job). Seeded with sane,
+non-silent-by-default settings (see `migrations/000019_global_settings.up.sql`):
+IP changes are flagged for a human to review, User-Agent changes are
+logged, inactivity enforcement is off until you pick a threshold. To
+exercise this locally:
 
 1. Register an application, approve a request, and claim the resulting
    authorization from one IP/User-Agent (e.g. via `curl` with a custom
    `User-Agent` header, or two different browsers).
-2. Set `revoke_policy_ip_changed: revoke` (or `flag_for_review`) either
-   globally (`deploy/dev/approve-auth-config.yaml`) or per-application
-   via the admin console's Applications view -> Revocation policy.
+2. Set the IP-changed signal to `revoke` (or `flag_for_review`) either
+   deployment-wide via the admin console's Settings page, or
+   per-application via the Applications view -> Revocation policy.
 3. Present the same access cookie from a different client IP -- the
    next `/auth` call flips from Allow to Deny (or, for
    `flag_for_review`, stays Allow but the Sessions view shows a

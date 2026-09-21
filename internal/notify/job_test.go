@@ -20,9 +20,10 @@ import (
 // to, how success/failure update the row) can be tested without a real
 // Postgres.
 type fakeJobStore struct {
-	mu    sync.Mutex
-	items []store.NotificationOutboxItem
-	apps  map[uuid.UUID]store.Application
+	mu       sync.Mutex
+	items    []store.NotificationOutboxItem
+	apps     map[uuid.UUID]store.Application
+	settings store.GlobalSettings
 
 	delivered    map[uuid.UUID]bool
 	failed       map[uuid.UUID]string
@@ -62,6 +63,12 @@ func (f *fakeJobStore) MarkNotificationFailed(_ context.Context, id uuid.UUID, n
 	f.failed[id] = lastError
 	f.nextAttempts[id] = nextAttemptAt
 	return nil
+}
+
+func (f *fakeJobStore) GetGlobalSettings(context.Context) (store.GlobalSettings, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.settings, nil
 }
 
 func strPtr(s string) *string { return &s }
@@ -170,8 +177,9 @@ func TestDeliverPending_AppOverrideTakesPriorityOverGlobalDefault(t *testing.T) 
 	s := newFakeJobStore()
 	s.items = []store.NotificationOutboxItem{{ID: itemID, ApplicationID: appID, EventType: notify.EventRequestCreated, Payload: payload}}
 	s.apps[appID] = store.Application{ID: appID, Hostname: "app-a.example.test", DisplayName: "App A", NotifyWebhookURL: strPtr(overrideSrv.URL)}
+	s.settings = store.GlobalSettings{NotifyDefaultWebhookURL: strPtr(defaultSrv.URL)}
 
-	d := notify.New(notify.Config{DefaultWebhookURL: defaultSrv.URL})
+	d := notify.New(notify.Config{})
 	if _, err := d.DeliverPending(context.Background(), s, 10); err != nil {
 		t.Fatalf("DeliverPending: %v", err)
 	}

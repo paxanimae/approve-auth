@@ -23,9 +23,6 @@ type Config struct {
 	PendingRequestsPerHourPerAppIP int
 	BootstrapPerMinutePerIP        int
 	StatusPerMinutePerPendingProof int
-	// DefaultContactInfo is shown on the request page for any
-	// application that has no contact_info override of its own.
-	DefaultContactInfo string
 }
 
 // Store is the persistence surface this package needs. Defined here
@@ -41,6 +38,12 @@ type Store interface {
 	CreateApprovalRequest(ctx context.Context, p store.CreateApprovalRequestParams) (store.ApprovalRequest, error)
 	GetApprovalRequestByTokenHash(ctx context.Context, hash []byte) (store.ApprovalRequest, bool, error)
 	CancelApprovalRequest(ctx context.Context, requestID uuid.UUID) error
+
+	// GetGlobalSettings backs resolveContactInfo's global fallback --
+	// read fresh on every Bootstrap call (never cached), so an
+	// administrator's edit via the Settings page takes effect
+	// immediately, no restart needed.
+	GetGlobalSettings(ctx context.Context) (store.GlobalSettings, error)
 
 	// EnqueueNotification backs the "a new request needs approval"
 	// notification (internal/notify) -- best-effort, see SubmitRequest's
@@ -69,8 +72,8 @@ type BootstrapResult struct {
 	ApplicationDisplayName string
 	ApplicationHostname    string
 	// ContactInfo is the application's own override if it has one,
-	// otherwise Config.DefaultContactInfo -- resolved here so the
-	// template never needs to know the fallback rule itself.
+	// otherwise the deployment-wide global_settings default -- resolved
+	// here so the template never needs to know the fallback rule itself.
 	ContactInfo string
 	// RawPendingToken is only set when a new context was created --
 	// empty means the caller should keep the browser's existing cookie

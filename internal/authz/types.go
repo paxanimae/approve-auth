@@ -1,18 +1,5 @@
 package authz
 
-import "github.com/frid-iks/approve-auth/internal/revokepolicy"
-
-// Config is the subset of internal/config.Config this package needs:
-// the deployment-wide revocation-policy defaults for the two signals
-// checked synchronously in Decide. InactivityExceeded isn't here --
-// it's checked out-of-path by a worker job instead (internal/store's
-// EnforceInactivityPolicy), since it has to fire even when no request
-// ever arrives to trigger an in-path check.
-type Config struct {
-	RevokePolicyIPChanged        revokepolicy.Action
-	RevokePolicyUserAgentChanged revokepolicy.Action
-}
-
 // AuthRequest is the metadata Traefik's ForwardAuth call carries (spec
 // section 6), already interpreted by internal/httpserver from the raw
 // forwarded headers -- this package makes the business decision, it

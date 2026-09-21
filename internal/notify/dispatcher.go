@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/smtp"
 	"strings"
@@ -40,23 +41,25 @@ type Destination struct {
 	WebhookURL string
 }
 
-// Config is internal/notify's own subset of internal/config.Config.
+// Config is internal/notify's own subset of internal/config.Config --
+// transport/credential settings only. EmailFrom and the default
+// email/webhook destinations are NOT here: they're business-rule
+// settings (migration 000019's global_settings, live-editable from the
+// admin console's Settings page), resolved fresh per delivery batch by
+// DeliverPending instead of fixed at construction time -- see its own
+// comment.
 type Config struct {
 	SMTPHost     string
 	SMTPPort     int
 	SMTPUsername string
 	SMTPPassword string
-	EmailFrom    string
 	// WebhookSecret, if set, HMAC-SHA256-signs every outbound webhook
 	// body -- global only, shared across every application's webhook
 	// (see internal/config.Config.NotifyWebhookSecret's own comment on
-	// why this isn't a per-application secret).
+	// why this isn't a per-application secret). This one stays static
+	// config, unlike EmailFrom/the defaults: it's a credential, and
+	// secrets never move into a plain DB column.
 	WebhookSecret string
-	// DefaultEmail/DefaultWebhookURL are the service-wide fallback
-	// destinations DeliverPending uses for any application with no
-	// notify_email/notify_webhook_url override of its own.
-	DefaultEmail      string
-	DefaultWebhookURL string
 }
 
 // Dispatcher delivers one Event to a Destination via email and/or
@@ -73,11 +76,19 @@ func New(cfg Config) *Dispatcher {
 // Deliver attempts every channel Destination names, returning a joined
 // error if any of them failed (errors.Join of zero errors is nil, so
 // "nothing configured at all" and "everything configured succeeded"
-// both correctly report success).
-func (d *Dispatcher) Deliver(ctx context.Context, dest Destination, e Event) error {
+// both correctly report success). emailFrom is resolved by the caller
+// from global_settings (DeliverPending, once per batch) -- if
+// SMTPHost is configured but emailFrom resolves empty (nobody has set
+// it on the Settings page yet), email is skipped with a log line
+// rather than attempted with a malformed From address; this isn't
+// treated as a delivery failure to retry, since retrying can't fix a
+// missing setting.
+func (d *Dispatcher) Deliver(ctx context.Context, emailFrom string, dest Destination, e Event) error {
 	var errs []error
 	if dest.Email != "" && d.cfg.SMTPHost != "" {
-		if err := d.sendEmail(ctx, dest.Email, e); err != nil {
+		if emailFrom == "" {
+			log.Printf("notify: skipping email to %s: notify_email_from is not set (admin console Settings page)", dest.Email)
+		} else if err := d.sendEmail(ctx, emailFrom, dest.Email, e); err != nil {
 			errs = append(errs, fmt.Errorf("email: %w", err))
 		}
 	}
@@ -89,8 +100,8 @@ func (d *Dispatcher) Deliver(ctx context.Context, dest Destination, e Event) err
 	return errors.Join(errs...)
 }
 
-func (d *Dispatcher) sendEmail(ctx context.Context, to string, e Event) error {
-	msg := buildEmailMessage(d.cfg.EmailFrom, to, e)
+func (d *Dispatcher) sendEmail(ctx context.Context, from, to string, e Event) error {
+	msg := buildEmailMessage(from, to, e)
 
 	var auth smtp.Auth
 	if d.cfg.SMTPUsername != "" {
@@ -105,7 +116,7 @@ func (d *Dispatcher) sendEmail(ctx context.Context, to string, e Event) error {
 	// the actual bound is smtp.SendMail's own (unconfigurable) dial +
 	// protocol timeouts.
 	_ = ctx
-	if err := smtp.SendMail(addr, auth, d.cfg.EmailFrom, []string{to}, msg); err != nil {
+	if err := smtp.SendMail(addr, auth, from, []string{to}, msg); err != nil {
 		return fmt.Errorf("sending mail via %s: %w", addr, err)
 	}
 	return nil

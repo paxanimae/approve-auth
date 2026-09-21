@@ -17,6 +17,12 @@ type JobStore interface {
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (store.Application, bool, error)
 	MarkNotificationDelivered(ctx context.Context, id uuid.UUID) error
 	MarkNotificationFailed(ctx context.Context, id uuid.UUID, nextAttemptAt time.Time, lastError string) error
+
+	// GetGlobalSettings resolves EmailFrom/the two default
+	// destinations -- called once per DeliverPending batch, not per
+	// item, so an administrator's edit via the Settings page takes
+	// effect on the next tick without needing a per-item query.
+	GetGlobalSettings(ctx context.Context) (store.GlobalSettings, error)
 }
 
 // backoffSchedule caps retry growth at maxBackoff instead of doubling
@@ -49,6 +55,16 @@ func (d *Dispatcher) DeliverPending(ctx context.Context, s JobStore, limit int) 
 	if err != nil {
 		return 0, fmt.Errorf("notify: listing pending notifications: %w", err)
 	}
+	if len(items) == 0 {
+		return 0, nil
+	}
+
+	// Resolved once per batch, not per item -- see JobStore's own
+	// comment on why.
+	settings, err := s.GetGlobalSettings(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("notify: loading global settings: %w", err)
+	}
 
 	delivered := 0
 	for _, item := range items {
@@ -70,12 +86,12 @@ func (d *Dispatcher) DeliverPending(ctx context.Context, s JobStore, limit int) 
 		}
 
 		dest := Destination{
-			Email:      resolveOverride(app.NotifyEmail, d.cfg.DefaultEmail),
-			WebhookURL: resolveOverride(app.NotifyWebhookURL, d.cfg.DefaultWebhookURL),
+			Email:      resolveOverride(app.NotifyEmail, derefOrEmpty(settings.NotifyDefaultEmail)),
+			WebhookURL: resolveOverride(app.NotifyWebhookURL, derefOrEmpty(settings.NotifyDefaultWebhookURL)),
 		}
 
 		attemptCtx, cancel := context.WithTimeout(ctx, deliveryTimeout)
-		deliverErr := d.Deliver(attemptCtx, dest, event)
+		deliverErr := d.Deliver(attemptCtx, derefOrEmpty(settings.NotifyEmailFrom), dest, event)
 		cancel()
 		if deliverErr != nil {
 			_ = s.MarkNotificationFailed(ctx, item.ID, time.Now().Add(backoffFor(item.Attempts)), deliverErr.Error())
@@ -97,6 +113,15 @@ func resolveOverride(override *string, def string) string {
 		return *override
 	}
 	return def
+}
+
+// derefOrEmpty returns "" for a nil pointer -- global_settings'
+// nullable fields (migration 000019) come back this way when unset.
+func derefOrEmpty(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // buildEvent unmarshals item's payload according to its event_type and

@@ -102,12 +102,15 @@ func TestValidate_RejectsBadClaimEncryptionKeyLength(t *testing.T) {
 	}
 }
 
-func TestValidate_NotifySMTPHostRequiresEmailFromAndValidPort(t *testing.T) {
+func TestValidate_NotifySMTPHostRequiresValidPort(t *testing.T) {
 	setSecretEnv(t)
 	t.Setenv("NOTIFY_SMTP_HOST", "smtp.example.test")
-	// NOTIFY_EMAIL_FROM deliberately left unset, and the port left at
-	// its zero value -- both should be flagged since NotifySMTPHost
-	// alone is what turns email notifications on.
+	// The port left at its zero value should be flagged since
+	// NotifySMTPHost alone is what turns email notifications on.
+	// notify_email_from now lives in global_settings (migration
+	// 000019) and is resolved live by internal/notify, not validated
+	// here -- an unresolved emailFrom is a runtime skip-and-log, not a
+	// startup failure (internal/notify/dispatcher.go).
 
 	cfg, err := config.Load("testdata/valid.yaml")
 	if err != nil {
@@ -117,24 +120,8 @@ func TestValidate_NotifySMTPHostRequiresEmailFromAndValidPort(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate: expected an error, got nil")
 	}
-	if !strings.Contains(err.Error(), "NOTIFY_EMAIL_FROM") {
-		t.Errorf("Validate error = %v, want it to mention NOTIFY_EMAIL_FROM", err)
-	}
 	if !strings.Contains(err.Error(), "NOTIFY_SMTP_PORT") {
 		t.Errorf("Validate error = %v, want it to mention NOTIFY_SMTP_PORT", err)
-	}
-}
-
-func TestValidate_NotifyDefaultWebhookURLMustBeAbsoluteHTTPURL(t *testing.T) {
-	setSecretEnv(t)
-	t.Setenv("NOTIFY_DEFAULT_WEBHOOK_URL", "not-a-url")
-
-	cfg, err := config.Load("testdata/valid.yaml")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("Validate: expected an error for a non-absolute webhook URL, got nil")
 	}
 }
 

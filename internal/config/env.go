@@ -43,7 +43,6 @@ func envOverrides(cfg *Config) []envOverride {
 	return []envOverride{
 		{"ADMIN_ORIGIN", func(c *Config, v string) error { c.AdminOrigin = v; return nil }},
 		{"INSTANCE_NAME", func(c *Config, v string) error { c.InstanceName = v; return nil }},
-		{"CONTACT_INFO", func(c *Config, v string) error { c.ContactInfo = v; return nil }},
 		{"GEOIP_DATABASE_PATH", func(c *Config, v string) error { c.GeoIPDatabasePath = v; return nil }},
 		{"NOTIFY_SMTP_HOST", func(c *Config, v string) error { c.NotifySMTPHost = v; return nil }},
 		{"NOTIFY_SMTP_PORT", func(c *Config, v string) error {
@@ -55,15 +54,8 @@ func envOverrides(cfg *Config) []envOverride {
 			return nil
 		}},
 		{"NOTIFY_SMTP_USERNAME", func(c *Config, v string) error { c.NotifySMTPUsername = v; return nil }},
-		{"NOTIFY_EMAIL_FROM", func(c *Config, v string) error { c.NotifyEmailFrom = v; return nil }},
-		{"NOTIFY_DEFAULT_EMAIL", func(c *Config, v string) error { c.NotifyDefaultEmail = v; return nil }},
-		{"NOTIFY_DEFAULT_WEBHOOK_URL", func(c *Config, v string) error { c.NotifyDefaultWebhookURL = v; return nil }},
 		{"NOTIFY_SMTP_PASSWORD_FILE", func(c *Config, v string) error { c.NotifySMTPPasswordFile = v; return nil }},
 		{"NOTIFY_WEBHOOK_SECRET_FILE", func(c *Config, v string) error { c.NotifyWebhookSecretFile = v; return nil }},
-		{"REVOKE_POLICY_IP_CHANGED", func(c *Config, v string) error { c.RevokePolicyIPChanged = v; return nil }},
-		{"REVOKE_POLICY_USER_AGENT_CHANGED", func(c *Config, v string) error { c.RevokePolicyUserAgentChanged = v; return nil }},
-		{"REVOKE_POLICY_INACTIVITY_EXCEEDED", func(c *Config, v string) error { c.RevokePolicyInactivityExceeded = v; return nil }},
-		{"REVOCATION_INACTIVITY_THRESHOLD", durationSetter("REVOCATION_INACTIVITY_THRESHOLD", &cfg.RevocationInactivityThreshold)},
 		{"ADMIN_AUTH_MODE", func(c *Config, v string) error { c.AdminAuthMode = v; return nil }},
 		{"ADMIN_ANONYMOUS_SUBJECT", func(c *Config, v string) error { c.AdminAnonymousSubject = v; return nil }},
 		{"ADMIN_ANONYMOUS_DISPLAY_NAME", func(c *Config, v string) error { c.AdminAnonymousDisplayName = v; return nil }},

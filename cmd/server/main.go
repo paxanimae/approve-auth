@@ -116,10 +116,7 @@ func run() error {
 		geoipLookup = mm
 	}
 
-	authzService := authz.New(db, authz.Config{
-		RevokePolicyIPChanged:        revokepolicy.Action(cfg.RevokePolicyIPChanged),
-		RevokePolicyUserAgentChanged: revokepolicy.Action(cfg.RevokePolicyUserAgentChanged),
-	})
+	authzService := authz.New(db)
 	enrollmentService := enrollment.New(db, geoipLookup, enrollment.Config{
 		RequestTTL:                     cfg.RequestTTL.Std(),
 		ClaimTTL:                       cfg.ClaimTTL.Std(),
@@ -130,7 +127,6 @@ func run() error {
 		PendingRequestsPerHourPerAppIP: cfg.RateLimits.PendingRequestsPerHourPerAppIP,
 		BootstrapPerMinutePerIP:        cfg.RateLimits.BootstrapPerMinutePerIP,
 		StatusPerMinutePerPendingProof: cfg.RateLimits.StatusPerMinutePerPendingProof,
-		DefaultContactInfo:             cfg.ContactInfo,
 	})
 
 	adminHost, err := adminOriginHost(cfg.AdminOrigin)
@@ -177,17 +173,24 @@ func run() error {
 		TickInterval:              workerTickInterval,
 	})
 	jobs = append(jobs, worker.Job{
+		// Reads global_settings fresh every tick (not closed over at
+		// startup) -- the whole point of moving these off static
+		// config is that an administrator's edit via the Settings
+		// page takes effect on the next tick, no restart needed.
 		Name: "enforce_inactivity_policy", Interval: workerTickInterval,
 		Run: func(ctx context.Context) error {
-			_, err := db.EnforceInactivityPolicy(ctx, revokepolicy.Action(cfg.RevokePolicyInactivityExceeded), cfg.RevocationInactivityThreshold.Std(), inactivityPolicyBatchSize)
+			settings, err := db.GetGlobalSettings(ctx)
+			if err != nil {
+				return fmt.Errorf("enforce_inactivity_policy: loading global settings: %w", err)
+			}
+			_, err = db.EnforceInactivityPolicy(ctx, revokepolicy.Action(settings.RevokePolicyInactivityExceeded), settings.RevocationInactivityThreshold, inactivityPolicyBatchSize)
 			return err
 		},
 	})
 
 	notifier := notify.New(notify.Config{
 		SMTPHost: cfg.NotifySMTPHost, SMTPPort: cfg.NotifySMTPPort, SMTPUsername: cfg.NotifySMTPUsername, SMTPPassword: cfg.NotifySMTPPassword,
-		EmailFrom: cfg.NotifyEmailFrom, WebhookSecret: cfg.NotifyWebhookSecret,
-		DefaultEmail: cfg.NotifyDefaultEmail, DefaultWebhookURL: cfg.NotifyDefaultWebhookURL,
+		WebhookSecret: cfg.NotifyWebhookSecret,
 	})
 	jobs = append(jobs, worker.Job{
 		Name: "deliver_notifications", Interval: workerTickInterval,

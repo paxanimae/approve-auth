@@ -99,7 +99,7 @@ func validSnapshot() *store.AccessSnapshot {
 
 func TestDecide_NoCookiePresented(t *testing.T) {
 	fs := &fakeStore{snapshot: validSnapshot()}
-	svc := authz.New(fs, authz.Config{})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test"})
 	if err != nil {
@@ -115,7 +115,7 @@ func TestDecide_NoCookiePresented(t *testing.T) {
 
 func TestDecide_StoreError(t *testing.T) {
 	fs := &fakeStore{snapshotErr: errors.New("boom")}
-	svc := authz.New(fs, authz.Config{})
+	svc := authz.New(fs)
 
 	_, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token"})
 	if err == nil {
@@ -125,7 +125,7 @@ func TestDecide_StoreError(t *testing.T) {
 
 func TestDecide_UnknownHost(t *testing.T) {
 	fs := &fakeStore{snapshot: nil}
-	svc := authz.New(fs, authz.Config{})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "unknown.example.test", CookieValue: "token"})
 	if err != nil {
@@ -138,7 +138,7 @@ func TestDecide_UnknownHost(t *testing.T) {
 
 func TestDecide_Allow(t *testing.T) {
 	fs := &fakeStore{snapshot: validSnapshot()}
-	svc := authz.New(fs, authz.Config{})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.1", UserAgent: "test-agent"})
 	if err != nil {
@@ -157,7 +157,7 @@ func TestDecide_Allow(t *testing.T) {
 
 func TestDecide_AllowDespiteTouchLastSeenFailure(t *testing.T) {
 	fs := &fakeStore{snapshot: validSnapshot(), touchErr: errors.New("advisory write failed")}
-	svc := authz.New(fs, authz.Config{})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token"})
 	if err != nil {
@@ -226,7 +226,7 @@ func TestDecide_DenyBranches(t *testing.T) {
 			snap := validSnapshot()
 			tt.mutate(snap)
 			fs := &fakeStore{snapshot: snap}
-			svc := authz.New(fs, authz.Config{})
+			svc := authz.New(fs)
 
 			d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token"})
 			if err != nil {
@@ -249,8 +249,10 @@ func TestDecide_NoSignalOnFirstUse(t *testing.T) {
 	// been used before) -- even an aggressive global default must not
 	// fire on establishing the baseline.
 	snap := validSnapshot()
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionRevoke)
+	snap.RevokePolicyUserAgentChangedGlobal = string(revokepolicy.ActionRevoke)
 	fs := &fakeStore{snapshot: snap}
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionRevoke, RevokePolicyUserAgentChanged: revokepolicy.ActionRevoke})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.1", UserAgent: "first-ever-agent"})
 	if err != nil {
@@ -268,8 +270,10 @@ func TestDecide_NoSignalWhenIPAndUserAgentUnchanged(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenIP = ipPtr("203.0.113.1")
 	snap.LastSeenUserAgent = strPtr("same-agent")
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionRevoke)
+	snap.RevokePolicyUserAgentChangedGlobal = string(revokepolicy.ActionRevoke)
 	fs := &fakeStore{snapshot: snap}
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionRevoke, RevokePolicyUserAgentChanged: revokepolicy.ActionRevoke})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.1", UserAgent: "same-agent"})
 	if err != nil {
@@ -286,8 +290,9 @@ func TestDecide_NoSignalWhenIPAndUserAgentUnchanged(t *testing.T) {
 func TestDecide_IPChangedRevokesWhenConfigured(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenIP = ipPtr("203.0.113.1")
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionRevoke)
 	fs := &fakeStore{snapshot: snap}
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionRevoke})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.2"})
 	if err != nil {
@@ -310,8 +315,9 @@ func TestDecide_IPChangedRevokesWhenConfigured(t *testing.T) {
 func TestDecide_IPChangedFlagsForReviewWhenConfigured(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenIP = ipPtr("203.0.113.1")
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionFlagForReview)
 	fs := &fakeStore{snapshot: snap}
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionFlagForReview})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.2"})
 	if err != nil {
@@ -331,8 +337,9 @@ func TestDecide_IPChangedFlagsForReviewWhenConfigured(t *testing.T) {
 func TestDecide_UserAgentChangedWarnsWhenConfigured(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenUserAgent = strPtr("old-agent")
+	snap.RevokePolicyUserAgentChangedGlobal = string(revokepolicy.ActionWarn)
 	fs := &fakeStore{snapshot: snap}
-	svc := authz.New(fs, authz.Config{RevokePolicyUserAgentChanged: revokepolicy.ActionWarn})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", UserAgent: "new-agent"})
 	if err != nil {
@@ -353,8 +360,9 @@ func TestDecide_SessionOverrideBeatsGlobalDefault(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenIP = ipPtr("203.0.113.1")
 	snap.RevokePolicyIPChangedSession = strPtr(string(revokepolicy.ActionRevoke))
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionWarn)
 	fs := &fakeStore{snapshot: snap}
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionWarn})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.2"})
 	if err != nil {
@@ -372,8 +380,9 @@ func TestDecide_ApplicationOverrideBeatsGlobalWhenSessionUnset(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenIP = ipPtr("203.0.113.1")
 	snap.RevokePolicyIPChangedApp = strPtr(string(revokepolicy.ActionFlagForReview))
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionOff)
 	fs := &fakeStore{snapshot: snap}
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionOff})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.2"})
 	if err != nil {
@@ -391,12 +400,14 @@ func TestDecide_MostSevereOfTwoFiredSignalsWins(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenIP = ipPtr("203.0.113.1")
 	snap.LastSeenUserAgent = strPtr("old-agent")
-	fs := &fakeStore{snapshot: snap}
 	// IP change is only configured to warn; User-Agent change is
 	// configured to revoke -- even though IP is usually the more
 	// commonly escalated signal, revoke must win because it's the more
 	// severe of the two outcomes that actually fired.
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionWarn, RevokePolicyUserAgentChanged: revokepolicy.ActionRevoke})
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionWarn)
+	snap.RevokePolicyUserAgentChangedGlobal = string(revokepolicy.ActionRevoke)
+	fs := &fakeStore{snapshot: snap}
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.2", UserAgent: "new-agent"})
 	if err != nil {
@@ -416,8 +427,9 @@ func TestDecide_MostSevereOfTwoFiredSignalsWins(t *testing.T) {
 func TestDecide_RevokeConflictDeniesWithoutPropagatingAnError(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenIP = ipPtr("203.0.113.1")
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionRevoke)
 	fs := &fakeStore{snapshot: snap, revokeErr: store.ErrConflict}
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionRevoke})
+	svc := authz.New(fs)
 
 	d, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.2"})
 	if err != nil {
@@ -431,8 +443,9 @@ func TestDecide_RevokeConflictDeniesWithoutPropagatingAnError(t *testing.T) {
 func TestDecide_RevokeOtherErrorPropagates(t *testing.T) {
 	snap := validSnapshot()
 	snap.LastSeenIP = ipPtr("203.0.113.1")
+	snap.RevokePolicyIPChangedGlobal = string(revokepolicy.ActionRevoke)
 	fs := &fakeStore{snapshot: snap, revokeErr: errors.New("database exploded")}
-	svc := authz.New(fs, authz.Config{RevokePolicyIPChanged: revokepolicy.ActionRevoke})
+	svc := authz.New(fs)
 
 	_, err := svc.Decide(context.Background(), authz.AuthRequest{Host: "app.example.test", CookieValue: "token", ClientAddr: "203.0.113.2"})
 	if err == nil {
