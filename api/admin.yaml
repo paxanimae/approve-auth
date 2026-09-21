@@ -1208,6 +1208,13 @@ components:
           enum: [off, warn, flag_for_review, revoke]
         revocation_inactivity_threshold_seconds:
           type: integer
+        message_retention_seconds:
+          type: integer
+          description: >-
+            How long an approval request's label/message survive
+            before being redacted (migration 000022, endpoint-review.md
+            F5), independent of the request record's own retention.
+            Always present, no "unset" state.
         updated_at:
           type: string
           format: date-time
@@ -1219,6 +1226,7 @@ components:
           revoke_policy_user_agent_changed,
           revoke_policy_inactivity_exceeded,
           revocation_inactivity_threshold_seconds,
+          message_retention_seconds,
           updated_at,
           version,
         ]
@@ -1260,6 +1268,9 @@ components:
           type: string
           enum: [off, warn, flag_for_review, revoke]
         revocation_inactivity_threshold_seconds:
+          type: integer
+          description: Must be positive if set
+        message_retention_seconds:
           type: integer
           description: Must be positive if set
       required: [version]

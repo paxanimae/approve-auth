@@ -30,21 +30,28 @@ type GlobalSettings struct {
 	RevokePolicyInactivityExceeded string
 	RevocationInactivityThreshold  time.Duration
 
+	// MessageRetention (migration 000022, endpoint-review.md F5): how
+	// long an approval_requests row's label/message fields survive
+	// before being redacted, independent of the request record's own
+	// (much longer) retention -- always positive, no "unset" state.
+	MessageRetention time.Duration
+
 	UpdatedAt time.Time
 	Version   int32
 }
 
-const globalSettingsColumns = `contact_info, notify_email_from, notify_default_email, notify_default_webhook_url, revoke_policy_ip_changed, revoke_policy_user_agent_changed, revoke_policy_inactivity_exceeded, revocation_inactivity_threshold_seconds, updated_at, version`
+const globalSettingsColumns = `contact_info, notify_email_from, notify_default_email, notify_default_webhook_url, revoke_policy_ip_changed, revoke_policy_user_agent_changed, revoke_policy_inactivity_exceeded, revocation_inactivity_threshold_seconds, message_retention_seconds, updated_at, version`
 
 func scanGlobalSettings(row scanner) (GlobalSettings, error) {
 	var s GlobalSettings
-	var thresholdSeconds int32
+	var thresholdSeconds, messageRetentionSeconds int32
 	err := row.Scan(
 		&s.ContactInfo, &s.NotifyEmailFrom, &s.NotifyDefaultEmail, &s.NotifyDefaultWebhookURL,
 		&s.RevokePolicyIPChanged, &s.RevokePolicyUserAgentChanged, &s.RevokePolicyInactivityExceeded,
-		&thresholdSeconds, &s.UpdatedAt, &s.Version,
+		&thresholdSeconds, &messageRetentionSeconds, &s.UpdatedAt, &s.Version,
 	)
 	s.RevocationInactivityThreshold = time.Duration(thresholdSeconds) * time.Second
+	s.MessageRetention = time.Duration(messageRetentionSeconds) * time.Second
 	return s, err
 }
 
@@ -78,6 +85,10 @@ type UpdateGlobalSettingsParams struct {
 	RevokePolicyUserAgentChanged   *string
 	RevokePolicyInactivityExceeded *string
 	RevocationInactivityThreshold  *time.Duration
+	// MessageRetention: nil means leave unchanged; a non-nil value must
+	// be positive (checked by the caller, internal/admin, before
+	// reaching here -- same convention as RevocationInactivityThreshold).
+	MessageRetention *time.Duration
 }
 
 // UpdateGlobalSettings applies only the fields the caller set, using
@@ -143,16 +154,20 @@ func (db *DB) UpdateGlobalSettings(ctx context.Context, expectedVersion int32, p
 	if p.RevocationInactivityThreshold != nil {
 		threshold = *p.RevocationInactivityThreshold
 	}
+	messageRetention := current.MessageRetention
+	if p.MessageRetention != nil {
+		messageRetention = *p.MessageRetention
+	}
 
 	settings, err := scanGlobalSettings(tx.QueryRow(ctx, `
 		UPDATE global_settings
 		SET contact_info = $1, notify_email_from = $2, notify_default_email = $3, notify_default_webhook_url = $4,
 		    revoke_policy_ip_changed = $5, revoke_policy_user_agent_changed = $6, revoke_policy_inactivity_exceeded = $7,
-		    revocation_inactivity_threshold_seconds = $8, updated_at = now(), version = version + 1
+		    revocation_inactivity_threshold_seconds = $8, message_retention_seconds = $9, updated_at = now(), version = version + 1
 		WHERE singleton
 		RETURNING `+globalSettingsColumns,
 		contactInfo, notifyEmailFrom, notifyDefaultEmail, notifyDefaultWebhookURL,
-		revokeIPChanged, revokeUAChanged, revokeInactivity, int32(threshold.Seconds()),
+		revokeIPChanged, revokeUAChanged, revokeInactivity, int32(threshold.Seconds()), int32(messageRetention.Seconds()),
 	))
 	if err != nil {
 		return GlobalSettings{}, fmt.Errorf("store: updating global settings: %w", err)

@@ -27,6 +27,7 @@
   let revokePolicyUserAgentChanged: RevokePolicyAction = $state("off");
   let revokePolicyInactivityExceeded: RevokePolicyAction = $state("off");
   let inactivityThresholdDays = $state(90);
+  let messageRetentionDays = $state(30);
 
   let saving = $state(false);
   let saveError: string | null = $state(null);
@@ -42,6 +43,7 @@
     revokePolicyUserAgentChanged = s.revoke_policy_user_agent_changed;
     revokePolicyInactivityExceeded = s.revoke_policy_inactivity_exceeded;
     inactivityThresholdDays = Math.max(1, Math.round(s.revocation_inactivity_threshold_seconds / 86400));
+    messageRetentionDays = Math.max(1, Math.round(s.message_retention_seconds / 86400));
   }
 
   async function load() {
@@ -72,6 +74,7 @@
         revoke_policy_user_agent_changed: revokePolicyUserAgentChanged,
         revoke_policy_inactivity_exceeded: revokePolicyInactivityExceeded,
         revocation_inactivity_threshold_seconds: Math.max(1, Math.floor(inactivityThresholdDays)) * 86400,
+        message_retention_seconds: Math.max(1, Math.floor(messageRetentionDays)) * 86400,
       });
       applySettings(updated);
       saved = true;
@@ -162,6 +165,17 @@
           <span class="field-label">Inactivity threshold (days)</span>
           <input type="number" min="1" bind:value={inactivityThresholdDays} />
           <span class="field-hint">Only applies when "Inactivity exceeded" above is not Off.</span>
+        </label>
+
+        <h3>Anonymous requests</h3>
+
+        <label class="field">
+          <span class="field-label">Message/label retention (days)</span>
+          <input type="number" min="1" bind:value={messageRetentionDays} />
+          <span class="field-hint">
+            How long an anonymous requester's label/message stays visible before being redacted -- independent of how long the
+            request record itself is kept.
+          </span>
         </label>
       </fieldset>
 

@@ -219,6 +219,10 @@ type UpdateGlobalSettingsInput struct {
 	// RevocationInactivityThreshold: a non-nil value must be positive
 	// (checked in UpdateGlobalSettings before reaching the store).
 	RevocationInactivityThreshold *time.Duration
+	// MessageRetention: a non-nil value must be positive (endpoint-
+	// review.md F5, checked in UpdateGlobalSettings before reaching
+	// the store, same convention as RevocationInactivityThreshold).
+	MessageRetention *time.Duration
 
 	UpdatedBy string
 }

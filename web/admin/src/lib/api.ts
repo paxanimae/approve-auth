@@ -153,5 +153,6 @@ export const api = {
     revoke_policy_user_agent_changed?: RevokePolicyAction;
     revoke_policy_inactivity_exceeded?: RevokePolicyAction;
     revocation_inactivity_threshold_seconds?: number;
+    message_retention_seconds?: number;
   }) => request<GlobalSettings>("PATCH", "/api/v1/settings", body),
 };

@@ -427,6 +427,51 @@ func TestRedactOldReturnPaths(t *testing.T) {
 	}
 }
 
+// TestRedactOldRequestMessages covers endpoint-review.md F5: label/
+// message redaction runs on its own, independently configurable
+// window, distinct from PurgeResolvedRecords' own much longer request-
+// record retention.
+func TestRedactOldRequestMessages(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "postgres", "devpassword")
+
+	appID := insertApplication(t, ctx, conn, "retention-message.example.test")
+	oldReqID := insertApprovalRequest(t, ctx, conn, appID, "MSGR-0001")
+	if _, err := conn.Exec(ctx, `
+		UPDATE approval_requests SET requested_at = now() - interval '10 days', label = 'old-tv', message = 'please approve'
+		WHERE id = $1`, oldReqID); err != nil {
+		t.Fatalf("backdating request: %v", err)
+	}
+	newReqID := insertApprovalRequest(t, ctx, conn, appID, "MSGR-0002")
+	if _, err := conn.Exec(ctx, `UPDATE approval_requests SET label = 'new-tv', message = 'still relevant' WHERE id = $1`, newReqID); err != nil {
+		t.Fatalf("setting label/message on new request: %v", err)
+	}
+
+	n, err := db.RedactOldRequestMessages(ctx, 7*24*time.Hour, 100)
+	if err != nil {
+		t.Fatalf("RedactOldRequestMessages: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("got %d, want 1", n)
+	}
+
+	var label, message *string
+	if err := conn.QueryRow(ctx, `SELECT label, message FROM approval_requests WHERE id = $1`, oldReqID).Scan(&label, &message); err != nil {
+		t.Fatalf("checking old request: %v", err)
+	}
+	if label != nil || message != nil {
+		t.Errorf("old request label/message = %v/%v, want both nil", label, message)
+	}
+	if err := conn.QueryRow(ctx, `SELECT label, message FROM approval_requests WHERE id = $1`, newReqID).Scan(&label, &message); err != nil {
+		t.Fatalf("checking new request: %v", err)
+	}
+	if label == nil || message == nil {
+		t.Error("new request label/message should be untouched")
+	}
+}
+
 // TestPurgeResolvedRecords_NeverPurgesALiveAuthorization is the safety-
 // critical case: no matter how old a 'claimed' request's decided_at is,
 // its row (and its authorization/credential) must survive as long as

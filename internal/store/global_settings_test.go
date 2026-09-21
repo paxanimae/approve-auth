@@ -31,10 +31,12 @@ func withGlobalSettingsRestore(t *testing.T, db *store.DB, ctx context.Context) 
 		notifyDefaultWebhookURL := strFromPtr(original.NotifyDefaultWebhookURL)
 		revokeIPChanged, revokeUAChanged, revokeInactivity := original.RevokePolicyIPChanged, original.RevokePolicyUserAgentChanged, original.RevokePolicyInactivityExceeded
 		threshold := original.RevocationInactivityThreshold
+		messageRetention := original.MessageRetention
 		_, _ = db.UpdateGlobalSettings(ctx, current.Version, store.UpdateGlobalSettingsParams{
 			ContactInfo: &contactInfo, NotifyEmailFrom: &notifyEmailFrom, NotifyDefaultEmail: &notifyDefaultEmail, NotifyDefaultWebhookURL: &notifyDefaultWebhookURL,
 			RevokePolicyIPChanged: &revokeIPChanged, RevokePolicyUserAgentChanged: &revokeUAChanged,
 			RevokePolicyInactivityExceeded: &revokeInactivity, RevocationInactivityThreshold: &threshold,
+			MessageRetention: &messageRetention,
 		}, "test")
 	})
 }
@@ -63,6 +65,9 @@ func TestGetGlobalSettings_SeededDefaults(t *testing.T) {
 	}
 	if settings.RevocationInactivityThreshold <= 0 {
 		t.Errorf("RevocationInactivityThreshold = %s, want a positive seeded default", settings.RevocationInactivityThreshold)
+	}
+	if settings.MessageRetention <= 0 {
+		t.Errorf("MessageRetention = %s, want a positive seeded default", settings.MessageRetention)
 	}
 	if settings.Version == 0 {
 		t.Error("Version should start at 1, not the zero value")
@@ -158,6 +163,33 @@ func TestUpdateGlobalSettings_RevokePolicyAndThreshold(t *testing.T) {
 	}
 	if settings.RevocationInactivityThreshold != threshold {
 		t.Errorf("RevocationInactivityThreshold = %s, want %s", settings.RevocationInactivityThreshold, threshold)
+	}
+}
+
+// TestUpdateGlobalSettings_MessageRetention covers endpoint-review.md
+// F5: message_retention_seconds is independently settable from every
+// other retention/policy field.
+func TestUpdateGlobalSettings_MessageRetention(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	withGlobalSettingsRestore(t, db, ctx)
+
+	original, err := db.GetGlobalSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetGlobalSettings: %v", err)
+	}
+
+	retention := 14 * 24 * time.Hour
+	settings, err := db.UpdateGlobalSettings(ctx, original.Version, store.UpdateGlobalSettingsParams{MessageRetention: &retention}, "admin@example.test")
+	if err != nil {
+		t.Fatalf("UpdateGlobalSettings: %v", err)
+	}
+	if settings.MessageRetention != retention {
+		t.Errorf("MessageRetention = %s, want %s", settings.MessageRetention, retention)
+	}
+	if settings.RevokePolicyIPChanged != original.RevokePolicyIPChanged {
+		t.Errorf("RevokePolicyIPChanged = %q, want it left unchanged (not passed in this update)", settings.RevokePolicyIPChanged)
 	}
 }
 

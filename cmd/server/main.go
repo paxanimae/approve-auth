@@ -79,6 +79,11 @@ const notificationDeliveryBatchSize = 200
 // mandated either, so there's no spec batch size to match.
 const inactivityPolicyBatchSize = 200
 
+// messageRedactionBatchSize is RedactOldRequestMessages' own per-tick
+// bound (endpoint-review.md F5), same "bounded, not unbounded"
+// principle as inactivityPolicyBatchSize above.
+const messageRedactionBatchSize = 200
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
@@ -202,6 +207,21 @@ func run() error {
 				return fmt.Errorf("enforce_inactivity_policy: loading global settings: %w", err)
 			}
 			_, err = db.EnforceInactivityPolicy(ctx, revokepolicy.Action(settings.RevokePolicyInactivityExceeded), settings.RevocationInactivityThreshold, inactivityPolicyBatchSize)
+			return err
+		},
+	})
+	jobs = append(jobs, worker.Job{
+		// endpoint-review.md F5: message_retention_seconds is a
+		// business rule (migration 000022), read fresh every tick the
+		// same way enforce_inactivity_policy reads its own settings
+		// above, not baked into worker.Config's static durations.
+		Name: "redact_old_request_messages", Interval: workerTickInterval,
+		Run: func(ctx context.Context) error {
+			settings, err := db.GetGlobalSettings(ctx)
+			if err != nil {
+				return fmt.Errorf("redact_old_request_messages: loading global settings: %w", err)
+			}
+			_, err = db.RedactOldRequestMessages(ctx, settings.MessageRetention, messageRedactionBatchSize)
 			return err
 		},
 	})

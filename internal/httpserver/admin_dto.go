@@ -228,6 +228,9 @@ type globalSettingsDTO struct {
 	RevokePolicyUserAgentChanged         string `json:"revoke_policy_user_agent_changed"`
 	RevokePolicyInactivityExceeded       string `json:"revoke_policy_inactivity_exceeded"`
 	RevocationInactivityThresholdSeconds int64  `json:"revocation_inactivity_threshold_seconds"`
+	// MessageRetentionSeconds (migration 000022, endpoint-review.md
+	// F5): always present, no "unset" state.
+	MessageRetentionSeconds int64 `json:"message_retention_seconds"`
 
 	UpdatedAt time.Time `json:"updated_at"`
 	Version   int32     `json:"version"`
@@ -238,7 +241,8 @@ func newGlobalSettingsDTO(s store.GlobalSettings) globalSettingsDTO {
 		ContactInfo: s.ContactInfo, NotifyEmailFrom: s.NotifyEmailFrom, NotifyDefaultEmail: s.NotifyDefaultEmail, NotifyDefaultWebhookURL: s.NotifyDefaultWebhookURL,
 		RevokePolicyIPChanged: s.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: s.RevokePolicyUserAgentChanged,
 		RevokePolicyInactivityExceeded: s.RevokePolicyInactivityExceeded, RevocationInactivityThresholdSeconds: int64(s.RevocationInactivityThreshold.Seconds()),
-		UpdatedAt: s.UpdatedAt, Version: s.Version,
+		MessageRetentionSeconds: int64(s.MessageRetention.Seconds()),
+		UpdatedAt:               s.UpdatedAt, Version: s.Version,
 	}
 }
 

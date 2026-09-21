@@ -358,6 +358,32 @@ func (db *DB) RedactOldReturnPaths(ctx context.Context, maxAge time.Duration, li
 	return int(tag.RowsAffected()), nil
 }
 
+// RedactOldRequestMessages blanks approval_requests.label/message once
+// they're older than maxAge (endpoint-review.md F5: "define a short,
+// explicit retention period for label/message content independently
+// of authorization and audit records"), independent of
+// PurgeResolvedRecords' own much longer request-record retention below
+// -- a request backing a still-live, year-long authorization keeps its
+// row, but not this anonymous, unverified free text. maxAge is
+// global_settings.message_retention_seconds, read fresh by the caller
+// (cmd/server's own worker.Job wiring), not baked into this package's
+// static Config the way the other retention windows below are.
+func (db *DB) RedactOldRequestMessages(ctx context.Context, maxAge time.Duration, limit int) (int, error) {
+	cutoff := time.Now().Add(-maxAge)
+	tag, err := db.Pool.Exec(ctx, `
+		UPDATE approval_requests SET label = NULL, message = NULL
+		WHERE id IN (
+			SELECT id FROM approval_requests
+			WHERE requested_at <= $1 AND (label IS NOT NULL OR message IS NOT NULL)
+			ORDER BY id
+			LIMIT $2
+		)`, cutoff, limit)
+	if err != nil {
+		return 0, fmt.Errorf("store: redacting old request messages: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // PurgeResolvedRecords deletes one terminated request, and its
 // authorization/credentials if it has them, once maxAge has passed
 // since termination (spec section 12: "resolved requests and inactive

@@ -43,6 +43,8 @@ type updateSettingsRequest struct {
 	RevokePolicyUserAgentChanged         *string `json:"revoke_policy_user_agent_changed"`
 	RevokePolicyInactivityExceeded       *string `json:"revoke_policy_inactivity_exceeded"`
 	RevocationInactivityThresholdSeconds *int64  `json:"revocation_inactivity_threshold_seconds"`
+	// MessageRetentionSeconds: nil leaves it unchanged (endpoint-review.md F5).
+	MessageRetentionSeconds *int64 `json:"message_retention_seconds"`
 }
 
 func updateSettingsHandler(actions AdminActions) http.HandlerFunc {
@@ -75,6 +77,10 @@ func updateSettingsHandler(actions AdminActions) http.HandlerFunc {
 			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "revocation_inactivity_threshold_seconds must be positive")
 			return
 		}
+		if body.MessageRetentionSeconds != nil && *body.MessageRetentionSeconds <= 0 {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "message_retention_seconds must be positive")
+			return
+		}
 
 		in := admin.UpdateGlobalSettingsInput{
 			ExpectedVersion: body.Version,
@@ -85,6 +91,10 @@ func updateSettingsHandler(actions AdminActions) http.HandlerFunc {
 		if body.RevocationInactivityThresholdSeconds != nil {
 			d := time.Duration(*body.RevocationInactivityThresholdSeconds) * time.Second
 			in.RevocationInactivityThreshold = &d
+		}
+		if body.MessageRetentionSeconds != nil {
+			d := time.Duration(*body.MessageRetentionSeconds) * time.Second
+			in.MessageRetention = &d
 		}
 
 		settings, err := actions.UpdateGlobalSettings(r.Context(), in)

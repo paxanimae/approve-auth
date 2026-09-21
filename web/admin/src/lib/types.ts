@@ -139,6 +139,10 @@ export interface GlobalSettings {
   revoke_policy_user_agent_changed: RevokePolicyAction;
   revoke_policy_inactivity_exceeded: RevokePolicyAction;
   revocation_inactivity_threshold_seconds: number;
+  // How long an approval request's label/message survive before being
+  // redacted, independent of the request record's own retention
+  // (migration 000022).
+  message_retention_seconds: number;
   updated_at: string;
   version: number;
 }

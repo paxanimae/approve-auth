@@ -52,6 +52,12 @@ var ErrInvalidNote = errors.New("admin: note body must be between 1 and 2000 cha
 // state, so it must always be a real, positive duration.
 var ErrInvalidRevocationThreshold = errors.New("admin: revocation_inactivity_threshold must be positive")
 
+// ErrInvalidMessageRetention means UpdateGlobalSettings received a
+// non-positive MessageRetention (endpoint-review.md F5) -- like
+// RevocationInactivityThreshold, this NOT NULL column has no "unset"
+// state.
+var ErrInvalidMessageRetention = errors.New("admin: message_retention must be positive")
+
 type Service struct {
 	store Store
 	cfg   Config
@@ -363,11 +369,15 @@ func (s *Service) UpdateGlobalSettings(ctx context.Context, in UpdateGlobalSetti
 	if in.RevocationInactivityThreshold != nil && *in.RevocationInactivityThreshold <= 0 {
 		return store.GlobalSettings{}, ErrInvalidRevocationThreshold
 	}
+	if in.MessageRetention != nil && *in.MessageRetention <= 0 {
+		return store.GlobalSettings{}, ErrInvalidMessageRetention
+	}
 
 	settings, err := s.store.UpdateGlobalSettings(ctx, in.ExpectedVersion, store.UpdateGlobalSettingsParams{
 		ContactInfo: in.ContactInfo, NotifyEmailFrom: in.NotifyEmailFrom, NotifyDefaultEmail: in.NotifyDefaultEmail, NotifyDefaultWebhookURL: in.NotifyDefaultWebhookURL,
 		RevokePolicyIPChanged: in.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: in.RevokePolicyUserAgentChanged,
 		RevokePolicyInactivityExceeded: in.RevokePolicyInactivityExceeded, RevocationInactivityThreshold: in.RevocationInactivityThreshold,
+		MessageRetention: in.MessageRetention,
 	}, in.UpdatedBy)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
