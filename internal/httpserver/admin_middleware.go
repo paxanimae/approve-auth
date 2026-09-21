@@ -62,6 +62,8 @@ func adminErrorDetails(err error) (status int, code, message string) {
 		return http.StatusNotFound, "not_found", "no such record"
 	case errors.Is(err, admin.ErrInvalidNote):
 		return http.StatusUnprocessableEntity, "invalid_note", "note body must be between 1 and 2000 characters"
+	case errors.Is(err, admin.ErrInvalidRevocationThreshold):
+		return http.StatusUnprocessableEntity, "invalid_input", "revocation_inactivity_threshold_seconds must be positive"
 	default:
 		return http.StatusInternalServerError, "internal_error", "the request could not be completed"
 	}

@@ -26,6 +26,7 @@ type AdminActions interface {
 	GrantApplicationOwner(ctx context.Context, in admin.GrantApplicationOwnerInput) error
 	RevokeApplicationOwner(ctx context.Context, in admin.RevokeApplicationOwnerInput) error
 	ClearAuthorizationFlag(ctx context.Context, in admin.ClearAuthorizationFlagInput) error
+	UpdateGlobalSettings(ctx context.Context, in admin.UpdateGlobalSettingsInput) (store.GlobalSettings, error)
 }
 
 // AdminReadStore is the read-only listing/detail surface the admin API's
@@ -48,4 +49,10 @@ type AdminReadStore interface {
 	// package -- resolved fresh per request, never cached on the admin
 	// session (see migration 000016's own comment on why).
 	GetOwnedApplicationIDs(ctx context.Context, subject string) ([]uuid.UUID, error)
+
+	// GetGlobalSettings backs GET /api/v1/settings, read directly (no
+	// business rules apply to a read), matching every other GET
+	// endpoint's use of AdminReadStore instead of routing through
+	// internal/admin.Service.
+	GetGlobalSettings(ctx context.Context) (store.GlobalSettings, error)
 }

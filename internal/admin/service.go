@@ -45,6 +45,13 @@ var ErrNotFound = errors.New("admin: no such record")
 // clean 422 instead of a raw constraint-violation error.
 var ErrInvalidNote = errors.New("admin: note body must be between 1 and 2000 characters")
 
+// ErrInvalidRevocationThreshold means UpdateGlobalSettings received a
+// non-positive RevocationInactivityThreshold. Unlike an application's
+// own revocation-policy override, global_settings' inactivity
+// threshold (migration 000019) is a NOT NULL column with no "unset"
+// state, so it must always be a real, positive duration.
+var ErrInvalidRevocationThreshold = errors.New("admin: revocation_inactivity_threshold must be positive")
+
 type Service struct {
 	store Store
 	cfg   Config
@@ -344,6 +351,30 @@ func (s *Service) RevokeApplicationOwner(ctx context.Context, in RevokeApplicati
 		return fmt.Errorf("admin: revoke application owner: %w", err)
 	}
 	return nil
+}
+
+// UpdateGlobalSettings implements PATCH /api/v1/settings -- the
+// deployment-wide business-rule defaults moved off static config into
+// migration 000019's global_settings table, so an administrator's
+// edit here takes effect on the very next request/decision/delivery
+// with no restart, unlike everything still in internal/config.
+func (s *Service) UpdateGlobalSettings(ctx context.Context, in UpdateGlobalSettingsInput) (store.GlobalSettings, error) {
+	if in.RevocationInactivityThreshold != nil && *in.RevocationInactivityThreshold <= 0 {
+		return store.GlobalSettings{}, ErrInvalidRevocationThreshold
+	}
+
+	settings, err := s.store.UpdateGlobalSettings(ctx, in.ExpectedVersion, store.UpdateGlobalSettingsParams{
+		ContactInfo: in.ContactInfo, NotifyEmailFrom: in.NotifyEmailFrom, NotifyDefaultEmail: in.NotifyDefaultEmail, NotifyDefaultWebhookURL: in.NotifyDefaultWebhookURL,
+		RevokePolicyIPChanged: in.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: in.RevokePolicyUserAgentChanged,
+		RevokePolicyInactivityExceeded: in.RevokePolicyInactivityExceeded, RevocationInactivityThreshold: in.RevocationInactivityThreshold,
+	}, in.UpdatedBy)
+	if err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return store.GlobalSettings{}, ErrConflict
+		}
+		return store.GlobalSettings{}, fmt.Errorf("admin: update global settings: %w", err)
+	}
+	return settings, nil
 }
 
 // pgConstraintName mirrors internal/enrollment's own helper of the same

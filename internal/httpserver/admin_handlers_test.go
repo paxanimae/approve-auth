@@ -716,7 +716,7 @@ func TestApplicationOwner_StaffOnlyEndpointsForbidden(t *testing.T) {
 	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
 	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
 
-	for _, path := range []string{"/api/v1/applications", "/api/v1/overview", "/api/v1/audit-events"} {
+	for _, path := range []string{"/api/v1/applications", "/api/v1/overview", "/api/v1/audit-events", "/api/v1/settings"} {
 		resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+path, "any-cookie-value", "", nil))
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
@@ -1041,5 +1041,167 @@ func TestClearAuthorizationFlag_OwnerOutsideOwnedApplicationIs404(t *testing.T) 
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("got status %d, want 404 (authorization belongs to an application this owner doesn't own)", resp.StatusCode)
+	}
+}
+
+// --- Global settings ---
+
+func TestGetSettings_ReturnsDTO(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	contactInfo := "IT helpdesk"
+	settings := store.GlobalSettings{
+		ContactInfo: &contactInfo, RevokePolicyIPChanged: "flag_for_review", RevokePolicyUserAgentChanged: "warn",
+		RevokePolicyInactivityExceeded: "off", RevocationInactivityThreshold: 90 * 24 * time.Hour, Version: 3,
+	}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{globalSettings: settings})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/settings", "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want 200", resp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if body["contact_info"] != "IT helpdesk" {
+		t.Errorf("contact_info = %v, want \"IT helpdesk\"", body["contact_info"])
+	}
+	if body["revoke_policy_ip_changed"] != "flag_for_review" {
+		t.Errorf("revoke_policy_ip_changed = %v, want flag_for_review", body["revoke_policy_ip_changed"])
+	}
+	if _, present := body["notify_email_from"]; present {
+		t.Errorf("notify_email_from present (%v) for an unset field, want omitted", body["notify_email_from"])
+	}
+}
+
+func TestUpdateSettings_InvalidRevokePolicyMapsTo422(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"version":1,"revoke_policy_ip_changed":"not-a-real-action"}`)
+	req := adminRequest(t, http.MethodPatch, srv.URL+"/api/v1/settings", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("got status %d, want 422 (revoke_policy_ip_changed must be a recognized action)", resp.StatusCode)
+	}
+}
+
+func TestUpdateSettings_EmptyRevokePolicyRejected(t *testing.T) {
+	// Unlike an application's own override, global_settings' revoke_policy_*
+	// columns are NOT NULL with no "unset" state -- an empty string (valid
+	// for an application override, meaning "clear it") must be rejected
+	// here, not silently accepted.
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"version":1,"revoke_policy_ip_changed":""}`)
+	req := adminRequest(t, http.MethodPatch, srv.URL+"/api/v1/settings", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("got status %d, want 422 (an empty revoke_policy_ip_changed has no unset state to clear to)", resp.StatusCode)
+	}
+}
+
+func TestUpdateSettings_NonPositiveThresholdMapsTo422(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"version":1,"revocation_inactivity_threshold_seconds":0}`)
+	req := adminRequest(t, http.MethodPatch, srv.URL+"/api/v1/settings", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("got status %d, want 422 (revocation_inactivity_threshold_seconds must be positive)", resp.StatusCode)
+	}
+}
+
+func TestUpdateSettings_InvalidWebhookURLMapsTo422(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"version":1,"notify_default_webhook_url":"not-a-url"}`)
+	req := adminRequest(t, http.MethodPatch, srv.URL+"/api/v1/settings", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("got status %d, want 422 (notify_default_webhook_url must be an absolute http(s) URL)", resp.StatusCode)
+	}
+}
+
+func TestUpdateSettings_ViewerForbidden(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"version":1,"contact_info":"new contact"}`)
+	req := adminRequest(t, http.MethodPatch, srv.URL+"/api/v1/settings", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want 403 (updating settings requires administrator, viewer may only read)", resp.StatusCode)
+	}
+}
+
+func TestUpdateSettings_Success(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	updatedContact := "new contact"
+	result := store.GlobalSettings{
+		ContactInfo: &updatedContact, RevokePolicyIPChanged: "warn", RevokePolicyUserAgentChanged: "warn",
+		RevokePolicyInactivityExceeded: "off", RevocationInactivityThreshold: 90 * 24 * time.Hour, Version: 2,
+	}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{updateGlobalSettingsResult: result}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"version":1,"contact_info":"new contact"}`)
+	req := adminRequest(t, http.MethodPatch, srv.URL+"/api/v1/settings", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want 200", resp.StatusCode)
+	}
+	var respBody map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if respBody["contact_info"] != "new contact" {
+		t.Errorf("contact_info = %v, want \"new contact\"", respBody["contact_info"])
+	}
+}
+
+func TestUpdateSettings_ConflictMapsTo409(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{updateGlobalSettingsErr: admin.ErrConflict}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"version":1,"contact_info":"new contact"}`)
+	req := adminRequest(t, http.MethodPatch, srv.URL+"/api/v1/settings", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("got status %d, want 409", resp.StatusCode)
 	}
 }

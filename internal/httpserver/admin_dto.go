@@ -201,6 +201,41 @@ func newAuditEventDTO(e store.AuditEvent) auditEventDTO {
 	return dto
 }
 
+// globalSettingsDTO is GET/PATCH /api/v1/settings's wire shape for
+// migration 000019's global_settings singleton row -- the deployment-
+// wide business-rule defaults an administrator edits live from the
+// admin console's Settings page.
+type globalSettingsDTO struct {
+	// ContactInfo/NotifyEmailFrom/NotifyDefaultEmail/NotifyDefaultWebhookURL
+	// are omitted when unset -- nil, not an empty string, distinguishes
+	// "not configured" from "explicitly set to nothing," same
+	// convention as applicationDTO's own ContactInfo.
+	ContactInfo             *string `json:"contact_info,omitempty"`
+	NotifyEmailFrom         *string `json:"notify_email_from,omitempty"`
+	NotifyDefaultEmail      *string `json:"notify_default_email,omitempty"`
+	NotifyDefaultWebhookURL *string `json:"notify_default_webhook_url,omitempty"`
+
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded} are
+	// always present -- unlike an application's own override, these
+	// NOT NULL columns have no "unset" state.
+	RevokePolicyIPChanged                string `json:"revoke_policy_ip_changed"`
+	RevokePolicyUserAgentChanged         string `json:"revoke_policy_user_agent_changed"`
+	RevokePolicyInactivityExceeded       string `json:"revoke_policy_inactivity_exceeded"`
+	RevocationInactivityThresholdSeconds int64  `json:"revocation_inactivity_threshold_seconds"`
+
+	UpdatedAt time.Time `json:"updated_at"`
+	Version   int32     `json:"version"`
+}
+
+func newGlobalSettingsDTO(s store.GlobalSettings) globalSettingsDTO {
+	return globalSettingsDTO{
+		ContactInfo: s.ContactInfo, NotifyEmailFrom: s.NotifyEmailFrom, NotifyDefaultEmail: s.NotifyDefaultEmail, NotifyDefaultWebhookURL: s.NotifyDefaultWebhookURL,
+		RevokePolicyIPChanged: s.RevokePolicyIPChanged, RevokePolicyUserAgentChanged: s.RevokePolicyUserAgentChanged,
+		RevokePolicyInactivityExceeded: s.RevokePolicyInactivityExceeded, RevocationInactivityThresholdSeconds: int64(s.RevocationInactivityThreshold.Seconds()),
+		UpdatedAt: s.UpdatedAt, Version: s.Version,
+	}
+}
+
 // decodeJSONBody enforces spec section 9's "Maximum JSON body size is 16
 // KiB" and maps a malformed body to the standard structured error.
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {

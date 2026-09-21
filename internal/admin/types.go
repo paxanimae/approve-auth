@@ -38,6 +38,14 @@ type Store interface {
 	GrantApplicationOwner(ctx context.Context, applicationID uuid.UUID, subject, grantedBy string) error
 	RevokeApplicationOwner(ctx context.Context, applicationID uuid.UUID, subject, revokedBy string) error
 	ListApplicationOwners(ctx context.Context, applicationID uuid.UUID) ([]string, error)
+
+	// UpdateGlobalSettings backs PATCH /api/v1/settings. Reading the
+	// current settings is not part of this interface -- GET
+	// /api/v1/settings reads store.DB.GetGlobalSettings directly
+	// (internal/httpserver.AdminReadStore), the same "no business rules
+	// apply to a read" convention every other GET endpoint already
+	// follows.
+	UpdateGlobalSettings(ctx context.Context, expectedVersion int32, p store.UpdateGlobalSettingsParams, updatedBy string) (store.GlobalSettings, error)
 }
 
 // ApproveInput backs POST /api/v1/requests/{id}/approve (spec section 9).
@@ -183,4 +191,31 @@ type RevokeApplicationOwnerInput struct {
 	ApplicationID string
 	Subject       string
 	RevokedBy     string
+}
+
+// UpdateGlobalSettingsInput backs PATCH /api/v1/settings -- the
+// deployment-wide business-rule defaults (migration 000019) an
+// administrator edits live from the admin console's Settings page.
+// Same nil-means-unchanged convention as UpdateApplicationInput.
+type UpdateGlobalSettingsInput struct {
+	ExpectedVersion int32
+
+	ContactInfo             *string
+	NotifyEmailFrom         *string
+	NotifyDefaultEmail      *string
+	NotifyDefaultWebhookURL *string
+
+	// RevokePolicy{IPChanged,UserAgentChanged,InactivityExceeded}:
+	// unlike an application's own override, global_settings' columns
+	// are NOT NULL with no "unset" state -- a non-nil pointer always
+	// sets a real action, validated by the caller (internal/httpserver)
+	// against revokepolicy.Action.Valid().
+	RevokePolicyIPChanged          *string
+	RevokePolicyUserAgentChanged   *string
+	RevokePolicyInactivityExceeded *string
+	// RevocationInactivityThreshold: a non-nil value must be positive
+	// (checked in UpdateGlobalSettings before reaching the store).
+	RevocationInactivityThreshold *time.Duration
+
+	UpdatedBy string
 }

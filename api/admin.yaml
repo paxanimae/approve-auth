@@ -928,6 +928,47 @@ paths:
               schema:
                 type: string
 
+  /api/v1/settings:
+    get:
+      operationId: getSettings
+      summary: Deployment-wide business-rule defaults (administrator/viewer only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalSettings"
+        "403":
+          description: application_owner role (staff-only endpoint)
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: updateSettings
+      summary: Update deployment-wide business-rule defaults (administrator only)
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGlobalSettingsInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalSettings"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Stale version
+          $ref: "#/components/responses/Error"
+        "422":
+          description: Invalid revoke_policy_*, revocation_inactivity_threshold_seconds, or notify_default_webhook_url
+          $ref: "#/components/responses/Error"
+
 components:
   securitySchemes:
     adminSessionCookie:
@@ -1122,6 +1163,94 @@ components:
         revoke_policy_inactivity_exceeded:
           type: string
           enum: [off, warn, flag_for_review, revoke]
+      required: [version]
+      additionalProperties: false
+
+    GlobalSettings:
+      type: object
+      description: >-
+        The deployment-wide business-rule defaults (migration
+        000019) -- editable live from the admin console's Settings
+        page, unlike everything still in static config.
+      properties:
+        contact_info:
+          type: string
+          description: Absent means unset -- there is no further fallback below this.
+        notify_email_from:
+          type: string
+        notify_default_email:
+          type: string
+        notify_default_webhook_url:
+          type: string
+        revoke_policy_ip_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+          description: >-
+            Always present -- unlike an application's own override,
+            this NOT NULL column has no "unset" state
+            (internal/revokepolicy).
+        revoke_policy_user_agent_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+        revoke_policy_inactivity_exceeded:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+        revocation_inactivity_threshold_seconds:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+      required:
+        [
+          revoke_policy_ip_changed,
+          revoke_policy_user_agent_changed,
+          revoke_policy_inactivity_exceeded,
+          revocation_inactivity_threshold_seconds,
+          updated_at,
+          version,
+        ]
+      additionalProperties: false
+
+    UpdateGlobalSettingsInput:
+      type: object
+      properties:
+        version:
+          type: integer
+        contact_info:
+          type: string
+          maxLength: 500
+          description: An empty string clears it back to unset
+        notify_email_from:
+          type: string
+          maxLength: 320
+          description: An empty string clears it back to unset
+        notify_default_email:
+          type: string
+          maxLength: 320
+          description: An empty string clears it back to unset
+        notify_default_webhook_url:
+          type: string
+          description: >-
+            Must be an absolute http(s) URL if set. An empty string
+            clears it back to unset.
+        revoke_policy_ip_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+          description: >-
+            Unlike an application's own override, this has no
+            "unset" state -- if sent, it must be one of the four
+            listed actions.
+        revoke_policy_user_agent_changed:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+        revoke_policy_inactivity_exceeded:
+          type: string
+          enum: [off, warn, flag_for_review, revoke]
+        revocation_inactivity_threshold_seconds:
+          type: integer
+          description: Must be positive if set
       required: [version]
       additionalProperties: false
 

@@ -195,6 +195,9 @@ func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminRe
 	mux.HandleFunc("GET /api/v1/audit-events", staff(listAuditEventsHandler(readStore)))
 	mux.HandleFunc("GET /api/v1/audit-events/export", staff(exportAuditEventsHandler(readStore)))
 
+	mux.HandleFunc("GET /api/v1/settings", staff(getSettingsHandler(readStore)))
+	mux.HandleFunc("PATCH /api/v1/settings", mutating(updateSettingsHandler(actions)))
+
 	// The console itself: everything not matched above (spec section 2:
 	// "Serve compiled admin assets from the Go binary"). Deliberately not
 	// behind withHost: it's a static, unauthenticated shell with no

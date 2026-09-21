@@ -78,6 +78,9 @@ type fakeAdminActions struct {
 	revokeApplicationOwnerErr error
 
 	clearAuthorizationFlagErr error
+
+	updateGlobalSettingsResult store.GlobalSettings
+	updateGlobalSettingsErr    error
 }
 
 func (f fakeAdminActions) Approve(context.Context, admin.ApproveInput) (admin.ApproveResult, error) {
@@ -117,6 +120,9 @@ func (f fakeAdminActions) GrantApplicationOwner(context.Context, admin.GrantAppl
 func (f fakeAdminActions) RevokeApplicationOwner(context.Context, admin.RevokeApplicationOwnerInput) error {
 	return f.revokeApplicationOwnerErr
 }
+func (f fakeAdminActions) UpdateGlobalSettings(context.Context, admin.UpdateGlobalSettingsInput) (store.GlobalSettings, error) {
+	return f.updateGlobalSettingsResult, f.updateGlobalSettingsErr
+}
 
 // fakeAdminReadStore is a minimal, configurable stand-in for
 // internal/store's read-only listing/detail surface used by the admin
@@ -154,6 +160,9 @@ type fakeAdminReadStore struct {
 	applicationOwnersErr error
 	ownedApplicationIDs  []uuid.UUID
 	ownedApplicationsErr error
+
+	globalSettings    store.GlobalSettings
+	globalSettingsErr error
 }
 
 func (f fakeAdminReadStore) GetApplicationByID(context.Context, uuid.UUID) (store.Application, bool, error) {
@@ -197,4 +206,7 @@ func (f fakeAdminReadStore) ListApplicationOwners(context.Context, uuid.UUID) ([
 }
 func (f fakeAdminReadStore) GetOwnedApplicationIDs(context.Context, string) ([]uuid.UUID, error) {
 	return f.ownedApplicationIDs, f.ownedApplicationsErr
+}
+func (f fakeAdminReadStore) GetGlobalSettings(context.Context) (store.GlobalSettings, error) {
+	return f.globalSettings, f.globalSettingsErr
 }
