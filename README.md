@@ -29,7 +29,7 @@ sequenceDiagram
     participant D as Unattended browser
     participant P as Reverse proxy
     participant S as Approve
-    participant H as Administrator
+    participant H as Administrator's phone
     participant App as Protected app
 
     D->>P: GET https://app.example.com/
@@ -37,10 +37,10 @@ sequenceDiagram
     S-->>P: 303, Location: /__approve-auth/request
     P-->>D: Redirect
     D->>S: Request access (optional label / message)
-    S-->>D: Verification code + waiting page (auto-polling)
+    S-->>D: Verification code + waiting page with a QR code
     S->>H: Notify (email / webhook)
-    H->>S: Review the request in the admin console
-    H->>S: Approve, choosing a session duration
+    H->>S: Scan the QR -> deep link into the admin console
+    H->>S: Approve, choosing a duration and an optional note
     D->>S: Poll sees "approved" -> claim credential
     S-->>D: Long-lived __Host-approve-auth cookie
     D->>App: Original request, now carrying the cookie
@@ -52,11 +52,15 @@ sequenceDiagram
    browser is bounced to Approve's own request page, on the same host.
 2. **Request.** The device (or a human standing in front of it) submits a
    request, optionally with a label and message. Approve issues a
-   verification code and starts a waiting page that polls automatically.
+   verification code and starts a waiting page that polls automatically —
+   and, while the request stays pending, shows a QR code.
 3. **Notify & approve.** Approve can email or webhook whoever's on call.
-   An administrator opens the console, sees the request — application,
-   verification code, source IP/geo, unverified label/message — and
-   approves it for a chosen duration, or denies it.
+   An administrator either opens the console directly, or scans the QR
+   code on the waiting screen with their phone, which deep-links straight
+   into that one request — no hunting through a table first. Either way
+   they see the application, verification code, source IP/geo, and the
+   unverified label/message, and approve it for a chosen duration (with
+   an optional private note) or deny it.
 4. **Claim.** The waiting browser detects the approval, claims its
    credential, and gets a `__Host-...` cookie scoped to that one
    application's hostname. It's redirected back to whatever it originally
@@ -66,6 +70,21 @@ sequenceDiagram
    caching, no stale allow — and answers in-path with no human involved,
    until the credential expires, is revoked, or trips a revocation-policy
    signal (IP/User-Agent change, inactivity).
+
+<p align="center">
+  <img src="docs/screenshots/waiting-page-qr.png" width="280" alt="The waiting page, showing a verification code and a QR code that deep-links an administrator straight to approving this request" /><br />
+  <sub>The waiting page — the QR is only shown while the request is still pending.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/admin-requests.png" width="720" alt="The admin console's Requests view, showing a pending request with Approve/Deny/Notes actions" /><br />
+  <sub>What scanning the QR leads to (or the desktop console): the pending request, labeled unverified.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/admin-approve-dialog.png" width="520" alt="The approve dialog, with a duration field and an optional private note" /><br />
+  <sub>Approving with a chosen duration and an optional note (visible to other admins, never to the requester).</sub>
+</p>
 
 ## Architecture
 
@@ -127,6 +146,10 @@ for why.
 
 ## Capabilities beyond the basic flow
 
+- **Approve by scanning a QR code** — the waiting page's QR deep-links
+  an authorized admin straight into that specific pending request from
+  their phone; scanning it is a normal link, not a bypass, so it still
+  goes through the same OIDC-authenticated admin console either way.
 - **Per-application and per-session revocation policy** — configurable
   response (warn / flag for review / revoke) to a credential's IP address
   changing, its User-Agent changing, or it going inactive past a
