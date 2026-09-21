@@ -27,7 +27,16 @@ func listAuthorizationsHandler(readStore AdminReadStore) http.HandlerFunc {
 			subject := actorSubject(r)
 			approvedBy = &subject
 		}
-		auths, err := readStore.ListAuthorizations(r.Context(), appID, approvedBy, activeOnly, parseLimitQuery(r))
+		restrict, restricted, err := ownedApplicationIDsForCaller(r, readStore)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to resolve application ownership")
+			return
+		}
+		if restricted && len(restrict) == 0 {
+			writeJSON(w, http.StatusOK, map[string]any{"authorizations": []authorizationDTO{}})
+			return
+		}
+		auths, err := readStore.ListAuthorizations(r.Context(), appID, approvedBy, activeOnly, parseLimitQuery(r), restrict)
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list authorizations")
 			return
@@ -55,6 +64,9 @@ func getAuthorizationHandler(readStore AdminReadStore) http.HandlerFunc {
 		}
 		if !found {
 			writeAPIError(w, http.StatusNotFound, "not_found", "no such authorization")
+			return
+		}
+		if !authorizeOwnedResource(w, r, readStore, auth.ApplicationID, "not_found", "no such authorization") {
 			return
 		}
 		writeJSON(w, http.StatusOK, newAuthorizationDTO(auth))
@@ -101,10 +113,13 @@ type revokeAuthorizationBody struct {
 	Reason  string `json:"reason"`
 }
 
-func revokeAuthorizationHandler(actions AdminActions) http.HandlerFunc {
+func revokeAuthorizationHandler(actions AdminActions, readStore AdminReadStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := parseUUIDPathParam(w, r)
 		if !ok {
+			return
+		}
+		if !authorizeOwnedAuthorization(w, r, readStore, id) {
 			return
 		}
 		var body revokeAuthorizationBody
@@ -134,6 +149,9 @@ func listAuthorizationNotesHandler(readStore AdminReadStore) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		if !authorizeOwnedAuthorization(w, r, readStore, id) {
+			return
+		}
 		notes, err := readStore.ListAuthorizationNotes(r.Context(), id)
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list notes")
@@ -149,10 +167,13 @@ func listAuthorizationNotesHandler(readStore AdminReadStore) http.HandlerFunc {
 
 // --- POST /api/v1/authorizations/{id}/notes ---
 
-func addAuthorizationNoteHandler(actions AdminActions) http.HandlerFunc {
+func addAuthorizationNoteHandler(actions AdminActions, readStore AdminReadStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := parseUUIDPathParam(w, r)
 		if !ok {
+			return
+		}
+		if !authorizeOwnedAuthorization(w, r, readStore, id) {
 			return
 		}
 		var body addNoteBody

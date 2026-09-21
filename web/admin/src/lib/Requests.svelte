@@ -170,7 +170,7 @@
 <NotesDialog
   bind:open={notesDialogOpen}
   title="Notes"
-  readOnly={me.role !== "administrator"}
+  readOnly={me.role !== "administrator" && me.role !== "application_owner"}
   loadNotes={() => api.listRequestNotes(notesTarget!.id).then((r) => r.notes)}
   onAddNote={(body) => api.addRequestNote(notesTarget!.id, { body }).then(() => {})}
 />

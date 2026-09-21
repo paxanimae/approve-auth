@@ -33,6 +33,10 @@ type Store interface {
 
 	CreateRequestNote(ctx context.Context, requestID uuid.UUID, authorSubject, body string) (store.RequestNote, error)
 	CreateAuthorizationNote(ctx context.Context, authorizationID uuid.UUID, authorSubject, body string) (store.AuthorizationNote, error)
+
+	GrantApplicationOwner(ctx context.Context, applicationID uuid.UUID, subject, grantedBy string) error
+	RevokeApplicationOwner(ctx context.Context, applicationID uuid.UUID, subject, revokedBy string) error
+	ListApplicationOwners(ctx context.Context, applicationID uuid.UUID) ([]string, error)
 }
 
 // ApproveInput backs POST /api/v1/requests/{id}/approve (spec section 9).
@@ -134,4 +138,21 @@ type AddAuthorizationNoteInput struct {
 	AuthorizationID string
 	Body            string
 	AuthorBy        string
+}
+
+// GrantApplicationOwnerInput backs POST /api/v1/applications/{id}/owners.
+// Administrator-only -- an ApplicationOwner cannot grant ownership to
+// anyone, including themselves (spec: "cannot control anything else").
+type GrantApplicationOwnerInput struct {
+	ApplicationID string
+	Subject       string
+	GrantedBy     string
+}
+
+// RevokeApplicationOwnerInput backs DELETE
+// /api/v1/applications/{id}/owners/{subject}.
+type RevokeApplicationOwnerInput struct {
+	ApplicationID string
+	Subject       string
+	RevokedBy     string
 }

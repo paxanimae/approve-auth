@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"net/http"
+
+	"github.com/google/uuid"
 
 	"github.com/frid-iks/approve-auth/internal/admin"
 	"github.com/frid-iks/approve-auth/internal/adminsession"
@@ -118,6 +121,130 @@ func requireAdministrator(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// requireStaffRole restricts a requireAdminSession-wrapped handler to
+// administrator or viewer, excluding application_owner. An
+// ApplicationOwner "cannot control anything else" beyond their own
+// application's requests/authorizations (spec) -- applications
+// management, the overview dashboard, and the audit log have no
+// per-resource ownership check to scope by, so they're off-limits to
+// that role entirely rather than partially filtered.
+func requireStaffRole(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		info, ok := adminIdentityFromContext(r.Context())
+		if !ok || (info.Role != "administrator" && info.Role != "viewer") {
+			writeAPIError(w, http.StatusForbidden, "forbidden", "administrator or viewer role required")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// requireAdministratorOrOwner permits the administrator role
+// unconditionally, or application_owner subject to a per-resource
+// ownership check the handler itself performs (via
+// ownedApplicationIDsForCaller) -- unlike requireAdministrator, this
+// middleware alone is not sufficient authorization for the request to
+// proceed, only a prerequisite for it.
+func requireAdministratorOrOwner(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		info, ok := adminIdentityFromContext(r.Context())
+		if !ok || (info.Role != "administrator" && info.Role != "application_owner") {
+			writeAPIError(w, http.StatusForbidden, "forbidden", "administrator or application_owner role required")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// ownedApplicationIDsForCaller resolves the caller's owned-application
+// set when their role is application_owner, and reports restricted=false
+// for every other role (administrator/viewer see everything, with a nil
+// restriction slice). Resolved fresh on every call rather than trusting
+// anything cached on the session, matching GetOwnedApplicationIDs' own
+// freshness rationale.
+func ownedApplicationIDsForCaller(r *http.Request, readStore AdminReadStore) (restrict []uuid.UUID, restricted bool, err error) {
+	info, ok := adminIdentityFromContext(r.Context())
+	if !ok || info.Role != "application_owner" {
+		return nil, false, nil
+	}
+	owned, err := readStore.GetOwnedApplicationIDs(r.Context(), info.Subject)
+	if err != nil {
+		return nil, true, fmt.Errorf("httpserver: resolving owned applications: %w", err)
+	}
+	return owned, true, nil
+}
+
+// authorizeOwnedResource enforces requireAdministratorOrOwner's deferred
+// half for a single existing resource: an administrator always passes;
+// an application_owner passes only if applicationID is in their
+// currently-owned set. Returns false (having already written the
+// response) if the caller must not proceed -- a 404, not 403, so an
+// owner probing another application's resource IDs learns nothing about
+// whether they exist (matching how a missing resource already responds).
+func authorizeOwnedResource(w http.ResponseWriter, r *http.Request, readStore AdminReadStore, applicationID uuid.UUID, notFoundCode, notFoundMessage string) bool {
+	info, ok := adminIdentityFromContext(r.Context())
+	if !ok || info.Role != "application_owner" {
+		// administrator and viewer both see everything unrestricted;
+		// only application_owner is scoped to a per-resource check.
+		return true
+	}
+	owned, err := readStore.GetOwnedApplicationIDs(r.Context(), info.Subject)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to resolve application ownership")
+		return false
+	}
+	for _, id := range owned {
+		if id == applicationID {
+			return true
+		}
+	}
+	writeAPIError(w, http.StatusNotFound, notFoundCode, notFoundMessage)
+	return false
+}
+
+// authorizeOwnedRequest resolves a request by id and checks ownership
+// via authorizeOwnedResource -- shared by every request-scoped mutation
+// handler (approve, deny, add note) that ownerMutating protects. It
+// skips the extra fetch entirely for administrator (and any other
+// non-application_owner role), preserving exactly the pre-existing
+// behavior of leaving existence/conflict handling to internal/admin's
+// own ErrConflict/ErrNotFound mapping for that path.
+func authorizeOwnedRequest(w http.ResponseWriter, r *http.Request, readStore AdminReadStore, id uuid.UUID) bool {
+	info, ok := adminIdentityFromContext(r.Context())
+	if !ok || info.Role != "application_owner" {
+		return true
+	}
+	req, found, err := readStore.GetApprovalRequestByID(r.Context(), id)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load request")
+		return false
+	}
+	if !found {
+		writeAPIError(w, http.StatusNotFound, "not_found", "no such request")
+		return false
+	}
+	return authorizeOwnedResource(w, r, readStore, req.ApplicationID, "not_found", "no such request")
+}
+
+// authorizeOwnedAuthorization is authorizeOwnedRequest's counterpart for
+// authorization-scoped mutations (revoke, add note).
+func authorizeOwnedAuthorization(w http.ResponseWriter, r *http.Request, readStore AdminReadStore, id uuid.UUID) bool {
+	info, ok := adminIdentityFromContext(r.Context())
+	if !ok || info.Role != "application_owner" {
+		return true
+	}
+	auth, found, err := readStore.GetAuthorizationByID(r.Context(), id)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load authorization")
+		return false
+	}
+	if !found {
+		writeAPIError(w, http.StatusNotFound, "not_found", "no such authorization")
+		return false
+	}
+	return authorizeOwnedResource(w, r, readStore, auth.ApplicationID, "not_found", "no such authorization")
 }
 
 // requireAdminCSRF enforces the synchronizer-token check for a mutation:

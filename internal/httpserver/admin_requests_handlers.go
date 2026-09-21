@@ -18,7 +18,16 @@ func listRequestsHandler(readStore AdminReadStore) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		reqs, err := readStore.ListApprovalRequests(r.Context(), appID, r.URL.Query().Get("status"), parseLimitQuery(r))
+		restrict, restricted, err := ownedApplicationIDsForCaller(r, readStore)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to resolve application ownership")
+			return
+		}
+		if restricted && len(restrict) == 0 {
+			writeJSON(w, http.StatusOK, map[string]any{"requests": []requestDTO{}})
+			return
+		}
+		reqs, err := readStore.ListApprovalRequests(r.Context(), appID, r.URL.Query().Get("status"), parseLimitQuery(r), restrict)
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list requests")
 			return
@@ -48,6 +57,9 @@ func getRequestHandler(readStore AdminReadStore) http.HandlerFunc {
 			writeAPIError(w, http.StatusNotFound, "not_found", "no such request")
 			return
 		}
+		if !authorizeOwnedResource(w, r, readStore, req.ApplicationID, "not_found", "no such request") {
+			return
+		}
 		writeJSON(w, http.StatusOK, newRequestDTO(req))
 	}
 }
@@ -61,10 +73,13 @@ type approveRequestBody struct {
 	PrivateNote string     `json:"private_note"`
 }
 
-func approveRequestHandler(actions AdminActions) http.HandlerFunc {
+func approveRequestHandler(actions AdminActions, readStore AdminReadStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := parseUUIDPathParam(w, r)
 		if !ok {
+			return
+		}
+		if !authorizeOwnedRequest(w, r, readStore, id) {
 			return
 		}
 		var body approveRequestBody
@@ -97,10 +112,13 @@ type denyRequestBody struct {
 	PublicMessage string `json:"public_message"`
 }
 
-func denyRequestHandler(actions AdminActions) http.HandlerFunc {
+func denyRequestHandler(actions AdminActions, readStore AdminReadStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := parseUUIDPathParam(w, r)
 		if !ok {
+			return
+		}
+		if !authorizeOwnedRequest(w, r, readStore, id) {
 			return
 		}
 		var body denyRequestBody
@@ -130,6 +148,9 @@ func listRequestNotesHandler(readStore AdminReadStore) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		if !authorizeOwnedRequest(w, r, readStore, id) {
+			return
+		}
 		notes, err := readStore.ListRequestNotes(r.Context(), id)
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list notes")
@@ -149,10 +170,13 @@ type addNoteBody struct {
 	Body string `json:"body"`
 }
 
-func addRequestNoteHandler(actions AdminActions) http.HandlerFunc {
+func addRequestNoteHandler(actions AdminActions, readStore AdminReadStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := parseUUIDPathParam(w, r)
 		if !ok {
+			return
+		}
+		if !authorizeOwnedRequest(w, r, readStore, id) {
 			return
 		}
 		var body addNoteBody

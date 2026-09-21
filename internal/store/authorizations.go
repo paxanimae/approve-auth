@@ -280,20 +280,22 @@ func (db *DB) GetAuthorizationByID(ctx context.Context, id uuid.UUID) (Authoriza
 // soonest-expiring first among non-revoked rows, optionally filtered by
 // application and/or the admin who approved it ("My Approvals" --
 // approvedBy is matched against the same stable OIDC subject every
-// audit actor field uses, never a display name). activeOnly restricts
-// to unrevoked rows only -- callers wanting expired/revoked history
-// pass false. Simple limit-bounded, like ListApprovalRequests; the full
-// filter/sort/search set spec section 10 describes for "Expiring soon"
-// is follow-on work.
-func (db *DB) ListAuthorizations(ctx context.Context, applicationID *uuid.UUID, approvedBy *string, activeOnly bool, limit int) ([]Authorization, error) {
+// audit actor field uses, never a display name). restrictToApplicationIDs
+// is ListApprovalRequests' own restriction, mirrored here for an
+// ApplicationOwner's caller. activeOnly restricts to unrevoked rows
+// only -- callers wanting expired/revoked history pass false. Simple
+// limit-bounded, like ListApprovalRequests; the full filter/sort/search
+// set spec section 10 describes for "Expiring soon" is follow-on work.
+func (db *DB) ListAuthorizations(ctx context.Context, applicationID *uuid.UUID, approvedBy *string, activeOnly bool, limit int, restrictToApplicationIDs []uuid.UUID) ([]Authorization, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT `+authorizationColumns+`
 		FROM authorizations auth JOIN applications app ON app.id = auth.application_id
 		WHERE ($1::uuid IS NULL OR auth.application_id = $1)
 		  AND ($2::text IS NULL OR auth.approved_by = $2)
 		  AND ($3 = false OR auth.revoked_at IS NULL)
+		  AND ($5::uuid[] IS NULL OR auth.application_id = ANY($5))
 		ORDER BY auth.expires_at ASC, auth.id DESC
-		LIMIT $4`, applicationID, approvedBy, activeOnly, limit)
+		LIMIT $4`, applicationID, approvedBy, activeOnly, limit, restrictToApplicationIDs)
 	if err != nil {
 		return nil, fmt.Errorf("store: listing authorizations: %w", err)
 	}

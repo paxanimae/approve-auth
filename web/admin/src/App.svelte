@@ -11,13 +11,18 @@
   import AuditLog from "./lib/AuditLog.svelte";
 
   type ViewName = "overview" | "requests" | "sessions" | "applications" | "audit";
-  const views: { id: ViewName; label: string }[] = [
+  const allViews: { id: ViewName; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "requests", label: "Requests" },
     { id: "sessions", label: "Sessions" },
     { id: "applications", label: "Applications" },
     { id: "audit", label: "Audit log" },
   ];
+  // An ApplicationOwner "cannot control anything else" beyond their own
+  // application's requests/sessions (spec) -- overview, applications
+  // management, and the audit log all 403 for that role server-side, so
+  // there's no point showing nav entries that only lead to an error.
+  let views: { id: ViewName; label: string }[] = $state(allViews);
 
   let me: Me | null = $state(null);
   let checkingSession = $state(true);
@@ -31,6 +36,10 @@
       const identity = await api.me();
       me = identity;
       setCsrfToken(identity.csrf_token);
+      if (identity.role === "application_owner") {
+        views = allViews.filter((v) => v.id === "requests" || v.id === "sessions");
+        view = "requests";
+      }
     } catch {
       me = null;
     } finally {

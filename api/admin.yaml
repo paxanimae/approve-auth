@@ -120,7 +120,7 @@ paths:
   /api/v1/overview:
     get:
       operationId: getOverview
-      summary: Pending / active / expiring-soon / recently revoked-or-expired counts
+      summary: Pending / active / expiring-soon / recently revoked-or-expired counts (administrator/viewer only)
       responses:
         "200":
           description: OK
@@ -130,11 +130,14 @@ paths:
                 $ref: "#/components/schemas/Overview"
         "401":
           $ref: "#/components/responses/Error"
+        "403":
+          description: application_owner role (staff-only endpoint)
+          $ref: "#/components/responses/Error"
 
   /api/v1/applications:
     get:
       operationId: listApplications
-      summary: List every registered application, alphabetical by hostname
+      summary: List every registered application, alphabetical by hostname (administrator/viewer only)
       responses:
         "200":
           description: OK
@@ -149,6 +152,9 @@ paths:
                       $ref: "#/components/schemas/Application"
                 required: [applications]
         "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          description: application_owner role (staff-only endpoint)
           $ref: "#/components/responses/Error"
     post:
       operationId: createApplication
@@ -182,7 +188,7 @@ paths:
       - $ref: "#/components/parameters/Id"
     get:
       operationId: getApplication
-      summary: Application detail
+      summary: Application detail (administrator/viewer only)
       responses:
         "200":
           description: OK
@@ -190,6 +196,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Application"
+        "403":
+          description: application_owner role (staff-only endpoint)
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
     patch:
@@ -290,10 +299,102 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/v1/applications/{id}/owners:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: listApplicationOwners
+      summary: List the OIDC subjects granted the application_owner role for this application
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  owners:
+                    type: array
+                    items:
+                      type: string
+                required: [owners]
+        "403":
+          description: application_owner role (staff-only endpoint)
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: grantApplicationOwner
+      summary: >-
+        Grant the application_owner role for this application to an OIDC
+        subject (administrator-only -- an ApplicationOwner cannot grant
+        ownership to anyone, including themselves)
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject:
+                  type: string
+              required: [subject]
+      responses:
+        "201":
+          description: Created (idempotent -- granting an already-owned application is a no-op, not an error)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  granted:
+                    type: boolean
+                required: [granted]
+        "403":
+          description: Not an administrator, or missing/invalid X-CSRF-Token
+          $ref: "#/components/responses/Error"
+        "404":
+          description: No such application
+          $ref: "#/components/responses/Error"
+        "422":
+          description: subject is required
+          $ref: "#/components/responses/Error"
+
+  /api/v1/applications/{id}/owners/{subject}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: subject
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      operationId: revokeApplicationOwner
+      summary: Revoke the application_owner role for this application from an OIDC subject (administrator-only)
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "200":
+          description: OK (idempotent -- revoking a non-owner is a no-op, not an error)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: boolean
+                required: [revoked]
+        "403":
+          description: Not an administrator, or missing/invalid X-CSRF-Token
+          $ref: "#/components/responses/Error"
+
   /api/v1/requests:
     get:
       operationId: listRequests
-      summary: List requests, optionally filtered by application/status
+      summary: >-
+        List requests, optionally filtered by application/status. An
+        application_owner caller sees only requests for applications
+        they own (spec: "cannot control anything else").
       parameters:
         - name: application_id
           in: query
@@ -325,7 +426,7 @@ paths:
   /api/v1/requests/{id}:
     get:
       operationId: getRequest
-      summary: Request detail
+      summary: Request detail (404 for an application_owner viewing an application they don't own)
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -341,7 +442,10 @@ paths:
   /api/v1/requests/{id}/approve:
     post:
       operationId: approveRequest
-      summary: Approve, creating an unclaimed authorization
+      summary: >-
+        Approve, creating an unclaimed authorization. Administrator, or
+        application_owner for a request on an application they own
+        (404, not 403, for one they don't).
       parameters:
         - $ref: "#/components/parameters/Id"
         - $ref: "#/components/parameters/CsrfToken"
@@ -378,7 +482,10 @@ paths:
   /api/v1/requests/{id}/deny:
     post:
       operationId: denyRequest
-      summary: Deny (reason required; optional safe public message)
+      summary: >-
+        Deny (reason required; optional safe public message).
+        Administrator, or application_owner for a request on an
+        application they own.
       parameters:
         - $ref: "#/components/parameters/Id"
         - $ref: "#/components/parameters/CsrfToken"
@@ -468,7 +575,10 @@ paths:
   /api/v1/authorizations:
     get:
       operationId: listAuthorizations
-      summary: List authorizations, soonest-expiring first
+      summary: >-
+        List authorizations, soonest-expiring first. An
+        application_owner caller sees only authorizations for
+        applications they own.
       parameters:
         - name: application_id
           in: query
@@ -511,7 +621,7 @@ paths:
   /api/v1/authorizations/{id}:
     get:
       operationId: getAuthorization
-      summary: Authorization detail
+      summary: Authorization detail (404 for an application_owner viewing an application they don't own)
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -559,7 +669,9 @@ paths:
   /api/v1/authorizations/{id}/revoke:
     post:
       operationId: revokeAuthorization
-      summary: Revoke (reason required)
+      summary: >-
+        Revoke (reason required). Administrator, or application_owner
+        for an authorization on an application they own.
       parameters:
         - $ref: "#/components/parameters/Id"
         - $ref: "#/components/parameters/CsrfToken"
@@ -701,7 +813,7 @@ paths:
   /api/v1/audit-events:
     get:
       operationId: listAuditEvents
-      summary: Filtered audit events, newest first
+      summary: Filtered audit events, newest first (administrator/viewer only)
       parameters:
         - name: application_id
           in: query
@@ -755,7 +867,7 @@ paths:
   /api/v1/audit-events/export:
     get:
       operationId: exportAuditEvents
-      summary: CSV export of the filtered result set (max 10,000 rows); the export itself is audited
+      summary: CSV export of the filtered result set (max 10,000 rows); the export itself is audited (administrator/viewer only)
       parameters:
         - name: application_id
           in: query
@@ -832,7 +944,7 @@ components:
           type: string
         role:
           type: string
-          enum: [viewer, administrator]
+          enum: [viewer, administrator, application_owner]
         csrf_token:
           type: string
       required: [subject, display_name, role, csrf_token]

@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // TestListAuthorizations_FiltersByApprovedBy covers "My Approvals":
@@ -28,7 +30,7 @@ func TestListAuthorizations_FiltersByApprovedBy(t *testing.T) {
 	}
 
 	adminA := "admin-a"
-	mine, err := db.ListAuthorizations(ctx, nil, &adminA, false, 100)
+	mine, err := db.ListAuthorizations(ctx, nil, &adminA, false, 100, nil)
 	if err != nil {
 		t.Fatalf("ListAuthorizations(approvedBy=admin-a): %v", err)
 	}
@@ -36,7 +38,7 @@ func TestListAuthorizations_FiltersByApprovedBy(t *testing.T) {
 		t.Errorf("ListAuthorizations(approvedBy=admin-a) = %+v, want exactly authA", mine)
 	}
 
-	all, err := db.ListAuthorizations(ctx, nil, nil, false, 100)
+	all, err := db.ListAuthorizations(ctx, nil, nil, false, 100, nil)
 	if err != nil {
 		t.Fatalf("ListAuthorizations(approvedBy=nil): %v", err)
 	}
@@ -48,5 +50,42 @@ func TestListAuthorizations_FiltersByApprovedBy(t *testing.T) {
 	}
 	if found != 2 {
 		t.Errorf("ListAuthorizations(approvedBy=nil) should include both authA and authB, found %d of 2", found)
+	}
+}
+
+// TestListAuthorizations_RestrictToApplicationIDs covers the
+// ApplicationOwner scoping path: a non-nil restrictToApplicationIDs
+// narrows the listing to only those applications, same as
+// ListApprovalRequests' own restriction.
+func TestListAuthorizations_RestrictToApplicationIDs(t *testing.T) {
+	dbURL := skipIfNoDB(t)
+	ctx := context.Background()
+	db := openStoreAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+	conn := connectAs(t, ctx, dbURL, "approve_auth_app", "devpassword")
+
+	appA := insertApplication(t, ctx, conn, "list-authz-restrict-a.example.test")
+	appB := insertApplication(t, ctx, conn, "list-authz-restrict-b.example.test")
+	reqA := insertApprovalRequest(t, ctx, conn, appA, "restrict-code-a")
+	reqB := insertApprovalRequest(t, ctx, conn, appB, "restrict-code-b")
+	authA := insertAuthorization(t, ctx, conn, appA, reqA, authorizationOpts{ExpiresAt: time.Now().Add(time.Hour)})
+	authB := insertAuthorization(t, ctx, conn, appB, reqB, authorizationOpts{ExpiresAt: time.Now().Add(time.Hour)})
+
+	restricted, err := db.ListAuthorizations(ctx, nil, nil, false, 100, []uuid.UUID{uuid.MustParse(appA)})
+	if err != nil {
+		t.Fatalf("ListAuthorizations(restrict=appA): %v", err)
+	}
+	for _, a := range restricted {
+		if a.ID.String() == authB {
+			t.Errorf("ListAuthorizations(restrict=appA) unexpectedly included authB from appB")
+		}
+	}
+	foundA := false
+	for _, a := range restricted {
+		if a.ID.String() == authA {
+			foundA = true
+		}
+	}
+	if !foundA {
+		t.Errorf("ListAuthorizations(restrict=appA) should include authA")
 	}
 }

@@ -170,6 +170,45 @@ func TestHandleCallback_NoAccessWhenNotInAnyAllowlistedGroup(t *testing.T) {
 	}
 }
 
+// TestHandleCallback_FallsBackToApplicationOwnerRole covers spec's
+// third role: an identity that matches neither allowlisted group is not
+// denied outright if they own at least one application (granted via
+// internal/store.GrantApplicationOwner, e.g. by an administrator using
+// the admin console) -- see internal/adminsession/service.go's
+// HandleCallback for why this check is a fallback, not a third
+// group-mapping rule alongside mapRole's other two.
+func TestHandleCallback_FallsBackToApplicationOwnerRole(t *testing.T) {
+	db, fake, svc := setup(t)
+	ctx := context.Background()
+	fake.exchangeIdentity = oidc.Identity{Issuer: "https://idp.example.test/", Subject: "user-owner-1", Groups: []string{"grp-unrelated"}}
+
+	app, err := db.CreateApplication(ctx, "adminsession-owner-fallback.example.test", "Owner Fallback Test", "", 30*24*time.Hour, 365*24*time.Hour, "")
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Pool.Exec(ctx, `DELETE FROM applications WHERE id = $1`, app.ID) })
+	if err := db.GrantApplicationOwner(ctx, app.ID, "user-owner-1", "admin-1"); err != nil {
+		t.Fatalf("GrantApplicationOwner: %v", err)
+	}
+
+	if _, err := svc.BeginLogin(ctx, ""); err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	rawToken, _, err := svc.HandleCallback(ctx, fake.lastState, "code")
+	if err != nil {
+		t.Fatalf("HandleCallback: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Pool.Exec(ctx, `DELETE FROM admin_sessions WHERE oidc_subject = 'user-owner-1'`) })
+
+	info, err := svc.ValidateSession(ctx, rawToken)
+	if err != nil {
+		t.Fatalf("ValidateSession: %v", err)
+	}
+	if info.Role != "application_owner" {
+		t.Errorf("Role = %q, want application_owner", info.Role)
+	}
+}
+
 func TestMapRole_AdminTakesPriorityOverViewer(t *testing.T) {
 	db, fake, svc := setup(t)
 	ctx := context.Background()

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"strings"
 	"testing"
 	"time"
@@ -432,7 +433,7 @@ func TestAddRequestNote_ViewerRoleForbidden(t *testing.T) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("got status %d, want 403 (notes are administrator-only, matching every other mutation)", resp.StatusCode)
+		t.Errorf("got status %d, want 403 (notes require administrator or application_owner, viewer may only read)", resp.StatusCode)
 	}
 }
 
@@ -674,5 +675,260 @@ func TestAdminAnonymousMode_NoCookieRequired(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("mutation with a wrong CSRF token: got status %d, want 403", resp.StatusCode)
+	}
+}
+
+// --- ApplicationOwner role ---
+
+func TestApplicationOwner_StaffOnlyEndpointsForbidden(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	for _, path := range []string{"/api/v1/applications", "/api/v1/overview", "/api/v1/audit-events"} {
+		resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+path, "any-cookie-value", "", nil))
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("GET %s as application_owner: got status %d, want 403", path, resp.StatusCode)
+		}
+	}
+}
+
+func TestApplicationOwner_ListRequestsEmptyWhenNoOwnedApplications(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	// requests is non-empty on the fake to prove the handler itself
+	// short-circuits to an empty result rather than relying on the
+	// (real) store's own SQL restriction, which this fake doesn't model.
+	requests := []store.ApprovalRequest{{ID: uuid.New(), ApplicationID: uuid.New()}}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{requests: requests})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/requests", "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Requests []struct{ ID string } `json:"requests"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(body.Requests) != 0 {
+		t.Errorf("got %d requests, want 0 (owner of no applications)", len(body.Requests))
+	}
+}
+
+func TestApplicationOwner_GetRequestOutsideOwnedApplicationIs404(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	ownedApp := uuid.New()
+	otherApp := uuid.New()
+	req := store.ApprovalRequest{ID: uuid.New(), ApplicationID: otherApp}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{
+		request: req, requestFound: true, ownedApplicationIDs: []uuid.UUID{ownedApp},
+	})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/requests/"+req.ID.String(), "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got status %d, want 404 (request belongs to an application this owner doesn't own)", resp.StatusCode)
+	}
+}
+
+func TestApplicationOwner_GetRequestWithinOwnedApplicationSucceeds(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	ownedApp := uuid.New()
+	req := store.ApprovalRequest{ID: uuid.New(), ApplicationID: ownedApp}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{
+		request: req, requestFound: true, ownedApplicationIDs: []uuid.UUID{ownedApp},
+	})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/requests/"+req.ID.String(), "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want 200 (request belongs to an application this owner does own)", resp.StatusCode)
+	}
+}
+
+func TestApplicationOwner_ApproveRequestOutsideOwnedApplicationIs404(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	ownedApp := uuid.New()
+	otherApp := uuid.New()
+	req := store.ApprovalRequest{ID: uuid.New(), ApplicationID: otherApp}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{approveResult: admin.ApproveResult{AuthorizationID: "should-not-be-reached"}}, fakeAdminReadStore{
+		request: req, requestFound: true, ownedApplicationIDs: []uuid.UUID{ownedApp},
+	})
+
+	body := strings.NewReader(`{"version":1}`)
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodPost, srv.URL+"/api/v1/requests/"+req.ID.String()+"/approve", "any-cookie-value", "tok-abc", body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got status %d, want 404 -- approve must never reach internal/admin for an unowned application's request", resp.StatusCode)
+	}
+}
+
+func TestApplicationOwner_ApproveRequestWithinOwnedApplicationSucceeds(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	ownedApp := uuid.New()
+	req := store.ApprovalRequest{ID: uuid.New(), ApplicationID: ownedApp}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{approveResult: admin.ApproveResult{AuthorizationID: "auth-1"}}, fakeAdminReadStore{
+		request: req, requestFound: true, ownedApplicationIDs: []uuid.UUID{ownedApp},
+	})
+
+	body := strings.NewReader(`{"version":1}`)
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodPost, srv.URL+"/api/v1/requests/"+req.ID.String()+"/approve", "any-cookie-value", "tok-abc", body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want 200", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if out["authorization_id"] != "auth-1" {
+		t.Errorf("authorization_id = %v, want auth-1", out["authorization_id"])
+	}
+}
+
+func TestApplicationOwner_RevokeAuthorizationOutsideOwnedApplicationIs404(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	ownedApp := uuid.New()
+	otherApp := uuid.New()
+	auth := store.Authorization{ID: uuid.New(), ApplicationID: otherApp}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{
+		authorization: auth, authorizationFound: true, ownedApplicationIDs: []uuid.UUID{ownedApp},
+	})
+
+	body := strings.NewReader(`{"reason":"no longer needed"}`)
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodPost, srv.URL+"/api/v1/authorizations/"+auth.ID.String()+"/revoke", "any-cookie-value", "tok-abc", body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got status %d, want 404 (authorization belongs to an application this owner doesn't own)", resp.StatusCode)
+	}
+}
+
+func TestApplicationOwner_RevokeAuthorizationWithinOwnedApplicationSucceeds(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	ownedApp := uuid.New()
+	auth := store.Authorization{ID: uuid.New(), ApplicationID: ownedApp}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{
+		authorization: auth, authorizationFound: true, ownedApplicationIDs: []uuid.UUID{ownedApp},
+	})
+
+	body := strings.NewReader(`{"reason":"no longer needed"}`)
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodPost, srv.URL+"/api/v1/authorizations/"+auth.ID.String()+"/revoke", "any-cookie-value", "tok-abc", body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want 200 (authorization belongs to an application this owner does own)", resp.StatusCode)
+	}
+}
+
+func TestApplicationOwner_CannotGrantOwnership(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "owner-1", Role: "application_owner", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"subject":"someone-else"}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/applications/"+uuid.New().String()+"/owners", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want 403 (granting ownership is administrator-only, spec: an ApplicationOwner cannot control anything else)", resp.StatusCode)
+	}
+}
+
+// --- Application owner management (administrator-only) ---
+
+func TestGrantApplicationOwner_RequiresNonEmptySubject(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "admin-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"subject":""}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/applications/"+uuid.New().String()+"/owners", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("got status %d, want 422 (subject is required)", resp.StatusCode)
+	}
+}
+
+func TestGrantApplicationOwner_Success(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "admin-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	body := strings.NewReader(`{"subject":"new-owner@example.test"}`)
+	req := adminRequest(t, http.MethodPost, srv.URL+"/api/v1/applications/"+uuid.New().String()+"/owners", "any-cookie-value", "tok-abc", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("got status %d, want 201", resp.StatusCode)
+	}
+}
+
+func TestRevokeApplicationOwner_Success(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "admin-1", Role: "administrator", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{})
+
+	url := srv.URL + "/api/v1/applications/" + uuid.New().String() + "/owners/" + neturl.PathEscape("owner@example.test")
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodDelete, url, "any-cookie-value", "tok-abc", nil))
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestListApplicationOwners_ViewerCanRead(t *testing.T) {
+	session := adminsession.SessionInfo{Subject: "user-1", Role: "viewer", CSRFToken: "tok-abc"}
+	srv := newAdminServer(t, fakeAdminSessions{session: session}, fakeAdminActions{}, fakeAdminReadStore{applicationOwners: []string{"a@example.test", "b@example.test"}})
+
+	resp, err := http.DefaultClient.Do(adminRequest(t, http.MethodGet, srv.URL+"/api/v1/applications/"+uuid.New().String()+"/owners", "any-cookie-value", "", nil))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want 200", resp.StatusCode)
+	}
+	var out struct {
+		Owners []string `json:"owners"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(out.Owners) != 2 {
+		t.Errorf("got %d owners, want 2", len(out.Owners))
 	}
 }

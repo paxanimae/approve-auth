@@ -3,7 +3,7 @@
 export interface Me {
   subject: string;
   display_name: string;
-  role: "administrator" | "viewer";
+  role: "administrator" | "viewer" | "application_owner";
   csrf_token: string;
   default_authorization_duration_seconds: number;
   max_authorization_duration_seconds: number;

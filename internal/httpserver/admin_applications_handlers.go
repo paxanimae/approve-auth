@@ -197,3 +197,81 @@ func enableApplicationHandler(actions AdminActions) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, newApplicationDTO(app))
 	}
 }
+
+// --- GET /api/v1/applications/{id}/owners ---
+
+func listApplicationOwnersHandler(readStore AdminReadStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDPathParam(w, r)
+		if !ok {
+			return
+		}
+		owners, err := readStore.ListApplicationOwners(r.Context(), id)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to list application owners")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"owners": owners})
+	}
+}
+
+// --- POST /api/v1/applications/{id}/owners ---
+
+type grantApplicationOwnerRequest struct {
+	Subject string `json:"subject"`
+}
+
+// grantApplicationOwnerHandler is administrator-only (spec: an
+// ApplicationOwner "cannot control anything else", including granting
+// ownership to themselves or anyone else). subject's non-empty check
+// lives here rather than in internal/admin.Service, matching how this
+// API's other simple required-field checks (hostname, display_name,
+// reason) are already done at the HTTP layer.
+func grantApplicationOwnerHandler(actions AdminActions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDPathParam(w, r)
+		if !ok {
+			return
+		}
+		var body grantApplicationOwnerRequest
+		if !decodeJSONBody(w, r, &body) {
+			return
+		}
+		if body.Subject == "" {
+			writeAPIError(w, http.StatusUnprocessableEntity, "invalid_input", "subject is required")
+			return
+		}
+
+		if err := actions.GrantApplicationOwner(r.Context(), admin.GrantApplicationOwnerInput{
+			ApplicationID: id.String(), Subject: body.Subject, GrantedBy: actorSubject(r),
+		}); err != nil {
+			mapAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"granted": true})
+	}
+}
+
+// --- DELETE /api/v1/applications/{id}/owners/{subject} ---
+
+func revokeApplicationOwnerHandler(actions AdminActions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDPathParam(w, r)
+		if !ok {
+			return
+		}
+		subject := r.PathValue("subject")
+		if subject == "" {
+			writeAPIError(w, http.StatusNotFound, "not_found", "no such owner")
+			return
+		}
+
+		if err := actions.RevokeApplicationOwner(r.Context(), admin.RevokeApplicationOwnerInput{
+			ApplicationID: id.String(), Subject: subject, RevokedBy: actorSubject(r),
+		}); err != nil {
+			mapAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"revoked": true})
+	}
+}

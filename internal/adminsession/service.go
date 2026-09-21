@@ -86,7 +86,20 @@ func (s *Service) HandleCallback(ctx context.Context, state, code string) (rawSe
 
 	role := s.mapRole(identity.Groups)
 	if role == "" {
-		return "", "", ErrNoAccess
+		// Not an administrator or viewer by OIDC group -- check whether
+		// they own at least one application instead of denying outright.
+		// Only whether they qualify for this role at all is snapshotted
+		// here (matching how administrator/viewer already work); which
+		// specific application(s) they own is resolved fresh on every
+		// request that needs it (migration 000016's own comment).
+		owned, err := s.store.GetOwnedApplicationIDs(ctx, identity.Subject)
+		if err != nil {
+			return "", "", fmt.Errorf("adminsession: callback: checking application ownership: %w", err)
+		}
+		if len(owned) == 0 {
+			return "", "", ErrNoAccess
+		}
+		role = "application_owner"
 	}
 
 	rawToken, err := generateToken()

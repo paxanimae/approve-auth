@@ -23,6 +23,8 @@ type AdminActions interface {
 	EnableApplication(ctx context.Context, in admin.EnableApplicationInput) (store.Application, error)
 	AddRequestNote(ctx context.Context, in admin.AddRequestNoteInput) (store.RequestNote, error)
 	AddAuthorizationNote(ctx context.Context, in admin.AddAuthorizationNoteInput) (store.AuthorizationNote, error)
+	GrantApplicationOwner(ctx context.Context, in admin.GrantApplicationOwnerInput) error
+	RevokeApplicationOwner(ctx context.Context, in admin.RevokeApplicationOwnerInput) error
 }
 
 // AdminReadStore is the read-only listing/detail surface the admin API's
@@ -32,12 +34,17 @@ type AdminReadStore interface {
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (store.Application, bool, error)
 	ListApplications(ctx context.Context) ([]store.Application, error)
 	GetApprovalRequestByID(ctx context.Context, id uuid.UUID) (store.ApprovalRequest, bool, error)
-	ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID, status string, limit int) ([]store.ApprovalRequest, error)
+	ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID, status string, limit int, restrictToApplicationIDs []uuid.UUID) ([]store.ApprovalRequest, error)
 	GetAuthorizationByID(ctx context.Context, id uuid.UUID) (store.Authorization, bool, error)
-	ListAuthorizations(ctx context.Context, applicationID *uuid.UUID, approvedBy *string, activeOnly bool, limit int) ([]store.Authorization, error)
+	ListAuthorizations(ctx context.Context, applicationID *uuid.UUID, approvedBy *string, activeOnly bool, limit int, restrictToApplicationIDs []uuid.UUID) ([]store.Authorization, error)
 	ListAuditEvents(ctx context.Context, p store.ListAuditEventsParams) ([]store.AuditEvent, error)
 	RecordAuditEvent(ctx context.Context, actorType, actorSubject, action, reason string) error
 	GetOverviewCounts(ctx context.Context, expiringSoonWindow, recentWindow time.Duration) (store.OverviewCounts, error)
 	ListRequestNotes(ctx context.Context, requestID uuid.UUID) ([]store.RequestNote, error)
 	ListAuthorizationNotes(ctx context.Context, authorizationID uuid.UUID) ([]store.AuthorizationNote, error)
+	ListApplicationOwners(ctx context.Context, applicationID uuid.UUID) ([]string, error)
+	// GetOwnedApplicationIDs backs every ownership-scoping check in this
+	// package -- resolved fresh per request, never cached on the admin
+	// session (see migration 000016's own comment on why).
+	GetOwnedApplicationIDs(ctx context.Context, subject string) ([]uuid.UUID, error)
 }

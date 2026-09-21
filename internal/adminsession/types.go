@@ -29,6 +29,11 @@ type Store interface {
 	GetLiveAdminSessionByTokenHash(ctx context.Context, hash []byte) (store.AdminSession, bool, error)
 	TouchAdminSessionLastSeen(ctx context.Context, id uuid.UUID) error
 	RevokeAdminSession(ctx context.Context, id uuid.UUID) error
+
+	// GetOwnedApplicationIDs backs the application_owner role fallback
+	// in HandleCallback -- see its own comment for why this is checked
+	// here rather than snapshotted anywhere.
+	GetOwnedApplicationIDs(ctx context.Context, subject string) ([]uuid.UUID, error)
 }
 
 // OIDCClient is exactly internal/oidc.Client's shape (reused directly,

@@ -95,6 +95,48 @@
       busyId = null;
     }
   }
+
+  // manageOwners edits the ApplicationOwner grant set for one
+  // application as a single comma-separated list (matching this
+  // component's existing prompt()-based editing convention), diffing
+  // against the current set to grant/revoke only what actually changed
+  // rather than replacing the whole set server-side.
+  async function manageOwners(a: Application) {
+    busyId = a.id;
+    let current: string[];
+    try {
+      current = (await api.listApplicationOwners(a.id)).owners;
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+      busyId = null;
+      return;
+    }
+    busyId = null;
+
+    const next = prompt(
+      `ApplicationOwner subjects for ${a.hostname} (comma-separated OIDC subjects, e.g. email addresses).\n` +
+        `An ApplicationOwner can approve/deny requests and revoke sessions for this application only.`,
+      current.join(", "),
+    );
+    if (next === null) return;
+    const nextSet = next
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s !== "");
+    const toGrant = nextSet.filter((s) => !current.includes(s));
+    const toRevoke = current.filter((s) => !nextSet.includes(s));
+    if (toGrant.length === 0 && toRevoke.length === 0) return;
+
+    busyId = a.id;
+    try {
+      for (const subject of toGrant) await api.grantApplicationOwner(a.id, subject);
+      for (const subject of toRevoke) await api.revokeApplicationOwner(a.id, subject);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      busyId = null;
+    }
+  }
 </script>
 
 <section>
@@ -131,6 +173,7 @@
                 <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => enable(a)}>Enable</button>
               {/if}
               <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => editContactInfo(a)}>Edit contact info</button>
+              <button class="btn btn-sm" disabled={busyId === a.id} onclick={() => manageOwners(a)}>Owners</button>
             </td>
           </tr>
         {/each}

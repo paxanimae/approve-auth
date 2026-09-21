@@ -96,6 +96,11 @@ export const api = {
     request<DisableApplicationResponse>("POST", `/api/v1/applications/${id}/disable`, body),
   enableApplication: (id: string, body: { version: number }) =>
     request<Application>("POST", `/api/v1/applications/${id}/enable`, body),
+  listApplicationOwners: (id: string) => request<{ owners: string[] }>("GET", `/api/v1/applications/${id}/owners`),
+  grantApplicationOwner: (id: string, subject: string) =>
+    request<{ granted: boolean }>("POST", `/api/v1/applications/${id}/owners`, { subject }),
+  revokeApplicationOwner: (id: string, subject: string) =>
+    request<{ revoked: boolean }>("DELETE", `/api/v1/applications/${id}/owners/${encodeURIComponent(subject)}`),
 
   listRequests: (status?: string) =>
     request<{ requests: ApprovalRequest[] }>("GET", `/api/v1/requests${status ? `?status=${encodeURIComponent(status)}` : ""}`),

@@ -142,39 +142,57 @@ func NewAdminMux(sessions AdminSessions, actions AdminActions, readStore AdminRe
 	mutating := func(h http.HandlerFunc) http.HandlerFunc {
 		return withHost(requireAdminSession(sessions, requireAdministrator(requireAdminCSRF(h))))
 	}
+	// Administrator or viewer only, excluding application_owner (spec:
+	// an ApplicationOwner "cannot control anything else" -- applications
+	// management, the overview dashboard, and the audit log have no
+	// per-resource ownership check to scope by).
+	staff := func(h http.HandlerFunc) http.HandlerFunc {
+		return withHost(requireAdminSession(sessions, requireStaffRole(h)))
+	}
+	// Administrator (unconditional) or application_owner (the handler
+	// itself checks resource-level ownership via authorizeOwnedResource)
+	// plus a valid CSRF token -- approve/deny/revoke/notes, the specific
+	// mutations spec section 9's ApplicationOwner role may perform on its
+	// own application's requests and authorizations.
+	ownerMutating := func(h http.HandlerFunc) http.HandlerFunc {
+		return withHost(requireAdminSession(sessions, requireAdministratorOrOwner(requireAdminCSRF(h))))
+	}
 
 	mux.HandleFunc("GET /auth/login", withHost(adminLoginHandler(sessions, decisionTimeout)))
 	mux.HandleFunc("GET /auth/callback", withHost(adminCallbackHandler(sessions, sessionCookieMaxAge, decisionTimeout)))
 	mux.HandleFunc("POST /auth/logout", csrfProtected(adminLogoutHandler(sessions)))
 	mux.HandleFunc("GET /api/v1/me", authed(adminMeHandler(defaultAuthorizationDuration, maxAuthorizationDuration, version, instanceName)))
 
-	mux.HandleFunc("GET /api/v1/overview", authed(overviewHandler(readStore, expiringSoonWindow, recentWindow)))
+	mux.HandleFunc("GET /api/v1/overview", staff(overviewHandler(readStore, expiringSoonWindow, recentWindow)))
 
-	mux.HandleFunc("GET /api/v1/applications", authed(listApplicationsHandler(readStore)))
+	mux.HandleFunc("GET /api/v1/applications", staff(listApplicationsHandler(readStore)))
 	mux.HandleFunc("POST /api/v1/applications", mutating(createApplicationHandler(actions)))
-	mux.HandleFunc("GET /api/v1/applications/{id}", authed(getApplicationHandler(readStore)))
+	mux.HandleFunc("GET /api/v1/applications/{id}", staff(getApplicationHandler(readStore)))
 	mux.HandleFunc("PATCH /api/v1/applications/{id}", mutating(updateApplicationHandler(actions)))
 	mux.HandleFunc("POST /api/v1/applications/{id}/disable", mutating(disableApplicationHandler(actions)))
 	mux.HandleFunc("POST /api/v1/applications/{id}/enable", mutating(enableApplicationHandler(actions)))
+	mux.HandleFunc("GET /api/v1/applications/{id}/owners", staff(listApplicationOwnersHandler(readStore)))
+	mux.HandleFunc("POST /api/v1/applications/{id}/owners", mutating(grantApplicationOwnerHandler(actions)))
+	mux.HandleFunc("DELETE /api/v1/applications/{id}/owners/{subject}", mutating(revokeApplicationOwnerHandler(actions)))
 
 	mux.HandleFunc("GET /api/v1/requests", authed(listRequestsHandler(readStore)))
 	mux.HandleFunc("GET /api/v1/requests/{id}", authed(getRequestHandler(readStore)))
-	mux.HandleFunc("POST /api/v1/requests/{id}/approve", mutating(approveRequestHandler(actions)))
-	mux.HandleFunc("POST /api/v1/requests/{id}/deny", mutating(denyRequestHandler(actions)))
+	mux.HandleFunc("POST /api/v1/requests/{id}/approve", ownerMutating(approveRequestHandler(actions, readStore)))
+	mux.HandleFunc("POST /api/v1/requests/{id}/deny", ownerMutating(denyRequestHandler(actions, readStore)))
 	mux.HandleFunc("GET /api/v1/requests/{id}/notes", authed(listRequestNotesHandler(readStore)))
-	mux.HandleFunc("POST /api/v1/requests/{id}/notes", mutating(addRequestNoteHandler(actions)))
+	mux.HandleFunc("POST /api/v1/requests/{id}/notes", ownerMutating(addRequestNoteHandler(actions, readStore)))
 
 	mux.HandleFunc("GET /api/v1/authorizations", authed(listAuthorizationsHandler(readStore)))
 	mux.HandleFunc("GET /api/v1/authorizations/{id}", authed(getAuthorizationHandler(readStore)))
 	mux.HandleFunc("POST /api/v1/authorizations/{id}/renew", mutating(renewAuthorizationHandler(actions)))
-	mux.HandleFunc("POST /api/v1/authorizations/{id}/revoke", mutating(revokeAuthorizationHandler(actions)))
+	mux.HandleFunc("POST /api/v1/authorizations/{id}/revoke", ownerMutating(revokeAuthorizationHandler(actions, readStore)))
 	mux.HandleFunc("GET /api/v1/authorizations/{id}/notes", authed(listAuthorizationNotesHandler(readStore)))
-	mux.HandleFunc("POST /api/v1/authorizations/{id}/notes", mutating(addAuthorizationNoteHandler(actions)))
+	mux.HandleFunc("POST /api/v1/authorizations/{id}/notes", ownerMutating(addAuthorizationNoteHandler(actions, readStore)))
 	mux.HandleFunc("POST /api/v1/authorizations/bulk-renew", mutating(bulkRenewHandler(actions, readStore)))
 	mux.HandleFunc("POST /api/v1/authorizations/bulk-revoke", mutating(bulkRevokeHandler(actions)))
 
-	mux.HandleFunc("GET /api/v1/audit-events", authed(listAuditEventsHandler(readStore)))
-	mux.HandleFunc("GET /api/v1/audit-events/export", authed(exportAuditEventsHandler(readStore)))
+	mux.HandleFunc("GET /api/v1/audit-events", staff(listAuditEventsHandler(readStore)))
+	mux.HandleFunc("GET /api/v1/audit-events/export", staff(exportAuditEventsHandler(readStore)))
 
 	// The console itself: everything not matched above (spec section 2:
 	// "Serve compiled admin assets from the Go binary"). Deliberately not

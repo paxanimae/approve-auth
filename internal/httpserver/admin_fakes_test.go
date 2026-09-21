@@ -73,6 +73,9 @@ type fakeAdminActions struct {
 	addRequestNoteErr          error
 	addAuthorizationNoteResult store.AuthorizationNote
 	addAuthorizationNoteErr    error
+
+	grantApplicationOwnerErr  error
+	revokeApplicationOwnerErr error
 }
 
 func (f fakeAdminActions) Approve(context.Context, admin.ApproveInput) (admin.ApproveResult, error) {
@@ -102,6 +105,12 @@ func (f fakeAdminActions) AddRequestNote(context.Context, admin.AddRequestNoteIn
 }
 func (f fakeAdminActions) AddAuthorizationNote(context.Context, admin.AddAuthorizationNoteInput) (store.AuthorizationNote, error) {
 	return f.addAuthorizationNoteResult, f.addAuthorizationNoteErr
+}
+func (f fakeAdminActions) GrantApplicationOwner(context.Context, admin.GrantApplicationOwnerInput) error {
+	return f.grantApplicationOwnerErr
+}
+func (f fakeAdminActions) RevokeApplicationOwner(context.Context, admin.RevokeApplicationOwnerInput) error {
+	return f.revokeApplicationOwnerErr
 }
 
 // fakeAdminReadStore is a minimal, configurable stand-in for
@@ -135,6 +144,11 @@ type fakeAdminReadStore struct {
 	requestNotesErr       error
 	authorizationNotes    []store.AuthorizationNote
 	authorizationNotesErr error
+
+	applicationOwners    []string
+	applicationOwnersErr error
+	ownedApplicationIDs  []uuid.UUID
+	ownedApplicationsErr error
 }
 
 func (f fakeAdminReadStore) GetApplicationByID(context.Context, uuid.UUID) (store.Application, bool, error) {
@@ -146,13 +160,13 @@ func (f fakeAdminReadStore) ListApplications(context.Context) ([]store.Applicati
 func (f fakeAdminReadStore) GetApprovalRequestByID(context.Context, uuid.UUID) (store.ApprovalRequest, bool, error) {
 	return f.request, f.requestFound, f.requestErr
 }
-func (f fakeAdminReadStore) ListApprovalRequests(context.Context, *uuid.UUID, string, int) ([]store.ApprovalRequest, error) {
+func (f fakeAdminReadStore) ListApprovalRequests(context.Context, *uuid.UUID, string, int, []uuid.UUID) ([]store.ApprovalRequest, error) {
 	return f.requests, f.requestErr
 }
 func (f fakeAdminReadStore) GetAuthorizationByID(context.Context, uuid.UUID) (store.Authorization, bool, error) {
 	return f.authorization, f.authorizationFound, f.authorizationErr
 }
-func (f fakeAdminReadStore) ListAuthorizations(_ context.Context, _ *uuid.UUID, approvedBy *string, _ bool, _ int) ([]store.Authorization, error) {
+func (f fakeAdminReadStore) ListAuthorizations(_ context.Context, _ *uuid.UUID, approvedBy *string, _ bool, _ int, _ []uuid.UUID) ([]store.Authorization, error) {
 	if approvedBy != nil {
 		return f.authorizationsMine, f.authorizationErr
 	}
@@ -172,4 +186,10 @@ func (f fakeAdminReadStore) ListRequestNotes(context.Context, uuid.UUID) ([]stor
 }
 func (f fakeAdminReadStore) ListAuthorizationNotes(context.Context, uuid.UUID) ([]store.AuthorizationNote, error) {
 	return f.authorizationNotes, f.authorizationNotesErr
+}
+func (f fakeAdminReadStore) ListApplicationOwners(context.Context, uuid.UUID) ([]string, error) {
+	return f.applicationOwners, f.applicationOwnersErr
+}
+func (f fakeAdminReadStore) GetOwnedApplicationIDs(context.Context, string) ([]uuid.UUID, error) {
+	return f.ownedApplicationIDs, f.ownedApplicationsErr
 }

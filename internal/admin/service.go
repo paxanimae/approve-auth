@@ -295,6 +295,37 @@ func (s *Service) AddAuthorizationNote(ctx context.Context, in AddAuthorizationN
 	return note, nil
 }
 
+// GrantApplicationOwner implements POST /api/v1/applications/{id}/owners.
+// in.Subject non-empty is validated by the caller (httpserver), matching
+// how other simple required-field checks in this API are handled at the
+// HTTP layer rather than as a Service-level error.
+func (s *Service) GrantApplicationOwner(ctx context.Context, in GrantApplicationOwnerInput) error {
+	applicationID, err := uuid.Parse(in.ApplicationID)
+	if err != nil {
+		return fmt.Errorf("admin: grant application owner: invalid application id: %w", err)
+	}
+	if err := s.store.GrantApplicationOwner(ctx, applicationID, in.Subject, in.GrantedBy); err != nil {
+		if pgConstraintName(err) == "application_owners_application_id_fkey" {
+			return ErrNotFound
+		}
+		return fmt.Errorf("admin: grant application owner: %w", err)
+	}
+	return nil
+}
+
+// RevokeApplicationOwner implements DELETE
+// /api/v1/applications/{id}/owners/{subject}.
+func (s *Service) RevokeApplicationOwner(ctx context.Context, in RevokeApplicationOwnerInput) error {
+	applicationID, err := uuid.Parse(in.ApplicationID)
+	if err != nil {
+		return fmt.Errorf("admin: revoke application owner: invalid application id: %w", err)
+	}
+	if err := s.store.RevokeApplicationOwner(ctx, applicationID, in.Subject, in.RevokedBy); err != nil {
+		return fmt.Errorf("admin: revoke application owner: %w", err)
+	}
+	return nil
+}
+
 // pgConstraintName mirrors internal/enrollment's own helper of the same
 // name -- small enough, and this package has no other reason to depend
 // on internal/enrollment, that duplicating it beats sharing it.

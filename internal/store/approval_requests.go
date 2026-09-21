@@ -152,18 +152,24 @@ func (db *DB) GetApprovalRequestByID(ctx context.Context, id uuid.UUID) (Approva
 
 // ListApprovalRequests is a first-pass listing for the admin API (spec
 // section 9's GET /requests): newest first, optionally filtered by
-// application and/or status. Simple limit-bounded, not yet the full
-// cursor-paginated/sortable/searchable listing spec section 10
-// describes for the console -- that's follow-on work tracked in
-// docs/milestone-4-remaining.md.
-func (db *DB) ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID, status string, limit int) ([]ApprovalRequest, error) {
+// application and/or status. restrictToApplicationIDs is nil for an
+// administrator/viewer (unrestricted); an ApplicationOwner's caller
+// passes their own owned set, so this AND's together with
+// applicationID rather than needing its own separate validation --
+// requesting an application outside the restriction just yields zero
+// rows, same as requesting one that doesn't exist. Simple limit-bounded,
+// not yet the full cursor-paginated/sortable/searchable listing spec
+// section 10 describes for the console -- that's follow-on work tracked
+// in docs/milestone-4-remaining.md.
+func (db *DB) ListApprovalRequests(ctx context.Context, applicationID *uuid.UUID, status string, limit int, restrictToApplicationIDs []uuid.UUID) ([]ApprovalRequest, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT `+approvalRequestColumnsWithApplication+`
 		FROM approval_requests r JOIN applications a ON a.id = r.application_id
 		WHERE ($1::uuid IS NULL OR r.application_id = $1)
 		  AND ($2::text = '' OR r.status = $2)
+		  AND ($4::uuid[] IS NULL OR r.application_id = ANY($4))
 		ORDER BY r.requested_at DESC, r.id DESC
-		LIMIT $3`, applicationID, status, limit)
+		LIMIT $3`, applicationID, status, limit, restrictToApplicationIDs)
 	if err != nil {
 		return nil, fmt.Errorf("store: listing approval requests: %w", err)
 	}
