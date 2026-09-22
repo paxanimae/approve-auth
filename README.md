@@ -20,6 +20,31 @@
 
 ---
 
+## Try the demo
+
+The fastest way to see what this actually does: a one-command demo stack
+with its own Traefik, Postgres, and a real Keycloak (pre-configured with
+a realm, users, and groups) -- no cloning, no build, no setup beyond
+Docker.
+
+```bash
+curl -O https://raw.githubusercontent.com/paxanimae/approve-auth/master/deploy/demo/docker-compose.yml
+docker compose up -d
+```
+
+Then open **http://localhost:8080/** -- a DEMO-labeled landing page links
+to the admin console (pre-seeded `demo-admin`/`demo-viewer` logins) and
+four sample protected applications, each configured to demonstrate a
+different feature (anonymous request messages, revoke-on-IP-change,
+flag-for-review, short-lived access). See `deploy/demo/docker-compose.yml`
+for exactly what it brings up -- it's a demo, not a production
+configuration (fixed secrets, self-signed certs, plain-HTTP Keycloak).
+
+Ready to deploy for real instead? See **Start here** below for the actual
+Docker Swarm stack and Kubernetes Helm chart.
+
+---
+
 **Approve** (repo/service name: `approve-auth`) sits in front of an internal
 web application via your reverse proxy's ForwardAuth (or equivalent) hook.
 When an unrecognized browser shows up — a reception TV, a warehouse

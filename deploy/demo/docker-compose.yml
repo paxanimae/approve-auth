@@ -1,0 +1,638 @@
+# Approve -- one-command demo stack. NOT a production deployment
+# artifact: every secret below is a fixed, publicly-known demo value,
+# TLS is self-signed and freshly generated on every fresh start, and
+# Keycloak is reached over plain HTTP for simplicity. See
+# https://github.com/paxanimae/approve-auth for the real thing --
+# deploy/stack.yml (Docker Swarm) or deploy/helm/approve-auth
+# (Kubernetes), both of which expect you to bring your own Postgres,
+# Traefik, OIDC provider, and TLS material.
+#
+# Usage:
+#   curl -O https://raw.githubusercontent.com/paxanimae/approve-auth/master/deploy/demo/docker-compose.yml
+#   docker compose up -d
+#   open http://localhost:8080/
+#
+# Requires Docker Compose v2.24+ (inline `configs.content` is what lets
+# this whole demo live in one downloadable file).
+name: approve-auth-demo
+
+x-runtime-image: &runtime-image dividedbyzeroexception/approve-auth:0.4.0
+
+configs:
+  traefik-dynamic:
+    content: |
+      http:
+        middlewares:
+          approve-auth:
+            forwardAuth:
+              address: https://approve-auth:8443/auth
+              trustForwardHeader: true
+              preserveLocationHeader: true
+              forwardBody: false
+              authRequestHeaders:
+                - Cookie
+                - Accept
+                - User-Agent
+                - Sec-Fetch-Mode
+                - Sec-Fetch-Dest
+              addAuthCookiesToResponse:
+                - __Host-approve-auth
+              tls:
+                ca: /mtls/ca-cert.pem
+                cert: /mtls/traefik-client-cert.pem
+                key: /mtls/traefik-client-key.pem
+
+        routers:
+          landing:
+            rule: "PathPrefix(`/`)"
+            entryPoints: [web]
+            service: landing
+
+          approve-auth-admin:
+            rule: "Host(`demo-admin.localtest.me`)"
+            entryPoints: [websecure]
+            tls: {}
+            service: approve-auth-admin
+
+          demo-kiosk:
+            rule: "Host(`demo-kiosk.localtest.me`)"
+            entryPoints: [websecure]
+            tls: {}
+            priority: 100
+            middlewares: [approve-auth]
+            service: demo-kiosk
+          demo-kiosk-approval:
+            rule: "Host(`demo-kiosk.localtest.me`) && (Path(`/__approve-auth`) || PathPrefix(`/__approve-auth/`))"
+            entryPoints: [websecure]
+            tls: {}
+            priority: 1000
+            service: approve-auth-public
+
+          demo-strict:
+            rule: "Host(`demo-strict.localtest.me`)"
+            entryPoints: [websecure]
+            tls: {}
+            priority: 100
+            middlewares: [approve-auth]
+            service: demo-strict
+          demo-strict-approval:
+            rule: "Host(`demo-strict.localtest.me`) && (Path(`/__approve-auth`) || PathPrefix(`/__approve-auth/`))"
+            entryPoints: [websecure]
+            tls: {}
+            priority: 1000
+            service: approve-auth-public
+
+          demo-monitored:
+            rule: "Host(`demo-monitored.localtest.me`)"
+            entryPoints: [websecure]
+            tls: {}
+            priority: 100
+            middlewares: [approve-auth]
+            service: demo-monitored
+          demo-monitored-approval:
+            rule: "Host(`demo-monitored.localtest.me`) && (Path(`/__approve-auth`) || PathPrefix(`/__approve-auth/`))"
+            entryPoints: [websecure]
+            tls: {}
+            priority: 1000
+            service: approve-auth-public
+
+          demo-contractor:
+            rule: "Host(`demo-contractor.localtest.me`)"
+            entryPoints: [websecure]
+            tls: {}
+            priority: 100
+            middlewares: [approve-auth]
+            service: demo-contractor
+          demo-contractor-approval:
+            rule: "Host(`demo-contractor.localtest.me`) && (Path(`/__approve-auth`) || PathPrefix(`/__approve-auth/`))"
+            entryPoints: [websecure]
+            tls: {}
+            priority: 1000
+            service: approve-auth-public
+
+        services:
+          landing:
+            loadBalancer:
+              servers: [{url: "http://landing:80"}]
+          approve-auth-admin:
+            loadBalancer:
+              servers: [{url: "http://approve-auth:8081"}]
+          approve-auth-public:
+            loadBalancer:
+              servers: [{url: "http://approve-auth:8080"}]
+          demo-kiosk:
+            loadBalancer:
+              servers: [{url: "http://demo-kiosk:80"}]
+          demo-strict:
+            loadBalancer:
+              servers: [{url: "http://demo-strict:80"}]
+          demo-monitored:
+            loadBalancer:
+              servers: [{url: "http://demo-monitored:80"}]
+          demo-contractor:
+            loadBalancer:
+              servers: [{url: "http://demo-contractor:80"}]
+
+      tls:
+        certificates:
+          - certFile: /certs/server-cert.pem
+            keyFile: /certs/server-key.pem
+
+  approve-auth-config:
+    content: |
+      admin_origin: https://demo-admin.localtest.me:8443
+      oidc_issuer: http://demo-keycloak.localtest.me:8090/realms/approve-demo
+      oidc_client_id: approve-auth
+      oidc_admin_groups: ["grp-admins"]
+      oidc_viewer_groups: ["grp-viewers"]
+
+      claim_encryption_key_id: demo
+
+      auth_tls_cert_file: /mtls/server-cert.pem
+      auth_tls_key_file: /mtls/server-key.pem
+      auth_client_ca_file: /mtls/ca-cert.pem
+      auth_allowed_client_identities: ["traefik-client"]
+
+      trusted_traefik_cidrs: ["0.0.0.0/0"]
+
+  keycloak-realm:
+    content: |
+      {
+        "realm": "approve-demo",
+        "enabled": true,
+        "sslRequired": "none",
+        "registrationAllowed": false,
+        "groups": [
+          {"name": "grp-admins"},
+          {"name": "grp-viewers"}
+        ],
+        "clientScopes": [
+          {
+            "name": "groups",
+            "protocol": "openid-connect",
+            "protocolMappers": [
+              {
+                "name": "groups",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-group-membership-mapper",
+                "consentRequired": false,
+                "config": {
+                  "full.path": "false",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "groups",
+                  "userinfo.token.claim": "true"
+                }
+              }
+            ]
+          },
+          {
+            "name": "profile",
+            "protocol": "openid-connect",
+            "protocolMappers": [
+              {
+                "name": "username",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-property-mapper",
+                "consentRequired": false,
+                "config": {
+                  "user.attribute": "username",
+                  "claim.name": "preferred_username",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "userinfo.token.claim": "true",
+                  "jsonType.label": "String"
+                }
+              }
+            ]
+          },
+          {
+            "name": "email",
+            "protocol": "openid-connect",
+            "protocolMappers": [
+              {
+                "name": "email",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-property-mapper",
+                "consentRequired": false,
+                "config": {
+                  "user.attribute": "email",
+                  "claim.name": "email",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "userinfo.token.claim": "true",
+                  "jsonType.label": "String"
+                }
+              }
+            ]
+          }
+        ],
+        "clients": [
+          {
+            "clientId": "approve-auth",
+            "enabled": true,
+            "protocol": "openid-connect",
+            "publicClient": false,
+            "clientAuthenticatorType": "client-secret",
+            "secret": "demo-client-secret",
+            "redirectUris": ["https://demo-admin.localtest.me:8443/auth/callback"],
+            "webOrigins": ["https://demo-admin.localtest.me:8443"],
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": false,
+            "serviceAccountsEnabled": false,
+            "defaultClientScopes": ["openid", "profile", "email", "groups"],
+            "attributes": {
+              "pkce.code.challenge.method": "S256"
+            }
+          }
+        ],
+        "users": [
+          {
+            "username": "demo-admin",
+            "enabled": true,
+            "firstName": "Demo",
+            "lastName": "Admin",
+            "email": "demo-admin@example.test",
+            "emailVerified": true,
+            "requiredActions": [],
+            "credentials": [{"type": "password", "value": "demo-admin", "temporary": false}],
+            "groups": ["/grp-admins"]
+          },
+          {
+            "username": "demo-viewer",
+            "enabled": true,
+            "firstName": "Demo",
+            "lastName": "Viewer",
+            "email": "demo-viewer@example.test",
+            "emailVerified": true,
+            "requiredActions": [],
+            "credentials": [{"type": "password", "value": "demo-viewer", "temporary": false}],
+            "groups": ["/grp-viewers"]
+          }
+        ]
+      }
+
+  landing-caddyfile:
+    content: |
+      :80 {
+        root * /srv
+        file_server
+      }
+
+  landing-html:
+    content: |
+      <!doctype html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <title>Approve -- live demo</title>
+        <style>
+          body { font: 16px/1.5 -apple-system, system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+          .banner { background: #fff3cd; border: 1px solid #ffe69c; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+          h1 { margin-bottom: 4px; }
+          .creds { background: #f4f4f4; border-radius: 8px; padding: 12px 16px; font-family: monospace; }
+          ul { padding-left: 20px; }
+          li { margin-bottom: 14px; }
+          code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; }
+          a { color: #0a5cff; }
+        </style>
+      </head>
+      <body>
+        <div class="banner">
+          <strong>&#9888; This is a demo.</strong> Every secret here is fixed and
+          public, TLS certificates are self-signed, and Keycloak runs over plain
+          HTTP for simplicity. None of this is a production configuration -- see
+          the <a href="https://github.com/paxanimae/approve-auth#what-this-does-and-doesnt-protect">project README</a>
+          for real deployment options (Docker Swarm or Kubernetes).
+        </div>
+        <h1>Approve</h1>
+        <p>A human approves an unattended browser once; it just works after that.
+        This demo runs a real Traefik, a real Postgres, a real Keycloak (OIDC),
+        and four sample protected applications, each configured differently.</p>
+
+        <h2>Admin console</h2>
+        <p><a href="https://demo-admin.localtest.me:8443/">https://demo-admin.localtest.me:8443/</a>
+        (your browser will warn about the self-signed certificate -- that's expected, click through)</p>
+        <div class="creds">
+          administrator: <code>demo-admin</code> / <code>demo-admin</code><br />
+          viewer: <code>demo-viewer</code> / <code>demo-viewer</code>
+        </div>
+
+        <h2>Sample protected applications</h2>
+        <ul>
+          <li><a href="https://demo-kiosk.localtest.me:8443/">demo-kiosk.localtest.me</a> --
+          allows an anonymous label/message on the request page (try setting a
+          notification webhook for it in the admin console's Applications view).</li>
+          <li><a href="https://demo-strict.localtest.me:8443/">demo-strict.localtest.me</a> --
+          revokes access immediately if the approved browser's IP address ever changes.</li>
+          <li><a href="https://demo-monitored.localtest.me:8443/">demo-monitored.localtest.me</a> --
+          an IP change only flags the session for review (access stays allowed); a
+          User-Agent change is logged only.</li>
+          <li><a href="https://demo-contractor.localtest.me:8443/">demo-contractor.localtest.me</a> --
+          short-lived access (1 hour default, 8 hour maximum) with a custom contact line.</li>
+        </ul>
+
+        <h2>Keycloak</h2>
+        <p>The demo's own OIDC provider, if you want to look at the realm/users/groups
+        directly: <a href="http://demo-keycloak.localtest.me:8090/">http://demo-keycloak.localtest.me:8090/</a>
+        (admin console login: <code>admin</code> / <code>admin</code>)</p>
+
+        <p><a href="https://github.com/paxanimae/approve-auth">&larr; Back to the project</a></p>
+      </body>
+      </html>
+
+  # Fixed, publicly-known demo values -- delivered as `configs` rather
+  # than `secrets` purely because this Compose version's inline
+  # `secrets.content` isn't supported (only `configs.content` is);
+  # internal/config's *_FILE loading only cares that the path resolves
+  # to a readable file, not which Compose primitive put it there.
+  db-superuser-url:
+    content: postgres://postgres:demo-postgres-password@db:5432/approve_auth?sslmode=disable
+  db-app-url:
+    content: postgres://approve_auth_app:devpassword@db:5432/approve_auth?sslmode=disable
+  oidc-client-secret:
+    content: demo-client-secret
+  claim-encryption-key:
+    content: s9BtMLlcCrE3HhGgk8mvEl+tNR/QRl8faZs/RXb14Ls=
+  oidc-state-key:
+    content: mi5aWKpBNmWPyxnhU1MsXeEm4yBaLzn35uG/B98V+S0=
+
+services:
+  certgen:
+    image: alpine/openssl@sha256:f6def4887e8413b228b66f314d0bcf5c25b128d918a258f3b0b9d66a0327edcb
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mkdir -p /certs /mtls
+        if [ -f /certs/server-cert.pem ] && [ -f /mtls/ca-cert.pem ]; then
+          echo "demo TLS/mTLS material already present, skipping"
+          exit 0
+        fi
+        SAN="DNS:demo-admin.localtest.me,DNS:demo-kiosk.localtest.me,DNS:demo-strict.localtest.me,DNS:demo-monitored.localtest.me,DNS:demo-contractor.localtest.me"
+        openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 -days 365 \
+          -keyout /certs/server-key.pem -out /certs/server-cert.pem \
+          -subj "/CN=approve-demo" -addext "subjectAltName=$$SAN"
+        openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 -days 3650 \
+          -keyout /mtls/ca-key.pem -out /mtls/ca-cert.pem -subj "/CN=approve-auth-demo-ca"
+        openssl req -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+          -keyout /mtls/server-key.pem -out /mtls/server.csr -subj "/CN=approve-auth" \
+          -addext "subjectAltName=DNS:approve-auth"
+        openssl x509 -req -in /mtls/server.csr -CA /mtls/ca-cert.pem -CAkey /mtls/ca-key.pem -CAcreateserial \
+          -out /mtls/server-cert.pem -days 365 -copy_extensions copyall
+        openssl req -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+          -keyout /mtls/traefik-client-key.pem -out /mtls/traefik-client.csr -subj "/CN=traefik-client"
+        openssl x509 -req -in /mtls/traefik-client.csr -CA /mtls/ca-cert.pem -CAkey /mtls/ca-key.pem -CAcreateserial \
+          -out /mtls/traefik-client-cert.pem -days 365
+        rm -f /mtls/*.csr /mtls/*.srl
+        chmod -R a+r /certs /mtls
+        echo "generated demo TLS/mTLS material"
+    volumes:
+      - certs:/certs
+      - mtls:/mtls
+
+  db:
+    image: postgres:17.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: demo-postgres-password
+      POSTGRES_DB: approve_auth
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d approve_auth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  migrate:
+    image: *runtime-image
+    entrypoint: ["/usr/local/bin/admin", "migrate-up"]
+    environment:
+      DATABASE_URL_FILE: /run/secrets/db-superuser-url
+    configs:
+      - source: db-superuser-url
+        target: /run/secrets/db-superuser-url
+    depends_on:
+      db:
+        condition: service_healthy
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8090"
+      KC_HEALTH_ENABLED: "true"
+      # Keycloak's discovery document must report a hostname reachable
+      # from BOTH the browser and approve-auth's own backend (the token
+      # exchange call also goes through the issuer's discovered
+      # endpoints) -- demo-keycloak.localtest.me resolves to 127.0.0.1
+      # for the browser (public wildcard DNS -> this container's
+      # published port) and, via the network alias below, straight to
+      # this container for approve-auth. Without this, dev-mode
+      # Keycloak echoes back whatever Host header the discovery
+      # request arrived on (here, the internal "keycloak" hostname),
+      # which the browser can never resolve.
+      KC_HOSTNAME: demo-keycloak.localtest.me
+      KC_HOSTNAME_PORT: "8090"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+    ports:
+      - "8090:8090"
+    networks:
+      default:
+        aliases:
+          - demo-keycloak.localtest.me
+    configs:
+      - source: keycloak-realm
+        target: /opt/keycloak/data/import/approve-demo-realm.json
+    # The Keycloak image has no curl/wget, so this uses bash's /dev/tcp
+    # to hit the management health endpoint (port 9000, separate from
+    # the main HTTP port) directly. Realm import happens before this
+    # ever reports healthy, so approve-auth (which depends on this being
+    # healthy, not just started) never races Keycloak's own startup.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'exec 3<>/dev/tcp/localhost/9000 && echo -e "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && cat <&3 | grep -q "\"status\": \"UP\""'
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # Four one-shot registration calls, one per sample app -- separate
+  # services (not one shell script) because the distroless runtime image
+  # has no shell to chain multiple `admin` invocations with `&&`. Each
+  # is safe to re-run (`-if-not-exists`), so a second `docker compose up
+  # -d` doesn't fail on the second run's duplicate-hostname error.
+  seed-kiosk:
+    image: *runtime-image
+    entrypoint:
+      - /usr/local/bin/admin
+      - register-application
+      - -if-not-exists
+      - -hostname=demo-kiosk.localtest.me
+      - -display-name=Kiosk (anonymous messages allowed)
+      - -allow-anonymous-message
+    environment:
+      DATABASE_URL_FILE: /run/secrets/db-app-url
+    configs:
+      - source: db-app-url
+        target: /run/secrets/db-app-url
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  seed-strict:
+    image: *runtime-image
+    entrypoint:
+      - /usr/local/bin/admin
+      - register-application
+      - -if-not-exists
+      - -hostname=demo-strict.localtest.me
+      - -display-name=Strict (revoke on IP change)
+      - -revoke-policy-ip-changed=revoke
+    environment:
+      DATABASE_URL_FILE: /run/secrets/db-app-url
+    configs:
+      - source: db-app-url
+        target: /run/secrets/db-app-url
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  seed-monitored:
+    image: *runtime-image
+    entrypoint:
+      - /usr/local/bin/admin
+      - register-application
+      - -if-not-exists
+      - -hostname=demo-monitored.localtest.me
+      - -display-name=Monitored (flag for review on IP change)
+      - -revoke-policy-ip-changed=flag_for_review
+      - -revoke-policy-user-agent-changed=warn
+    environment:
+      DATABASE_URL_FILE: /run/secrets/db-app-url
+    configs:
+      - source: db-app-url
+        target: /run/secrets/db-app-url
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  seed-contractor:
+    image: *runtime-image
+    entrypoint:
+      - /usr/local/bin/admin
+      - register-application
+      - -if-not-exists
+      - -hostname=demo-contractor.localtest.me
+      - -display-name=Contractor (short-lived access)
+      - -default-duration=1h
+      - -max-duration=8h
+      - -contact-info=Ask #it-helpdesk on Slack for access issues
+    environment:
+      DATABASE_URL_FILE: /run/secrets/db-app-url
+    configs:
+      - source: db-app-url
+        target: /run/secrets/db-app-url
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  approve-auth:
+    image: *runtime-image
+    restart: unless-stopped
+    # Demo-only: certs live in a named volume this container's nonroot
+    # user can't always read depending on the certgen container's default
+    # umask. deploy/stack.yml and the Helm chart use the real distroless
+    # nonroot posture -- this is a demo simplification, not a production
+    # pattern (deploy/dev/docker-compose.yml makes the same tradeoff for
+    # the same reason).
+    user: "0:0"
+    environment:
+      CONFIG_FILE: /config/approve-auth.yaml
+      DATABASE_URL_FILE: /run/secrets/db-app-url
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc-client-secret
+      CLAIM_ENCRYPTION_KEY_FILE: /run/secrets/claim-encryption-key
+      OIDC_STATE_ENCRYPTION_KEY_FILE: /run/secrets/oidc-state-key
+    configs:
+      - source: approve-auth-config
+        target: /config/approve-auth.yaml
+      - source: db-app-url
+        target: /run/secrets/db-app-url
+      - source: oidc-client-secret
+        target: /run/secrets/oidc-client-secret
+      - source: claim-encryption-key
+        target: /run/secrets/claim-encryption-key
+      - source: oidc-state-key
+        target: /run/secrets/oidc-state-key
+    volumes:
+      - mtls:/mtls:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+
+  traefik:
+    image: traefik:v3.6.25
+    restart: unless-stopped
+    command:
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --log.level=INFO
+    ports:
+      - "8080:80"
+      - "8443:443"
+    configs:
+      - source: traefik-dynamic
+        target: /etc/traefik/dynamic.yml
+    volumes:
+      - certs:/certs:ro
+      - mtls:/mtls:ro
+    depends_on:
+      - approve-auth
+      - landing
+      - demo-kiosk
+      - demo-strict
+      - demo-monitored
+      - demo-contractor
+
+  landing:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    configs:
+      - source: landing-caddyfile
+        target: /etc/caddy/Caddyfile
+      - source: landing-html
+        target: /srv/index.html
+
+  demo-kiosk:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    command: ["caddy", "respond", "You've reached demo-kiosk.localtest.me. This app allows an anonymous label/message on the request page.", "--listen", ":80"]
+
+  demo-strict:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    command: ["caddy", "respond", "You've reached demo-strict.localtest.me. This app revokes access immediately if your IP address changes.", "--listen", ":80"]
+
+  demo-monitored:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    command: ["caddy", "respond", "You've reached demo-monitored.localtest.me. An IP change here only flags the session for review.", "--listen", ":80"]
+
+  demo-contractor:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    command: ["caddy", "respond", "You've reached demo-contractor.localtest.me. Access here is short-lived (1h default, 8h max).", "--listen", ":80"]
+
+volumes:
+  certs:
+  mtls:
+  db-data:
