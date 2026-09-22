@@ -134,7 +134,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("opening GeoIP database at %s: %w", cfg.GeoIPDatabasePath, err)
 		}
-		defer mm.Close()
+		defer func() { _ = mm.Close() }()
 		geoipLookup = mm
 	}
 

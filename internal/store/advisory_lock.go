@@ -35,7 +35,7 @@ func (db *DB) WithAdvisoryLock(ctx context.Context, key string, fn func(ctx cont
 	if err != nil {
 		return false, fmt.Errorf("store: opening dedicated connection for advisory lock %q: %w", key, err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	lockKey := advisoryLockKey(key)
 	var locked bool
