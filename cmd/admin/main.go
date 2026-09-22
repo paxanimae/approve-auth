@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/paxanimae/approve-auth/internal/config"
+	"github.com/paxanimae/approve-auth/internal/revokepolicy"
 	"github.com/paxanimae/approve-auth/internal/store"
 )
 
@@ -98,6 +99,11 @@ func runRegisterApplication(args []string) error {
 	contactInfo := fs.String("contact-info", "", "optional contact info shown on this application's request page, overriding the global default")
 	notifyEmail := fs.String("notify-email", "", "optional notification email address for this application, overriding the global default")
 	notifyWebhookURL := fs.String("notify-webhook-url", "", "optional outbound webhook URL for this application, overriding the global default")
+	allowAnonymousMessage := fs.Bool("allow-anonymous-message", false, "allow an unverified label/message on this application's request page")
+	revokePolicyIPChanged := fs.String("revoke-policy-ip-changed", "", "override the deployment-wide ip_changed revocation action (off|warn|flag_for_review|revoke), empty leaves it inherited")
+	revokePolicyUserAgentChanged := fs.String("revoke-policy-user-agent-changed", "", "override the deployment-wide user_agent_changed revocation action, empty leaves it inherited")
+	revokePolicyInactivityExceeded := fs.String("revoke-policy-inactivity-exceeded", "", "override the deployment-wide inactivity_exceeded revocation action, empty leaves it inherited")
+	ifNotExists := fs.Bool("if-not-exists", false, "exit successfully without changes if hostname is already registered, instead of erroring")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -107,6 +113,15 @@ func runRegisterApplication(args []string) error {
 	}
 	if *displayName == "" {
 		return fmt.Errorf("register-application: -display-name is required")
+	}
+	for flagName, v := range map[string]string{
+		"-revoke-policy-ip-changed":          *revokePolicyIPChanged,
+		"-revoke-policy-user-agent-changed":  *revokePolicyUserAgentChanged,
+		"-revoke-policy-inactivity-exceeded": *revokePolicyInactivityExceeded,
+	} {
+		if v != "" && !revokepolicy.Action(v).Valid() {
+			return fmt.Errorf("register-application: %s: invalid revocation action %q", flagName, v)
+		}
 	}
 
 	cfg, err := config.Load(*configFile)
@@ -126,9 +141,41 @@ func runRegisterApplication(args []string) error {
 	}
 	defer db.Close()
 
+	if *ifNotExists {
+		if existing, found, err := db.GetApplicationByHostname(ctx, *hostname); err != nil {
+			return fmt.Errorf("checking for existing application: %w", err)
+		} else if found {
+			fmt.Printf("application already registered, skipping (id=%s, hostname=%s)\n", existing.ID, existing.Hostname)
+			return nil
+		}
+	}
+
 	app, err := db.CreateApplication(ctx, *hostname, *displayName, *description, *defaultDuration, *maxDuration, *contactInfo, *notifyEmail, *notifyWebhookURL)
 	if err != nil {
 		return fmt.Errorf("registering application: %w", err)
+	}
+
+	// CreateApplication has no params for these -- they're applied as a
+	// follow-up update, the same way an admin would set them after
+	// creation via the admin console's Applications view.
+	if *allowAnonymousMessage || *revokePolicyIPChanged != "" || *revokePolicyUserAgentChanged != "" || *revokePolicyInactivityExceeded != "" {
+		updateParams := store.UpdateApplicationParams{}
+		if *allowAnonymousMessage {
+			updateParams.AllowAnonymousMessage = allowAnonymousMessage
+		}
+		if *revokePolicyIPChanged != "" {
+			updateParams.RevokePolicyIPChanged = revokePolicyIPChanged
+		}
+		if *revokePolicyUserAgentChanged != "" {
+			updateParams.RevokePolicyUserAgentChanged = revokePolicyUserAgentChanged
+		}
+		if *revokePolicyInactivityExceeded != "" {
+			updateParams.RevokePolicyInactivityExceeded = revokePolicyInactivityExceeded
+		}
+		app, err = db.UpdateApplication(ctx, app.ID, app.Version, updateParams, "cmd-admin")
+		if err != nil {
+			return fmt.Errorf("applying anonymous-message/revocation-policy settings: %w", err)
+		}
 	}
 
 	fmt.Printf("registered application %s (hostname=%s, enabled=%v)\n", app.ID, app.Hostname, app.Enabled)
