@@ -1,0 +1,101 @@
+# A hook (not a normal resource) purely for creation-order timing:
+# migrate/seed are pre-install hooks that need Postgres to already
+# exist, and Helm only creates normal resources AFTER every pre-install
+# hook finishes -- without this, migrate would run before this
+# StatefulSet was even created. before-hook-creation (not
+# hook-succeeded -- this isn't a one-shot Job) means a `helm upgrade`
+# deletes and recreates the StatefulSet object itself but not its PVC,
+# which reattaches unchanged; acceptable for a demo, not something a
+# production chart should do to a real database.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" . "name" "db") }}
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" . "name" "db") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  serviceName: {{ include "approve-auth-demo.component.fullname" (dict "root" . "name" "db") }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "approve-auth-demo.component.selectorLabels" (dict "root" . "name" "db") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth-demo.component.selectorLabels" (dict "root" . "name" "db") | nindent 8 }}
+    spec:
+      # Every container below mounts a Secret at /run/secrets, which
+      # collides with Kubernetes' own default service-account-token
+      # mount at /var/run/secrets/kubernetes.io/serviceaccount (/run is
+      # a symlink to /var/run in this image) -- that mount makes the
+      # Secret volume's own mountpoint read-only before the kubelet can
+      # create the token subdirectory under it, so the container never
+      # starts. None of these pods call the Kubernetes API, so
+      # disabling the auto-mount avoids the collision entirely rather
+      # than relocating every *_FILE path.
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: "{{ .Values.db.image.repository }}:{{ .Values.db.image.tag }}"
+          env:
+            - name: POSTGRES_DB
+              value: approve_auth
+            - name: POSTGRES_USER_FILE
+              value: /run/secrets/db_superuser_name
+            - name: POSTGRES_PASSWORD_FILE
+              value: /run/secrets/db_superuser_password
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", 'pg_isready -U "$(cat /run/secrets/db_superuser_name)" -d approve_auth']
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 10
+          resources:
+            {{- toYaml .Values.resources.db | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "approve-auth-demo.fullname" . }}-db-superuser
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.db.storage.storageClassName }}
+        storageClassName: {{ .Values.db.storage.storageClassName }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.db.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" . "name" "db") }}
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" . "name" "db") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  clusterIP: None
+  selector:
+    {{- include "approve-auth-demo.component.selectorLabels" (dict "root" . "name" "db") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432

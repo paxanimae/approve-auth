@@ -1,0 +1,129 @@
+# Same realm definition proven working end-to-end against a real
+# Keycloak in deploy/demo/docker-compose.yml -- profile/email client
+# scopes are minimal stand-ins (not full copies of Keycloak's own
+# built-in versions), included only because internal/oidc's client
+# always requests `scope=openid profile email groups` and a raw
+# --import-realm import does not auto-create Keycloak's usual built-in
+# scopes the way creating a realm through the admin console/API does.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}-keycloak-realm
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+data:
+  approve-demo-realm.json: |
+    {
+      "realm": "approve-demo",
+      "enabled": true,
+      "sslRequired": "none",
+      "registrationAllowed": false,
+      "groups": [
+        {"name": "grp-admins"},
+        {"name": "grp-viewers"}
+      ],
+      "clientScopes": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMappers": [
+            {
+              "name": "groups",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-group-membership-mapper",
+              "consentRequired": false,
+              "config": {
+                "full.path": "false",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "groups",
+                "userinfo.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "name": "profile",
+          "protocol": "openid-connect",
+          "protocolMappers": [
+            {
+              "name": "username",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "consentRequired": false,
+              "config": {
+                "user.attribute": "username",
+                "claim.name": "preferred_username",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "jsonType.label": "String"
+              }
+            }
+          ]
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMappers": [
+            {
+              "name": "email",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "consentRequired": false,
+              "config": {
+                "user.attribute": "email",
+                "claim.name": "email",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "jsonType.label": "String"
+              }
+            }
+          ]
+        }
+      ],
+      "clients": [
+        {
+          "clientId": "approve-auth",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "demo-client-secret",
+          "redirectUris": ["https://{{ .Values.hostnames.admin }}/auth/callback"],
+          "webOrigins": ["https://{{ .Values.hostnames.admin }}"],
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "defaultClientScopes": ["openid", "profile", "email", "groups"],
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          }
+        }
+      ],
+      "users": [
+        {
+          "username": "demo-admin",
+          "enabled": true,
+          "firstName": "Demo",
+          "lastName": "Admin",
+          "email": "demo-admin@example.test",
+          "emailVerified": true,
+          "requiredActions": [],
+          "credentials": [{"type": "password", "value": "demo-admin", "temporary": false}],
+          "groups": ["/grp-admins"]
+        },
+        {
+          "username": "demo-viewer",
+          "enabled": true,
+          "firstName": "Demo",
+          "lastName": "Viewer",
+          "email": "demo-viewer@example.test",
+          "emailVerified": true,
+          "requiredActions": [],
+          "credentials": [{"type": "password", "value": "demo-viewer", "temporary": false}],
+          "groups": ["/grp-viewers"]
+        }
+      ]
+    }

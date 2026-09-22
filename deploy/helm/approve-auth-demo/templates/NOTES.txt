@@ -1,0 +1,17 @@
+Approve demo installed. This is a demo, not a production configuration
+-- see this chart's README.md.
+
+Port-forward Traefik's entrypoints and the Keycloak sidecar, then open
+the landing page:
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ .Release.Name }}-traefik 8080:web 8443:websecure
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "approve-auth-demo.fullname" . }} 8090:keycloak
+
+Then open http://localhost:8080/ -- it links to the admin console and
+every sample protected application.
+
+Give the certgen/migrate/seed hook Jobs a few moments to finish and
+Keycloak's sidecar to finish booting before the admin console's OIDC
+login works -- check with:
+
+  kubectl get pods -n {{ .Release.Namespace }}

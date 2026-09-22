@@ -1,0 +1,114 @@
+# Traefik CRD wiring (requires the bundled traefik subchart's CRDs,
+# installed automatically by Helm alongside this chart). Mirrors
+# deploy/helm/approve-auth's own templates/traefik-middleware.yaml,
+# adapted for a self-signed default cert instead of an ACME
+# certResolver, and one router pair per sample app instead of a single
+# generic "whatever hostname the operator configured" router.
+{{- if .Values.traefik.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+spec:
+  defaultCertificate:
+    secretName: {{ include "approve-auth-demo.fullname" . }}-traefik-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+spec:
+  forwardAuth:
+    address: "https://{{ include "approve-auth-demo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:8443/auth"
+    trustForwardHeader: true
+    preserveLocationHeader: true
+    forwardBody: false
+    authRequestHeaders:
+      - Cookie
+      - Accept
+      - User-Agent
+      - Sec-Fetch-Mode
+      - Sec-Fetch-Dest
+    addAuthCookiesToResponse:
+      - __Host-approve-auth
+    tls:
+      caSecret: {{ include "approve-auth-demo.fullname" . }}-mtls-ca
+      certSecret: {{ include "approve-auth-demo.fullname" . }}-mtls-client
+---
+# Plain HTTP, no TLS, no auth -- the equivalent of
+# deploy/demo/docker-compose.yml's `landing` router. Reached at
+# whatever address the `web` entryPoint is port-forwarded to.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}-landing
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+spec:
+  entryPoints: [web]
+  routes:
+    - kind: Rule
+      match: "PathPrefix(`/`)"
+      services:
+        - name: {{ include "approve-auth-demo.component.fullname" (dict "root" . "name" "landing") }}
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}-admin
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+spec:
+  entryPoints: [websecure]
+  tls: {}
+  routes:
+    - kind: Rule
+      match: "Host(`{{ .Values.hostnames.admin }}`)"
+      services:
+        - name: {{ include "approve-auth-demo.fullname" . }}
+          port: admin
+{{- $root := . }}
+{{- range .Values.sampleApps }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" $root "name" .name) }}
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" $root "name" .name) | nindent 4 }}
+spec:
+  entryPoints: [websecure]
+  tls: {}
+  routes:
+    - kind: Rule
+      match: "Host(`{{ .hostname }}`)"
+      priority: 100
+      middlewares:
+        - name: {{ include "approve-auth-demo.fullname" $root }}
+      services:
+        - name: {{ include "approve-auth-demo.component.fullname" (dict "root" $root "name" .name) }}
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" $root "name" .name) }}-approval
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" $root "name" .name) | nindent 4 }}
+spec:
+  entryPoints: [websecure]
+  tls: {}
+  routes:
+    - kind: Rule
+      match: "Host(`{{ .hostname }}`) && (Path(`/__approve-auth`) || PathPrefix(`/__approve-auth/`))"
+      priority: 1000
+      services:
+        - name: {{ include "approve-auth-demo.fullname" $root }}
+          port: public
+{{- end }}
+{{- end }}

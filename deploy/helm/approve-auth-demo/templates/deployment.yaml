@@ -1,0 +1,158 @@
+# Keycloak runs as a sidecar in this SAME Pod as approve-auth, sharing
+# its network namespace, rather than its own Deployment+Service --
+# deliberately, not for resource efficiency. Keycloak's discovery
+# document reports one hostname for every endpoint (its "frontend URL");
+# real production Keycloak deployments behind a reverse proxy solve
+# split browser-vs-backend DNS with a CoreDNS rewrite, which is too
+# invasive for a demo chart to do to a cluster's shared kube-system
+# config uninvited. Sharing a network namespace instead means
+# *.localtest.me's public wildcard DNS (-> 127.0.0.1) resolves
+# consistently everywhere that matters: the browser reaches it via
+# `kubectl port-forward` to 127.0.0.1, and approve-auth's own backend
+# reaches the exact same physical Keycloak over the Pod's shared
+# loopback -- no split-DNS trickery needed. See configmap-approve-auth-
+# config.yaml's own comment on oidc_issuer for the other half of this.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "approve-auth-demo.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth-demo.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values | toJson | sha256sum }}
+    spec:
+      # Neither container here calls the Kubernetes API (see db.yaml's
+      # comment on the same setting for the underlying /run/secrets
+      # collision this also sidesteps).
+      automountServiceAccountToken: false
+      # Keycloak as a native sidecar (restartPolicy: Always, GA since
+      # Kubernetes 1.29): the kubelet waits for its startupProbe to
+      # succeed before starting the approve-auth container below, so
+      # approve-auth's own OIDC-client startup (which fails fast if the
+      # issuer isn't reachable yet) never races Keycloak's boot. On an
+      # older cluster without native sidecar support, this container
+      # just behaves as a normal one -- approve-auth may then
+      # CrashLoopBackOff briefly on first install and self-heal once
+      # Keycloak comes up, the same non-fatal behavior
+      # deploy/demo/docker-compose.yml had before it gained an
+      # equivalent healthcheck-gated dependency.
+      initContainers:
+        - name: keycloak
+          restartPolicy: Always
+          image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}"
+          args: ["start-dev", "--import-realm"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: {{ .Values.keycloak.adminUsername | quote }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: {{ .Values.keycloak.adminPassword | quote }}
+            - name: KC_HTTP_PORT
+              value: {{ .Values.keycloak.httpPort | quote }}
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_HOSTNAME
+              value: {{ .Values.hostnames.keycloak }}
+            - name: KC_HOSTNAME_PORT
+              value: {{ .Values.keycloak.httpPort | quote }}
+            - name: KC_HOSTNAME_STRICT_HTTPS
+              value: "false"
+          ports:
+            - name: keycloak
+              containerPort: {{ .Values.keycloak.httpPort }}
+          startupProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - 'exec 3<>/dev/tcp/localhost/9000 && echo -e "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && cat <&3 | grep -q "\"status\": \"UP\""'
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.resources.keycloak | nindent 12 }}
+          volumeMounts:
+            - name: keycloak-realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      containers:
+        - name: approve-auth
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: CONFIG_FILE
+              value: /config/approve-auth.yaml
+            - name: DATABASE_URL_FILE
+              value: /run/secrets/app/database_url
+            - name: OIDC_CLIENT_SECRET_FILE
+              value: /run/secrets/app/oidc_client_secret
+            - name: CLAIM_ENCRYPTION_KEY_FILE
+              value: /run/secrets/app/claim_encryption_key
+            - name: OIDC_STATE_ENCRYPTION_KEY_FILE
+              value: /run/secrets/app/oidc_state_key
+          ports:
+            - name: public
+              containerPort: 8080
+            - name: admin
+              containerPort: 8081
+            - name: auth
+              containerPort: 8443
+            - name: ops
+              containerPort: 9090
+          readinessProbe:
+            httpGet: {path: /readyz, port: ops}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /livez, port: ops}
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources.approveAuth | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: app-secrets
+              mountPath: /run/secrets/app
+              readOnly: true
+            - name: mtls
+              mountPath: /run/secrets/mtls
+              readOnly: true
+      volumes:
+        - name: keycloak-realm
+          configMap:
+            name: {{ include "approve-auth-demo.fullname" . }}-keycloak-realm
+        - name: config
+          configMap:
+            name: {{ include "approve-auth-demo.fullname" . }}-config
+        - name: app-secrets
+          secret:
+            secretName: {{ include "approve-auth-demo.fullname" . }}-app
+        - name: mtls
+          secret:
+            secretName: {{ include "approve-auth-demo.fullname" . }}-app-mtls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "approve-auth-demo.selectorLabels" . | nindent 4 }}
+  ports:
+    - {name: public, port: 8080}
+    - {name: admin, port: 8081}
+    - {name: auth, port: 8443}
+    - {name: ops, port: 9090}
+    - name: keycloak
+      port: {{ .Values.keycloak.httpPort }}

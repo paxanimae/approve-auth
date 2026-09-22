@@ -1,0 +1,106 @@
+# Demo-only values. Every secret here is a fixed, publicly-known value
+# baked directly into this chart's templates (deploy/helm/approve-auth,
+# the real chart, refuses to do this on purpose -- see its own
+# values.yaml) -- this chart exists purely so an infrastructure
+# engineer can `helm install` something and see the product work,
+# never to be used as-is against real data.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: dividedbyzeroexception/approve-auth
+  tag: "0.4.0"
+  pullPolicy: IfNotPresent
+
+# *.localtest.me is public wildcard DNS -> 127.0.0.1, so these resolve
+# with zero /etc/hosts editing once reached via `kubectl port-forward`
+# (see this chart's README.md for the exact command).
+hostnames:
+  admin: demo-admin.localtest.me
+  keycloak: demo-keycloak.localtest.me
+  kiosk: demo-kiosk.localtest.me
+  strict: demo-strict.localtest.me
+  monitored: demo-monitored.localtest.me
+  contractor: demo-contractor.localtest.me
+
+keycloak:
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.0"
+  adminUsername: admin
+  adminPassword: admin
+  # Keycloak's own HTTP port. Traefik proxies to it in-cluster; nothing
+  # about Keycloak itself needs to be reachable outside the cluster
+  # network except through Traefik (unlike the Compose demo, which
+  # publishes it directly for simplicity -- here, port-forwarding
+  # Traefik's own Service already gets you there).
+  httpPort: 8090
+
+db:
+  image:
+    repository: postgres
+    tag: "17.6"
+  storage:
+    size: 2Gi
+    storageClassName: ""
+
+resources:
+  approveAuth:
+    limits: {cpu: "1", memory: 256Mi}
+    requests: {cpu: "100m", memory: 128Mi}
+  keycloak:
+    limits: {cpu: "1", memory: 768Mi}
+    requests: {cpu: "250m", memory: 512Mi}
+  db:
+    limits: {cpu: "500m", memory: 256Mi}
+    requests: {cpu: "100m", memory: 128Mi}
+
+# The sample protected applications registered on install, each
+# demonstrating a different feature. Extra register-application flags
+# (beyond hostname/displayName, which every entry needs) go in `flags`
+# verbatim -- see templates/seed-jobs.yaml.
+sampleApps:
+  - name: kiosk
+    hostname: demo-kiosk.localtest.me
+    displayName: "Kiosk (anonymous messages allowed)"
+    responseText: "You've reached demo-kiosk.localtest.me. This app allows an anonymous label/message on the request page."
+    flags:
+      - -allow-anonymous-message
+  - name: strict
+    hostname: demo-strict.localtest.me
+    displayName: "Strict (revoke on IP change)"
+    responseText: "You've reached demo-strict.localtest.me. This app revokes access immediately if your IP address changes."
+    flags:
+      - -revoke-policy-ip-changed=revoke
+  - name: monitored
+    hostname: demo-monitored.localtest.me
+    displayName: "Monitored (flag for review on IP change)"
+    responseText: "You've reached demo-monitored.localtest.me. An IP change here only flags the session for review."
+    flags:
+      - -revoke-policy-ip-changed=flag_for_review
+      - -revoke-policy-user-agent-changed=warn
+  - name: contractor
+    hostname: demo-contractor.localtest.me
+    displayName: "Contractor (short-lived access)"
+    responseText: "You've reached demo-contractor.localtest.me. Access here is short-lived (1h default, 8h max)."
+    flags:
+      - -default-duration=1h
+      - -max-duration=8h
+      - "-contact-info=Ask #it-helpdesk on Slack for access issues"
+
+# Bundles Traefik itself (the official chart, as a dependency, with its
+# CRDs) -- deploy/helm/approve-auth's own traefik.enabled assumes
+# Traefik is already installed cluster-wide; this demo can't assume
+# that. `enabled` is this chart's own condition (Chart.yaml); everything
+# else under this key is passed straight through to the traefik
+# subchart (https://github.com/traefik/traefik-helm-chart) -- only the
+# demo-scale overrides are set here, everything else is that chart's
+# own defaults.
+traefik:
+  enabled: true
+  deployment:
+    replicas: 1
+  resources:
+    requests: {cpu: "100m", memory: 128Mi}
+    limits: {cpu: "500m", memory: 256Mi}

@@ -21,6 +21,10 @@ deploy/dev/mtls/
 # bundled/shipped by this repo (see that script's own header comment).
 deploy/dev/geoip/
 
+# Helm dependency archives -- regenerated from Chart.lock by
+# `helm dependency build`, never committed (standard Helm convention).
+deploy/helm/*/charts/
+
 # Editors / OS
 .vscode/
 .idea/

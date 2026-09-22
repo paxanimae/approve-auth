@@ -1,0 +1,55 @@
+# One Job per sample app (values.sampleApps), each a single
+# register-application call -- the distroless runtime image has no
+# shell, so multiple calls can't be chained in one container the way a
+# multi-command shell script would. -if-not-exists makes every one of
+# these safe to re-run on `helm upgrade`.
+{{- $root := . }}
+{{- range .Values.sampleApps }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" $root "name" (printf "seed-%s" .name)) }}
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" $root "name" (printf "seed-%s" .name)) | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth-demo.component.selectorLabels" (dict "root" $root "name" (printf "seed-%s" .name)) | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      # See db.yaml's own comment on why (this Secret mounts directly
+      # at /run/secrets, which collides with the default
+      # service-account-token auto-mount there).
+      automountServiceAccountToken: false
+      containers:
+        - name: seed
+          image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          command:
+            - /usr/local/bin/admin
+            - register-application
+            - -if-not-exists
+            - -hostname={{ .hostname }}
+            - -display-name={{ .displayName }}
+            {{- range .flags }}
+            - {{ . }}
+            {{- end }}
+          env:
+            - name: DATABASE_URL_FILE
+              value: /run/secrets/database_url
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "approve-auth-demo.fullname" $root }}-app
+---
+{{- end }}

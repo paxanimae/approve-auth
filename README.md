@@ -25,20 +25,34 @@
 The fastest way to see what this actually does: a one-command demo stack
 with its own Traefik, Postgres, and a real Keycloak (pre-configured with
 a realm, users, and groups) -- no cloning, no build, no setup beyond
-Docker.
+Docker. Lands on a DEMO-labeled page linking to the admin console
+(pre-seeded `demo-admin`/`demo-viewer` logins) and four sample protected
+applications, each configured to demonstrate a different feature
+(anonymous request messages, revoke-on-IP-change, flag-for-review,
+short-lived access). Every secret is fixed and public, TLS is
+self-signed -- it's a demo, not a production configuration.
+
+**Docker Compose:**
 
 ```bash
 curl -O https://raw.githubusercontent.com/paxanimae/approve-auth/master/deploy/demo/docker-compose.yml
 docker compose up -d
 ```
 
-Then open **http://localhost:8080/** -- a DEMO-labeled landing page links
-to the admin console (pre-seeded `demo-admin`/`demo-viewer` logins) and
-four sample protected applications, each configured to demonstrate a
-different feature (anonymous request messages, revoke-on-IP-change,
-flag-for-review, short-lived access). See `deploy/demo/docker-compose.yml`
-for exactly what it brings up -- it's a demo, not a production
-configuration (fixed secrets, self-signed certs, plain-HTTP Keycloak).
+Then open **http://localhost:8080/**. See `deploy/demo/docker-compose.yml`
+for exactly what it brings up.
+
+**Kubernetes** (bundles Traefik itself, via the official chart, as a
+dependency -- see `deploy/helm/approve-auth-demo/README.md`):
+
+```bash
+helm repo add traefik https://traefik.github.io/charts
+git clone https://github.com/paxanimae/approve-auth.git && cd approve-auth
+helm install approve-demo deploy/helm/approve-auth-demo/
+kubectl port-forward svc/approve-demo-traefik 8080:web 8443:websecure
+```
+
+Then open **http://localhost:8080/** the same way.
 
 Ready to deploy for real instead? See **Start here** below for the actual
 Docker Swarm stack and Kubernetes Helm chart.
@@ -248,9 +262,12 @@ for the full sign-off walkthrough.
 
 - **Container image:** [`dividedbyzeroexception/approve-auth`](https://hub.docker.com/r/dividedbyzeroexception/approve-auth)
   on Docker Hub.
-- **Operators deploying this for real:** `docs/runbooks/rollout-rollback.md`,
-  then `docs/runbooks/key-rotation.md` and `docs/runbooks/backup-restore.md`
-  before you need them under pressure.
+- **Just want to see it work?** `deploy/demo/docker-compose.yml` (Docker)
+  or `deploy/helm/approve-auth-demo/` (Kubernetes) -- see "Try the demo" above.
+- **Operators deploying this for real:** `deploy/stack.yml` (Docker Swarm)
+  or `deploy/helm/approve-auth` (Kubernetes), then
+  `docs/runbooks/rollout-rollback.md`, `docs/runbooks/key-rotation.md`,
+  and `docs/runbooks/backup-restore.md` before you need them under pressure.
 - **Developers working on this repo:** `docs/dev-environment.md` for the
   containerized local setup (no Go/Node/mkcert install on the host), then
   the section below.

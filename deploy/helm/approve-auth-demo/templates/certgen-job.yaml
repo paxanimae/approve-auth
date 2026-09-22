@@ -1,0 +1,90 @@
+# Generates this demo's self-signed TLS/mTLS material fresh on every
+# install/upgrade and applies it as real Kubernetes Secrets via the API
+# (not a shared PVC -- ReadWriteMany volumes aren't reliably available
+# on the local clusters this demo targets). Two containers because the
+# pinned openssl image has no kubectl, and the pinned kubectl image has
+# no openssl: an initContainer generates the material into a shared
+# emptyDir, the main container applies it and needs nothing else.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}-certgen
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth-demo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: certgen
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "approve-auth-demo.fullname" . }}-certgen
+      initContainers:
+        - name: gen-certs
+          image: alpine/openssl@sha256:f6def4887e8413b228b66f314d0bcf5c25b128d918a258f3b0b9d66a0327edcb
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              mkdir -p /work/traefik /work/mtls
+              SAN="DNS:{{ .Values.hostnames.admin }},DNS:{{ .Values.hostnames.kiosk }},DNS:{{ .Values.hostnames.strict }},DNS:{{ .Values.hostnames.monitored }},DNS:{{ .Values.hostnames.contractor }}"
+              openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 -days 365 \
+                -keyout /work/traefik/tls.key -out /work/traefik/tls.crt \
+                -subj "/CN=approve-demo" -addext "subjectAltName=$SAN"
+              openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 -days 3650 \
+                -keyout /work/mtls/ca-key.pem -out /work/mtls/tls.ca -subj "/CN=approve-auth-demo-ca"
+              # SAN must match the exact address ingressroute.yaml's
+              # Middleware dials (the full in-cluster Service DNS
+              # name) -- Traefik verifies this cert's hostname against
+              # that literal address, not just the short Service name.
+              openssl req -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+                -keyout /work/mtls/server-key.pem -out /work/mtls/server.csr -subj "/CN={{ include "approve-auth-demo.fullname" . }}" \
+                -addext "subjectAltName=DNS:{{ include "approve-auth-demo.fullname" . }},DNS:{{ include "approve-auth-demo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+              openssl x509 -req -in /work/mtls/server.csr -CA /work/mtls/tls.ca -CAkey /work/mtls/ca-key.pem -CAcreateserial \
+                -out /work/mtls/server-cert.pem -days 365 -copy_extensions copyall
+              openssl req -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+                -keyout /work/mtls/client-key.pem -out /work/mtls/client.csr -subj "/CN=traefik-client"
+              openssl x509 -req -in /work/mtls/client.csr -CA /work/mtls/tls.ca -CAkey /work/mtls/ca-key.pem -CAcreateserial \
+                -out /work/mtls/client-cert.pem -days 365
+              rm -f /work/mtls/*.csr /work/mtls/*.srl
+              chmod -R a+r /work
+              echo "generated demo TLS/mTLS material"
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      containers:
+        - name: apply-secrets
+          image: alpine/k8s:1.31.1
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -eu
+              NS={{ .Release.Namespace }}
+              kubectl create secret tls {{ include "approve-auth-demo.fullname" . }}-traefik-tls \
+                --cert=/work/traefik/tls.crt --key=/work/traefik/tls.key \
+                -n "$NS" --dry-run=client -o yaml | kubectl apply -f -
+              kubectl create secret generic {{ include "approve-auth-demo.fullname" . }}-app-mtls \
+                --from-file=auth_tls_cert=/work/mtls/server-cert.pem \
+                --from-file=auth_tls_key=/work/mtls/server-key.pem \
+                --from-file=auth_client_ca=/work/mtls/tls.ca \
+                -n "$NS" --dry-run=client -o yaml | kubectl apply -f -
+              kubectl create secret generic {{ include "approve-auth-demo.fullname" . }}-mtls-ca \
+                --from-file=tls.ca=/work/mtls/tls.ca \
+                -n "$NS" --dry-run=client -o yaml | kubectl apply -f -
+              kubectl create secret tls {{ include "approve-auth-demo.fullname" . }}-mtls-client \
+                --cert=/work/mtls/client-cert.pem --key=/work/mtls/client-key.pem \
+                -n "$NS" --dry-run=client -o yaml | kubectl apply -f -
+              echo "applied demo TLS/mTLS secrets"
+          volumeMounts:
+            - name: work
+              mountPath: /work
+              readOnly: true
+      volumes:
+        - name: work
+          emptyDir: {}

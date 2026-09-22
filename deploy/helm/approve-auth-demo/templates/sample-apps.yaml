@@ -1,0 +1,40 @@
+# Placeholder backends the ForwardAuth-protected routes actually reach
+# once approved -- one per values.sampleApps entry, each just a static
+# response identifying which demo app was reached.
+{{- $root := . }}
+{{- range .Values.sampleApps }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" $root "name" .name) }}
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" $root "name" .name) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "approve-auth-demo.component.selectorLabels" (dict "root" $root "name" .name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth-demo.component.selectorLabels" (dict "root" $root "name" .name) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: app
+          image: caddy:2.10.2
+          command: ["caddy", "respond", {{ .responseText | quote }}, "--listen", ":80"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" $root "name" .name) }}
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" $root "name" .name) | nindent 4 }}
+spec:
+  selector:
+    {{- include "approve-auth-demo.component.selectorLabels" (dict "root" $root "name" .name) | nindent 4 }}
+  ports:
+    - port: 80
+---
+{{- end }}

@@ -1,0 +1,29 @@
+apiVersion: v2
+name: approve-auth-demo
+description: >-
+  One-command demo of Approve (approve-auth): brings up its own Traefik
+  (via the official Traefik chart, bundled as a dependency), Postgres,
+  and a real Keycloak (pre-configured with a realm/users/groups), then
+  generates its own TLS/mTLS material and registers four sample
+  protected applications on install. NOT a production deployment --
+  every secret is a fixed, publicly-known demo value. See
+  deploy/helm/approve-auth for the real chart this demo doesn't replace.
+type: application
+version: 0.1.0
+appVersion: "0.4.0"
+home: https://github.com/paxanimae/approve-auth
+sources:
+  - https://github.com/paxanimae/approve-auth
+keywords:
+  - forwardauth
+  - traefik
+  - zero-trust
+  - authorization
+  - demo
+maintainers:
+  - name: We Zard
+dependencies:
+  - name: traefik
+    version: "41.6.0"
+    repository: https://traefik.github.io/charts
+    condition: traefik.enabled

@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}-config
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+data:
+  approve-auth.yaml: |
+    admin_origin: https://{{ .Values.hostnames.admin }}
+    # Keycloak runs as a sidecar in the same Pod as approve-auth (see
+    # deployment.yaml's own comment on why) specifically so this can be
+    # the SAME public hostname the browser uses -- *.localtest.me is
+    # public wildcard DNS resolving to 127.0.0.1 everywhere, including
+    # from inside this Pod, where it correctly reaches the sidecar
+    # container over the Pod's shared loopback. Keycloak's discovery
+    # document reports every endpoint using this one hostname
+    # (KC_HOSTNAME below), so both the browser's interactive /authorize
+    # redirect and this backend's own token/jwks calls resolve to the
+    # exact same place without any split-DNS trickery.
+    oidc_issuer: http://{{ .Values.hostnames.keycloak }}:{{ .Values.keycloak.httpPort }}/realms/approve-demo
+    oidc_client_id: approve-auth
+    oidc_admin_groups: ["grp-admins"]
+    oidc_viewer_groups: ["grp-viewers"]
+
+    claim_encryption_key_id: demo
+
+    auth_tls_cert_file: /run/secrets/mtls/auth_tls_cert
+    auth_tls_key_file: /run/secrets/mtls/auth_tls_key
+    auth_client_ca_file: /run/secrets/mtls/auth_client_ca
+    auth_allowed_client_identities: ["traefik-client"]
+
+    # The whole cluster pod CIDR would be the honest range here, but it
+    # varies by CNI/cluster and this is a demo -- see
+    # deploy/helm/approve-auth's own values.yaml for the real guidance
+    # (scope this to your cluster's actual Traefik Pod IP range).
+    trusted_traefik_cidrs: ["0.0.0.0/0"]

@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}-migrate
+  labels:
+    {{- include "approve-auth-demo.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth-demo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      # See db.yaml's own comment: this Secret volume mounts directly
+      # at /run/secrets, which collides with Kubernetes' default
+      # service-account-token auto-mount there unless disabled -- this
+      # Job never calls the Kubernetes API anyway.
+      automountServiceAccountToken: false
+      # db.yaml's StatefulSet is also a pre-install hook (needed purely
+      # for creation-order relative to this one), but Helm's hook
+      # ordering only guarantees the Postgres *object* was created
+      # before this Job starts, not that it's finished booting yet --
+      # wait for it to actually accept connections first.
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.db.image.repository }}:{{ .Values.db.image.tag }}"
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h {{ include "approve-auth-demo.component.fullname" (dict "root" . "name" "db") }} -U postgres -d approve_auth; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/admin", "migrate-up"]
+          env:
+            - name: DATABASE_URL_FILE
+              value: /run/secrets/database_url_superuser
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "approve-auth-demo.fullname" . }}-db-superuser

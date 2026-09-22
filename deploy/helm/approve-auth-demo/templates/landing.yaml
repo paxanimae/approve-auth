@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "approve-auth-demo.fullname" . }}-landing
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" . "name" "landing") | nindent 4 }}
+data:
+  Caddyfile: |
+    :80 {
+      root * /srv
+      file_server
+    }
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <title>Approve -- live demo</title>
+      <style>
+        body { font: 16px/1.5 -apple-system, system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+        .banner { background: #fff3cd; border: 1px solid #ffe69c; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+        h1 { margin-bottom: 4px; }
+        .creds { background: #f4f4f4; border-radius: 8px; padding: 12px 16px; font-family: monospace; }
+        ul { padding-left: 20px; }
+        li { margin-bottom: 14px; }
+        code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; }
+        a { color: #0a5cff; }
+      </style>
+    </head>
+    <body>
+      <div class="banner">
+        <strong>&#9888; This is a demo.</strong> Every secret here is fixed and
+        public, TLS certificates are self-signed, and Keycloak runs over plain
+        HTTP for simplicity. None of this is a production configuration -- see
+        the <a href="https://github.com/paxanimae/approve-auth#what-this-does-and-doesnt-protect">project README</a>
+        for real deployment options (Docker Swarm or Kubernetes).
+      </div>
+      <h1>Approve</h1>
+      <p>A human approves an unattended browser once; it just works after that.
+      This demo runs a real Traefik, a real Postgres, a real Keycloak (OIDC),
+      and four sample protected applications, each configured differently.</p>
+
+      <h2>Admin console</h2>
+      <p><a href="https://{{ .Values.hostnames.admin }}/">https://{{ .Values.hostnames.admin }}/</a>
+      (your browser will warn about the self-signed certificate -- that's expected, click through)</p>
+      <div class="creds">
+        administrator: <code>demo-admin</code> / <code>demo-admin</code><br />
+        viewer: <code>demo-viewer</code> / <code>demo-viewer</code>
+      </div>
+
+      <h2>Sample protected applications</h2>
+      <ul>
+        {{- range .Values.sampleApps }}
+        <li><a href="https://{{ .hostname }}/">{{ .hostname }}</a> -- {{ .displayName }}</li>
+        {{- end }}
+      </ul>
+
+      <h2>Keycloak</h2>
+      <p>The demo's own OIDC provider, if you want to look at the realm/users/groups
+      directly: <a href="http://{{ .Values.hostnames.keycloak }}:{{ .Values.keycloak.httpPort }}/">http://{{ .Values.hostnames.keycloak }}:{{ .Values.keycloak.httpPort }}/</a>
+      (reachable once you've port-forwarded it -- see this chart's README.md;
+      admin console login: <code>{{ .Values.keycloak.adminUsername }}</code> / <code>{{ .Values.keycloak.adminPassword }}</code>)</p>
+
+      <p><a href="https://github.com/paxanimae/approve-auth">&larr; Back to the project</a></p>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" . "name" "landing") }}
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" . "name" "landing") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "approve-auth-demo.component.selectorLabels" (dict "root" . "name" "landing") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "approve-auth-demo.component.selectorLabels" (dict "root" . "name" "landing") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: landing
+          image: caddy:2.10.2
+          volumeMounts:
+            - {name: content, mountPath: /etc/caddy/Caddyfile, subPath: Caddyfile}
+            - {name: content, mountPath: /srv/index.html, subPath: index.html}
+      volumes:
+        - name: content
+          configMap:
+            name: {{ include "approve-auth-demo.fullname" . }}-landing
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "approve-auth-demo.component.fullname" (dict "root" . "name" "landing") }}
+  labels:
+    {{- include "approve-auth-demo.component.labels" (dict "root" . "name" "landing") | nindent 4 }}
+spec:
+  selector:
+    {{- include "approve-auth-demo.component.selectorLabels" (dict "root" . "name" "landing") | nindent 4 }}
+  ports:
+    - port: 80
