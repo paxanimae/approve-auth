@@ -9,6 +9,12 @@
   A human vouches for the device once; it just works after that.
 </p>
 
+<p align="center">
+  <a href="https://hub.docker.com/r/dividedbyzeroexception/approve-auth">
+    <img src="https://img.shields.io/docker/v/dividedbyzeroexception/approve-auth?sort=semver&label=docker%20hub&logo=docker" alt="Docker Hub" />
+  </a>
+</p>
+
 ---
 
 **Approve** (repo/service name: `approve-auth`) sits in front of an internal
@@ -212,6 +218,8 @@ for the full sign-off walkthrough.
 
 ## Start here
 
+- **Container image:** [`dividedbyzeroexception/approve-auth`](https://hub.docker.com/r/dividedbyzeroexception/approve-auth)
+  on Docker Hub.
 - **Operators deploying this for real:** `docs/runbooks/rollout-rollback.md`,
   then `docs/runbooks/key-rotation.md` and `docs/runbooks/backup-restore.md`
   before you need them under pressure.
