@@ -13,6 +13,9 @@
   <a href="https://hub.docker.com/r/dividedbyzeroexception/approve-auth">
     <img src="https://img.shields.io/docker/v/dividedbyzeroexception/approve-auth?sort=semver&label=docker%20hub&logo=docker" alt="Docker Hub" />
   </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0" />
+  </a>
 </p>
 
 ---
