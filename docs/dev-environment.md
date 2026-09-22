@@ -108,11 +108,15 @@ actual service, a real Traefik, and a placeholder backend together.
 `tests/integration/traefik_test.go` exercises this stack -- mock-only
 tests can't verify real routing/cookie behavior (spec section 16).
 
-1. Generate certs (both scripts; the mTLS ones are new for this stack):
+1. Generate certs and the dev-only secret files `deploy/dev/docker-compose.yml`'s
+   `migrate`/`approve-auth` services mount (gitignored, so a fresh clone or CI
+   runner never has them yet; safe to re-run, it never overwrites a file
+   that's already there):
 
    ```bash
    scripts/gen-certs.sh
    scripts/gen-mtls-certs.sh
+   scripts/gen-dev-secrets.sh
    ```
 
 2. Bring up the stack (`--build` picks up any source change; `migrate`

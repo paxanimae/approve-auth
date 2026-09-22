@@ -92,6 +92,7 @@ jobs:
           go-version-file: go.mod
       - run: scripts/gen-certs.sh
       - run: scripts/gen-mtls-certs.sh
+      - run: scripts/gen-dev-secrets.sh
       - run: |
           docker compose -f deploy/dev/docker-compose.yml up -d --build \
             migrate approve-auth backend-protected traefik
