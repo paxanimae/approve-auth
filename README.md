@@ -168,6 +168,38 @@ for why.
   deployment-wide settings (contact info, notification targets,
   revocation defaults) with no restart required.
 
+## What this does and doesn't protect
+
+Approve answers exactly one question: *has a human approved this browser for
+this hostname?* It is not a replacement for the protected application's own
+authentication, and it is not multi-factor.
+
+- **It authorizes a device, not a person.** The credential is a long-lived
+  cookie — anyone with access to that browser, or who can exfiltrate the
+  cookie itself (XSS elsewhere on the same site, malware, a stolen or
+  unlocked device), has everything the device has, until it's revoked.
+  There's no additional factor and no hardware-backed device identity —
+  deliberately, since the entire point is zero device-side software.
+- **The approval step trusts a human, and a human can be misled.** Anything
+  an anonymous device submits — a label, a message — is unverified. The
+  console marks it as such; treat it as a claim to check independently,
+  never as proof of identity on its own.
+- **It's a front door, not an access-control system.** Approve makes one
+  coarse allow/deny decision per hostname before a request ever reaches your
+  application. It has no concept of your app's own users, roles, or
+  permissions — once past Approve, your application's own authentication is
+  what actually decides who can do what inside it.
+- **Scope it to entry navigation, not every API call** the protected app
+  makes internally, the way the reference Traefik config does — don't rely
+  on it to gate an endpoint that's independently reachable.
+
+For anything sensitive — PII, financial data, admin or destructive actions,
+anywhere that knowing *who* is acting actually matters — put real user
+authentication (and MFA) inside the application itself, and run Approve as
+one layer of a defense-in-depth stack, not the whole stack. See
+`docs/threat-model.md` for the itemized threat model this section
+summarizes.
+
 ## Status
 
 Reverse-proxy integration ships today for **Traefik** (ForwardAuth,
