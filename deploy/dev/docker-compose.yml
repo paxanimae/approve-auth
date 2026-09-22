@@ -116,7 +116,7 @@ services:
       # not a silent no-op), so this stays commented out by default and
       # the ./geoip mount below stays harmless (an empty directory) until
       # you've actually fetched the database.
-      GEOIP_DATABASE_PATH: /geoip/GeoLite2-City.mmdb
+      # GEOIP_DATABASE_PATH: /geoip/GeoLite2-City.mmdb
     volumes:
       - ./approve-auth-config.yaml:/config/approve-auth.yaml:ro
       - ./secrets:/secrets:ro

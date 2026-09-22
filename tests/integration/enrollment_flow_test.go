@@ -96,6 +96,18 @@ func registerProtectedApplication(t *testing.T, ctx context.Context, dbURL strin
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
+	// This test submits a label as part of the real user journey it
+	// drives (spec section 5) -- allow_anonymous_message defaults to
+	// false for every application (endpoint-review.md F3), so opt this
+	// one in the same way an administrator would via the Applications
+	// view's toggle.
+	allowAnonymousMessage := true
+	app, err = db.UpdateApplication(ctx, app.ID, app.Version, store.UpdateApplicationParams{
+		AllowAnonymousMessage: &allowAnonymousMessage,
+	}, "test-admin")
+	if err != nil {
+		t.Fatalf("UpdateApplication (allow_anonymous_message): %v", err)
+	}
 	t.Cleanup(func() {
 		_, _ = db.Pool.Exec(ctx, `DELETE FROM credentials WHERE application_id = $1`, app.ID)
 		_, _ = db.Pool.Exec(ctx, `DELETE FROM authorizations WHERE application_id = $1`, app.ID)
